@@ -50,47 +50,62 @@ function tableInfo(db: Database.Database, table: string): ColumnInfo[] {
 }
 
 describe('schema.ts and 0001_init.sql cannot drift', () => {
-  it('regenerating the migration from schema.ts reproduces the checked-in SQL exactly', () => {
-    // schema.ts is imported by no production module — the runtime applies
-    // the checked-in SQL — so nothing else would catch a hand-edit of the
-    // SQL or an unregenerated schema change, and a wrong 0002 generated
-    // from a drifted snapshot is the expensive failure this guards
-    // (T-260828-07 review, should-fix 2).
-    const here = dirname(fileURLToPath(import.meta.url))
-    const repoRoot = resolve(here, '..', '..', '..')
-    const outDir = makeTmpDir('solo-crm-drizzle-regen-')
-    try {
-      // drizzle-kit treats --schema as a glob, and its globber only
-      // understands forward slashes — a Windows backslash path matches
-      // nothing ("No schema files found").
-      const toPosix = (p: string): string => p.replace(/\\/g, '/')
-      const result = spawnSync(
-        process.execPath,
-        [
-          join(repoRoot, 'node_modules', 'drizzle-kit', 'bin.cjs'),
-          'generate',
-          '--dialect', 'sqlite',
-          '--schema', toPosix(join(here, 'schema.ts')),
-          '--out', toPosix(outDir),
-          '--name', 'init'
-        ],
-        { cwd: repoRoot, encoding: 'utf-8', timeout: 60_000 }
-      )
-      expect(result.error).toBeUndefined()
-      expect(result.status).toBe(0)
+  it(
+    'regenerating the migration from schema.ts reproduces the checked-in SQL exactly',
+    () => {
+      // schema.ts is imported by no production module — the runtime applies
+      // the checked-in SQL — so nothing else would catch a hand-edit of the
+      // SQL or an unregenerated schema change, and a wrong 0002 generated
+      // from a drifted snapshot is the expensive failure this guards
+      // (T-260828-07 review, should-fix 2).
+      const here = dirname(fileURLToPath(import.meta.url))
+      const repoRoot = resolve(here, '..', '..', '..')
+      const outDir = makeTmpDir('solo-crm-drizzle-regen-')
+      try {
+        // drizzle-kit treats --schema as a glob, and its globber only
+        // understands forward slashes — a Windows backslash path matches
+        // nothing ("No schema files found").
+        const toPosix = (p: string): string => p.replace(/\\/g, '/')
+        const result = spawnSync(
+          process.execPath,
+          [
+            join(repoRoot, 'node_modules', 'drizzle-kit', 'bin.cjs'),
+            'generate',
+            '--dialect', 'sqlite',
+            '--schema', toPosix(join(here, 'schema.ts')),
+            '--out', toPosix(outDir),
+            '--name', 'init'
+          ],
+          { cwd: repoRoot, encoding: 'utf-8', timeout: 60_000 }
+        )
+        expect(result.error).toBeUndefined()
+        expect(result.status).toBe(0)
 
-      const generated = readdirSync(outDir).filter((f) => f.endsWith('.sql'))
-      expect(generated).toHaveLength(1)
-      // Normalize line endings: git's autocrlf checks the committed file out
-      // with CRLF on Windows while drizzle-kit always emits LF.
-      const normalize = (sql: string): string => sql.replace(/\r\n/g, '\n')
-      const regenerated = normalize(readFileSync(join(outDir, generated[0]), 'utf-8'))
-      const checkedIn = normalize(readFileSync(join(here, 'migrations', '0001_init.sql'), 'utf-8'))
-      expect(regenerated).toBe(checkedIn)
-    } finally {
-      rmSync(outDir, { recursive: true, force: true })
-    }
-  })
+        const generated = readdirSync(outDir).filter((f) => f.endsWith('.sql'))
+        expect(generated).toHaveLength(1)
+        // Normalize line endings: git's autocrlf checks the committed file out
+        // with CRLF on Windows while drizzle-kit always emits LF.
+        const normalize = (sql: string): string => sql.replace(/\r\n/g, '\n')
+        const regenerated = normalize(readFileSync(join(outDir, generated[0]), 'utf-8'))
+        const checkedIn = normalize(readFileSync(join(here, 'migrations', '0001_init.sql'), 'utf-8'))
+        expect(regenerated).toBe(checkedIn)
+      } finally {
+        rmSync(outDir, { recursive: true, force: true })
+      }
+    },
+    // T-260828-47: this spawns a real `drizzle-kit generate` child process,
+    // itself allowed up to 60_000ms (the spawnSync `timeout` above) — an
+    // outer test timeout below that fires first regardless of how the child
+    // is doing, which is exactly the mis-set 5000ms default that made this
+    // file flaky. Measured wall time for this test alone: 5.1-6.4s idle,
+    // 6.3-11.2s with all 8 cores kept busy by a separate CPU-saturating
+    // process (see that task's Acceptance criterion). 65_000ms is the
+    // child's own 60s budget plus headroom for the harness around it, not a
+    // guess: this test now also runs in the serial `runtime-boot-node`
+    // project (vitest.config.ts), so it no longer competes with the rest of
+    // the suite for that CPU either.
+    65_000
+  )
 })
 
 function column(columns: ColumnInfo[], name: string): ColumnInfo | undefined {
