@@ -1,0 +1,196 @@
+import { z } from 'zod'
+
+/**
+ * `settings`' wire contract (ADR-002, ADR-004; T-260828-25) — the declared
+ * key registry every accessor in `electron/main/db/repositories/settings.ts`
+ * is typed against, as PURE zod with no Node imports, matching the discipline
+ * ADR-007 established for `electron/shared/companies.ts` and for the same
+ * reason (this module is typechecked under both `tsconfig.node.json` and
+ * `tsconfig.web.json` — see `ipc-types.ts`'s header on TS6307 — so it may
+ * only use the ES2022 lib both share and other `electron/shared/**` modules —
+ * this module happens not to need any, but the constraint is the same one
+ * `companies.ts` observes).
+ *
+ * `settings` is not an entity with a create/update/delete lifecycle — it is
+ * one row per declared key (ADR-002: keyed by natural identity, no
+ * `created_at`). So instead of a domain type plus two input schemas, this
+ * module exports one thing: `SETTINGS_REGISTRY`, a `key -> { schema,
+ * default }` map. ADR-002 rule 2 states the shape this registry exists to
+ * satisfy: "The repository layer exposes one typed accessor per setting, and
+ * the accessor owns its key, its zod schema and its default. An unknown key
+ * or a value that fails its schema reads as the default rather than
+ * throwing." Rule 3: "Keys are declared in one module" — this one — "a key
+ * composed at a call site is a defect."
+ *
+ * ADR-004's boundary — "the `settings` table may hold only non-secret
+ * configuration" — is enforced here, not by convention: `assertNoSecretKeys`
+ * runs at the bottom of this module, at import time, against every key this
+ * registry declares. A key named or shaped like a credential fails the
+ * moment this module loads, not on the day someone happens to `grep` for it.
+ */
+
+// ---------------------------------------------------------------------------
+// Shared value vocabularies
+// ---------------------------------------------------------------------------
+
+/** The three currencies the workspace identity setting (§6.11) offers. */
+export const CURRENCY_CODES = ['USD', 'EUR', 'GBP'] as const
+export type CurrencyCode = (typeof CURRENCY_CODES)[number]
+
+/** Appearance density (§6.11: "compact density"). */
+export const DENSITY_MODES = ['comfortable', 'compact'] as const
+export type DensityMode = (typeof DENSITY_MODES)[number]
+
+/** §6.13's per-view card/list toggle. */
+export const VIEW_PRESENTATION_MODES = ['card', 'list'] as const
+export type ViewPresentationMode = (typeof VIEW_PRESENTATION_MODES)[number]
+
+/**
+ * The pull-only sources §6.11's "integration toggles" cover. Deliberately
+ * excludes the timelog CSV import (a folder path, not an enable switch in
+ * the mockup) and Notion/Drive (§7: "Pulls Nothing. Links only." — no
+ * adapter, nothing to toggle).
+ */
+export const INTEGRATION_SOURCES = ['stripe', 'googleCalendar', 'gmail'] as const
+export type IntegrationSource = (typeof INTEGRATION_SOURCES)[number]
+
+// ---------------------------------------------------------------------------
+// Registry plumbing
+// ---------------------------------------------------------------------------
+
+export interface SettingSpec<Schema extends z.ZodType = z.ZodType> {
+  readonly schema: Schema
+  readonly default: z.infer<Schema>
+}
+
+/**
+ * Builds one registry entry. A plain object literal would work too, but this
+ * keeps every entry's `default` checked against its own `schema` at the
+ * point of declaration — `spec(z.boolean(), 'nope')` fails to compile —
+ * rather than only at the first `getSetting` call that falls through to it.
+ */
+function spec<Schema extends z.ZodType>(schema: Schema, defaultValue: z.infer<Schema>): SettingSpec<Schema> {
+  return { schema, default: defaultValue }
+}
+
+/**
+ * Every settable key, once. §6.11 and §6.13's requirement text is quoted in
+ * each group's comment so `settings.test.ts` can check coverage against this
+ * file the same way it checks against the requirements doc — by name.
+ */
+export const SETTINGS_REGISTRY = {
+  // "Identity: workspace name, operator, currency, fiscal year start."
+  'workspace.name': spec(z.string(), ''),
+  'workspace.operator': spec(z.string(), ''),
+  'workspace.currency': spec(z.enum(CURRENCY_CODES), 'USD'),
+  // A month number (1-12), not a closed enum of the mockup's three sample
+  // options — the mockup's <select> is a UI convenience, not a domain
+  // constraint, and a fiscal year can start in any month.
+  'workspace.fiscalYearStartMonth': spec(z.int().min(1).max(12), 1),
+
+  // "Default cadence per company kind. New companies inherit; any company
+  // overrides its own." One key per `COMPANY_KINDS` member (companies.ts) —
+  // hand-listed here so each keeps its own literal type and default, with
+  // `settings.test.ts` asserting the set never drifts from `COMPANY_KINDS`.
+  // Defaults match `planning/solo-crm-mockup.html`'s default-cadence card.
+  'cadence.defaultDays.client': spec(z.int().positive(), 7),
+  'cadence.defaultDays.end_client': spec(z.int().positive(), 14),
+  'cadence.defaultDays.prospect': spec(z.int().positive(), 14),
+  'cadence.defaultDays.advisory': spec(z.int().positive(), 21),
+  'cadence.defaultDays.channel': spec(z.int().positive(), 30),
+
+  // "Integration toggles with per-source status. All pull-only." Stripe and
+  // Calendar default on, Gmail off — the mockup's own defaults.
+  'integrations.stripe.enabled': spec(z.boolean(), true),
+  'integrations.googleCalendar.enabled': spec(z.boolean(), true),
+  'integrations.gmail.enabled': spec(z.boolean(), false),
+
+  // "Backup: nightly JSON export toggle and target folder." No default
+  // folder path — a machine-specific path picked by the operator (X-04,
+  // out of this task's scope) has no sensible cross-platform default, and
+  // guessing one risks landing in a sync folder (AGENTS.md).
+  'backup.enabled': spec(z.boolean(), true),
+  'backup.folder': spec(z.string(), ''),
+
+  // "Appearance: interface motion, compact density."
+  'appearance.motion': spec(z.boolean(), true),
+  'appearance.density': spec(z.enum(DENSITY_MODES), 'comfortable'),
+
+  // §6.13: "Companies and People each support card and list presentation...
+  // remembered per view." 'card' is the shared default — §6.13's own
+  // guidance ("cards for under ~20 records") holds for a workspace just
+  // getting started.
+  'view.companies.mode': spec(z.enum(VIEW_PRESENTATION_MODES), 'card'),
+  'view.people.mode': spec(z.enum(VIEW_PRESENTATION_MODES), 'card')
+} as const
+
+export type SettingKey = keyof typeof SETTINGS_REGISTRY
+export const SETTINGS_KEYS = Object.keys(SETTINGS_REGISTRY) as readonly SettingKey[]
+
+export type SettingValue<K extends SettingKey> = z.infer<(typeof SETTINGS_REGISTRY)[K]['schema']>
+
+/** Every declared key with its current (default, until overridden) value — `getAllSettings`'s return shape. */
+export type SettingsSnapshot = { readonly [K in SettingKey]: SettingValue<K> }
+
+// ---------------------------------------------------------------------------
+// ADR-004's credential guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Whole words a declared key may not contain, checked per `.`/camelCase
+ * segment so `cadence.defaultDays.client` (segments: cadence, default, days,
+ * client) does not collide with `credential` and a hypothetical
+ * `workspace.monkeyName` would not collide with `key`. This is the
+ * enforcement side of ADR-004's rule: "The `settings` table may hold only
+ * non-secret configuration... if this value would be dangerous sitting in a
+ * plaintext JSON file in the user's Drive folder, it is a secret and it does
+ * not go in the database." A key named `stripe.apiKey` or `gmail.token`
+ * reads exactly as dangerous as the value it would hold, which is why this
+ * checks the *name*, not just the runtime value — the leak this guards
+ * against is the nightly JSON export (§8) and the §6.12 query console, both
+ * of which show whatever is in the row whether or not anything downstream
+ * ever validates it as "safe."
+ */
+const FORBIDDEN_KEY_WORDS = new Set([
+  'key',
+  'apikey',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'clientsecret',
+  'secret',
+  'password',
+  'passphrase',
+  'credential',
+  'credentials',
+  'privatekey'
+])
+
+function keyWords(key: string): readonly string[] {
+  return key
+    .split(/[._]/)
+    .flatMap((segment) => segment.split(/(?=[A-Z])/))
+    .map((word) => word.toLowerCase())
+    .filter((word) => word.length > 0)
+}
+
+/**
+ * Throws if any of `keys` is named or shaped like a credential field.
+ * Exported (rather than only run internally) so `settings.test.ts` can also
+ * prove the check actually catches something, not just that the real
+ * registry happens to pass it.
+ */
+export function assertNoSecretKeys(keys: readonly string[] = SETTINGS_KEYS): void {
+  const offenders = keys.filter((key) => keyWords(key).some((word) => FORBIDDEN_KEY_WORDS.has(word)))
+  if (offenders.length > 0) {
+    throw new Error(
+      `settings registry may not declare credential-shaped keys (ADR-004): ${offenders.join(', ')}. ` +
+        'Credentials live in Electron safeStorage, never in the settings table.'
+    )
+  }
+}
+
+// Runs at import time: a future key that reads as a credential fails the
+// build/test run the moment this module is loaded, not only when someone
+// remembers to run the dedicated test.
+assertNoSecretKeys()
