@@ -1,0 +1,30 @@
+import migration0001Sql from './0001_init.sql?raw'
+
+/**
+ * The ordered, explicit manifest of every migration `migrate.ts` knows how
+ * to apply. Deliberately a hand-maintained list rather than a runtime
+ * directory scan (`readdirSync` against `electron/main/db/migrations`):
+ * electron-vite bundles `electron/main/**` into the single file
+ * `out/main/index.js` (`package.json`'s `"main"`), so a path resolved at
+ * runtime relative to the compiled output would not find sibling `.sql`
+ * files that were never copied into `out/`. Importing each file with
+ * Vite's `?raw` suffix (see `sql-raw.d.ts`) bundles its text directly into
+ * the JS output instead, so there is nothing to copy and nothing that can
+ * go missing from a packaged build.
+ *
+ * The cost is explicitness: a future migration (0002, ...) needs a line
+ * here as well as the checked-in `.sql` file drizzle-kit generates. That
+ * matches this project's existing preference for a single, greppable place
+ * that says what exists (ADR-002 rule 3, about `settings` keys) over a
+ * directory listing standing in for one.
+ */
+export interface MigrationDefinition {
+  /** The migration's number, and its schema version once applied. */
+  readonly version: number
+  /** The migration's file stem, recorded in `schema_migrations.name`. */
+  readonly name: string
+  /** The migration's full SQL text, applied verbatim inside one transaction. */
+  readonly sql: string
+}
+
+export const MIGRATIONS: readonly MigrationDefinition[] = [{ version: 1, name: '0001_init', sql: migration0001Sql }]

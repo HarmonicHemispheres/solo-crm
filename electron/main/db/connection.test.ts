@@ -19,6 +19,8 @@ import electronPath from 'electron'
 import ts from 'typescript'
 import { afterEach, describe, expect, it } from 'vitest'
 import { closeDatabase, getDatabase, openDatabase, resolveDatabasePath } from './connection'
+import { getSchemaVersion } from './migrate'
+import { MIGRATIONS, type MigrationDefinition } from './migrations'
 import { SYNC_FOLDER_GUARD_OVERRIDE_ENV, SyncFolderGuardError } from './sync-folder-guard'
 
 /**
@@ -285,6 +287,49 @@ describe('openDatabase and the sync-folder guard (T-260828-06)', () => {
   })
 })
 
+describe('openDatabase and the migration runner (T-260828-07)', () => {
+  it('applies migration 0001 as part of opening — the domain schema and schema_migrations both exist afterward', () => {
+    const tmpDir = makeTmpDir('solo-crm-connection-migrate-')
+    try {
+      openDatabase({ userDataDir: tmpDir })
+      const db = getDatabase()
+
+      const companiesTable = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'companies'")
+        .get()
+      expect(companiesTable).toBeDefined()
+      expect(getSchemaVersion(db)).toEqual({ version: 1, lastMigrationAt: expect.any(String) })
+    } finally {
+      closeDatabase()
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('a throwing migration leaves openDatabase() no better than never having been called — no dangling handle, no file left mid-migration for a plain retry to trip over', () => {
+    const tmpDir = makeTmpDir('solo-crm-connection-migrate-broken-')
+    const breakingMigrations: readonly MigrationDefinition[] = [
+      ...MIGRATIONS,
+      { version: 2, name: 'test_broken', sql: 'THIS IS NOT VALID SQL;' }
+    ]
+    try {
+      expect(() => openDatabase({ userDataDir: tmpDir, migrations: breakingMigrations })).toThrow()
+
+      // No dangling module-level handle: getDatabase() still reports "not
+      // open", exactly as if openDatabase() had never been called.
+      expect(() => getDatabase()).toThrow(/before openDatabase/)
+
+      // A plain retry (the real migration set, no override) succeeds against
+      // the same directory rather than hitting a stale "already open" guard
+      // or a half-migrated file it cannot recover from.
+      expect(() => openDatabase({ userDataDir: tmpDir })).not.toThrow()
+      expect(getSchemaVersion(getDatabase()).version).toBe(1)
+    } finally {
+      closeDatabase()
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('single owner of the SQLite connection', () => {
   it('no module under electron/ other than db/connection.ts constructs a Database directly', () => {
     // Assembled from parts rather than written as one contiguous literal so
@@ -316,66 +361,116 @@ describe('single owner of the SQLite connection', () => {
   })
 })
 
-function transpileToCommonJs(sourceFileName: string): string {
-  const source = readFileSync(join(here, sourceFileName), 'utf-8')
+/**
+ * Vite's `?raw` suffix (used by `electron/main/db/migrations/index.ts` to
+ * bundle `0001_init.sql`'s text — see that file's own header comment) is a
+ * bundler feature `ts.transpileModule` below knows nothing about. Inlining
+ * it here, on the *source* text before transpilation, turns one plain
+ * import line into one plain `const`, both valid TS — simpler and more
+ * robust than pattern-matching whatever esModuleInterop's CJS output would
+ * otherwise emit for an import specifier it cannot resolve.
+ */
+function inlineRawSqlImports(source: string, sourceDir: string): string {
+  return source.replace(
+    /import\s+(\w+)\s+from\s+(['"])(\.\/[^'"]+\.sql)\?raw\2/g,
+    (_match, bindingName: string, _quote: string, relativeSqlPath: string) => {
+      const sqlContent = readFileSync(join(sourceDir, relativeSqlPath), 'utf-8')
+      return `const ${bindingName} = ${JSON.stringify(sqlContent)}`
+    }
+  )
+}
+
+function transpileSourceToCommonJs(source: string, fileName: string): string {
   const { outputText } = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
       esModuleInterop: true
     },
-    fileName: sourceFileName
+    fileName
   })
   return outputText
 }
 
-const GUARD_REQUIRE_SPECIFIER = /require\((['"])\.\/sync-folder-guard\1\)/
+/** Resolves a relative import specifier to the `.ts` source file it names, Node-style (a bare file, or a directory's `index.ts`). */
+function resolveLocalTsFile(fromDir: string, specifier: string): string {
+  const direct = `${join(fromDir, specifier)}.ts`
+  if (existsSync(direct)) return direct
+  const asIndex = join(fromDir, specifier, 'index.ts')
+  if (existsSync(asIndex)) return asIndex
+  throw new Error(
+    `connection.test.ts's compile harness cannot resolve local import "${specifier}" from ${fromDir} — ` +
+      'the source or the transpiler output shape must have changed; update this harness to match.'
+  )
+}
 
 /**
- * Transpiles connection.ts — and, since T-260828-06, its one local
- * dependency sync-folder-guard.ts — to CommonJS and writes the results
- * beside the source files (not the OS tmpdir the other harness files below
- * use) so that a spawned child process's `require('better-sqlite3')` /
- * `require('electron')` resolve through the ordinary node_modules walk from
- * this directory, and so the spawned processes below run the real modules
- * under test rather than a hand-reimplementation of their logic. `typescript`
- * is already a project devDependency and this same transpile API
+ * Recursively transpiles `entrySourcePath` — connection.ts — and every
+ * local (relative-path) module it transitively `import`s, to CommonJS,
+ * writing each `.cjs` sibling beside its own `.ts` source (not the OS
+ * tmpdir the other harness code below uses) so that a spawned child
+ * process's `require('better-sqlite3')` / `require('electron')` / `require
+ * ('zod')` resolve through the ordinary node_modules walk from each file's
+ * real location, and so the spawned processes run the real modules under
+ * test rather than a hand-reimplementation of their logic. `typescript` is
+ * already a project devDependency and this same transpile API
  * (`ts.transpileModule`) is already used by toolchain.test.ts for a
  * different purpose.
  *
- * connection.ts's compiled output still contains a bare
- * `require("./sync-folder-guard")` (transpileModule rewrites the `import`
- * keyword but not the module specifier). Two problems with resolving that
+ * Every compiled file's own output still contains a bare
+ * `require("./whatever")` (transpileModule rewrites the `import` keyword
+ * but not the module specifier). Two problems with resolving that
  * literally: Node's default extensionless `require` resolution tries
  * `.js`/`.json`/`.node`, never `.cjs`; and this project's package.json sets
  * `"type": "module"`, so a same-named `.js` file would be loaded as an ES
  * module and crash on the transpiled output's `exports.x = ...` (verified by
- * hand while building this). So the guard is written out as `.cjs` — always
- * unambiguous CommonJS to Node regardless of `"type"` — and the specifier in
- * connection's own compiled output is rewritten to name that `.cjs` path
- * explicitly, sidestepping extension-guessing altogether. `.gitignore`
- * backstops both generated file names in case a run is interrupted before
- * its `finally` block's cleanup runs.
+ * hand while building this). So every dependency is written out as `.cjs` —
+ * always unambiguous CommonJS to Node regardless of `"type"` — and every
+ * local require in a compiled file's output is rewritten to name the
+ * matching `.cjs` path explicitly, sidestepping extension-guessing
+ * altogether. Each generated filename carries a run-specific suffix so a
+ * shared dependency (`electron/shared/format.ts`, pulled in by both
+ * `migrate.ts` and, indirectly, this file's own imports) compiled by two
+ * overlapping harness runs cannot collide; `.gitignore` backstops every
+ * generated name in case a run is interrupted before its `finally` block's
+ * cleanup runs.
  */
-function compileConnectionModule(): { connectionPath: string; guardPath: string } {
-  const guardPath = join(here, 'sync-folder-guard.cjs')
-  writeFileSync(guardPath, transpileToCommonJs('sync-folder-guard.ts'), 'utf-8')
+function compileConnectionModule(): { connectionPath: string; generatedPaths: string[] } {
+  const runId = `${process.pid}.${Date.now()}`
+  const compiledFor = new Map<string, string>() // source .ts absolute path -> written .cjs absolute path
+  const generatedPaths: string[] = []
 
-  const rawConnectionOutput = transpileToCommonJs('connection.ts')
-  if (!GUARD_REQUIRE_SPECIFIER.test(rawConnectionOutput)) {
-    throw new Error(
-      "expected connection.ts's compiled output to require('./sync-folder-guard') — " +
-        'the source or the transpiler output shape must have changed; update this harness to match.'
+  function compile(sourcePath: string): string {
+    const already = compiledFor.get(sourcePath)
+    if (already) return already
+
+    const sourceDir = dirname(sourcePath)
+    const cjsPath = sourcePath.replace(/\.ts$/, `.compiled.${runId}.cjs`)
+    // Reserved before recursing so a (currently nonexistent, but not worth
+    // assuming away) dependency cycle terminates instead of looping.
+    compiledFor.set(sourcePath, cjsPath)
+
+    const source = inlineRawSqlImports(readFileSync(sourcePath, 'utf-8'), sourceDir)
+    const rawOutput = transpileSourceToCommonJs(source, sourcePath)
+
+    const output = rawOutput.replace(
+      /require\((['"])(\.\.?\/[^'"]+)\1\)/g,
+      (_match, _quote: string, specifier: string) => {
+        const depSourcePath = resolveLocalTsFile(sourceDir, specifier)
+        const depCjsPath = compile(depSourcePath)
+        const relativeSpecifier = relative(sourceDir, depCjsPath).split(sep).join('/')
+        const normalised = relativeSpecifier.startsWith('.') ? relativeSpecifier : `./${relativeSpecifier}`
+        return `require(${JSON.stringify(normalised)})`
+      }
     )
-  }
-  const connectionOutput = rawConnectionOutput.replace(
-    GUARD_REQUIRE_SPECIFIER,
-    `require(${JSON.stringify('./sync-folder-guard.cjs')})`
-  )
-  const connectionPath = join(here, `.connection.compiled.${process.pid}.${Date.now()}.cjs`)
-  writeFileSync(connectionPath, connectionOutput, 'utf-8')
 
-  return { connectionPath, guardPath }
+    writeFileSync(cjsPath, output, 'utf-8')
+    generatedPaths.push(cjsPath)
+    return cjsPath
+  }
+
+  const connectionPath = compile(join(here, 'connection.ts'))
+  return { connectionPath, generatedPaths }
 }
 
 describe('a process killed mid-transaction', () => {
@@ -383,7 +478,7 @@ describe('a process killed mid-transaction', () => {
     'leaves a database that reopens cleanly, passes integrity_check, and has the uncommitted write rolled back',
     async () => {
       const tmpDir = makeTmpDir('solo-crm-connection-kill-')
-      const { connectionPath, guardPath } = compileConnectionModule()
+      const { connectionPath, generatedPaths } = compileConnectionModule()
       const writerScript = join(tmpDir, 'writer.cjs')
 
       // Inserts one committed sentinel row, then opens an explicit
@@ -452,8 +547,9 @@ describe('a process killed mid-transaction', () => {
         // reopened connection has to close before the directory can be
         // removed.
         closeDatabase()
-        rmSync(connectionPath, { force: true })
-        rmSync(guardPath, { force: true })
+        for (const generatedPath of generatedPaths) {
+          rmSync(generatedPath, { force: true })
+        }
         rmSync(tmpDir, { recursive: true, force: true })
       }
     },
@@ -467,7 +563,7 @@ describe("the default path, resolved against Electron's real app.getPath('userDa
     () => {
       const electronBinary = electronPath as unknown as string
       const tmpUserData = makeTmpDir('solo-crm-connection-userdata-')
-      const { connectionPath, guardPath } = compileConnectionModule()
+      const { connectionPath, generatedPaths } = compileConnectionModule()
       const resultPath = join(tmpUserData, 'result.json')
       const harnessPath = join(tmpUserData, 'harness.cjs')
 
@@ -517,8 +613,9 @@ describe("the default path, resolved against Electron's real app.getPath('userDa
             `stdout:\n${run.stdout}\nstderr:\n${run.stderr}`
         )
       } finally {
-        rmSync(connectionPath, { force: true })
-        rmSync(guardPath, { force: true })
+        for (const generatedPath of generatedPaths) {
+          rmSync(generatedPath, { force: true })
+        }
         rmSync(tmpUserData, { recursive: true, force: true })
       }
 

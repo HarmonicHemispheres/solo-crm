@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { app } from 'electron'
 import Database from 'better-sqlite3'
+import { runMigrations } from './migrate'
+import type { MigrationDefinition } from './migrations'
 import {
   findSyncFolderMatch,
   isSyncFolderGuardOverridden,
@@ -41,6 +43,16 @@ export interface OpenDatabaseOptions {
    * unchecked).
    */
   userDataDir?: string
+  /**
+   * Overrides the migration set `openDatabase` applies. Tests only, same
+   * discipline as `userDataDir` above: production never passes this, so a
+   * test's synthetic (including deliberately broken) migrations can never
+   * reach a real boot. Exists so the "a throwing migration leaves
+   * `openDatabase` no worse than it started" behaviour below can be proven
+   * through the real call path rather than only against `runMigrations` in
+   * isolation.
+   */
+  migrations?: readonly MigrationDefinition[]
 }
 
 /**
@@ -100,6 +112,28 @@ export function openDatabase(options: OpenDatabaseOptions = {}): Database.Databa
 
   applyPragmas(db)
   handle = db
+
+  // T-260828-07: runs after the handle is set, reached through
+  // getDatabase() rather than the local `db` — the seam T-260828-05's
+  // outcome calls out for this task. A migration failure is treated like
+  // any other failure to open: the handle is put back to null and the raw
+  // connection is closed before rethrowing, so a caller sees exactly the
+  // same "not open" state as if openDatabase() had never been called
+  // (getDatabase() throws, a retried openDatabase() does not hit the
+  // "already open" guard above) rather than a half-open connection nothing
+  // ever closes. The migration itself is already safe on its own terms —
+  // runMigrations applies each migration in its own transaction, so a
+  // throwing migration leaves the schema at the previous version with no
+  // partial application — this is the connection-level half of the same
+  // guarantee.
+  try {
+    runMigrations(getDatabase(), options.migrations)
+  } catch (error) {
+    handle = null
+    db.close()
+    throw error
+  }
+
   return db
 }
 

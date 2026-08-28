@@ -33,6 +33,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^5.2.0",
+    "drizzle-kit": "^0.31.10",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
@@ -50,6 +51,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.2",
     "zod": "^4.4.3"
   }
 }
