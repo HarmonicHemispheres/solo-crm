@@ -11,4 +11,9 @@ dist/
 # cleans its own copies up, this is only a backstop against a copy
 # surviving an interrupted run.
 electron/**/*.compiled.*.cjs
+# bridge.test.ts's esbuild bundle of preload/index.ts for the real-Electron
+# sandboxed-preload proof (T-260828-09/bundle-preload.ts) — same backstop
+# reasoning as the entry above, different naming since it's a genuine
+# single-file bundle, not a per-file transpile.
+electron/**/*.bundled.*.cjs
 .claude/worktrees/

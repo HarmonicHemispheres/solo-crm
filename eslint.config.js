@@ -5,8 +5,15 @@ import { reactRefresh } from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import css from '@eslint/css'
 import { noLiteralColourJs, noLiteralColourCss } from './eslint-rules/no-literal-colour.js'
+import { noRendererNodeAccess } from './eslint-rules/no-renderer-node-access.js'
 
-const local = { rules: { 'no-literal-colour': noLiteralColourJs, 'no-literal-colour-css': noLiteralColourCss } }
+const local = {
+  rules: {
+    'no-literal-colour': noLiteralColourJs,
+    'no-literal-colour-css': noLiteralColourCss,
+    'no-renderer-node-access': noRendererNodeAccess
+  }
+}
 
 // The JS/TS-oriented shareable configs below (js.configs.recommended,
 // tseslint's recommended set) don't scope themselves to a `files` glob —
@@ -36,6 +43,15 @@ export default tseslint.config(
   // Renderer: browser globals, React rules, no Node globals.
   {
     files: ['electron/renderer/**/*.{ts,tsx}'],
+    // tokens.test.ts and base.test.ts read the checked-in CSS files off
+    // disk to diff them against tokens.css/base.css (T-260828-11) — Node
+    // test tooling that happens to live beside the styles it verifies, not
+    // renderer application code. tsconfig.node.json/tsconfig.web.json and
+    // vitest.config.ts already carve out this exact pair the same way (they
+    // typecheck under tsconfig.node.json and run in vitest's 'node'
+    // project, not jsdom); this mirrors it for no-renderer-node-access
+    // below rather than letting the two conventions disagree.
+    ignores: ['electron/renderer/styles/tokens.test.ts', 'electron/renderer/styles/base.test.ts'],
     languageOptions: {
       globals: globals.browser
     },
@@ -49,7 +65,10 @@ export default tseslint.config(
       ...reactRefresh.configs.vite().rules,
       // T-260828-11: colour lives in tokens.css, not in a component file —
       // see eslint-rules/no-literal-colour.js.
-      'local/no-literal-colour': 'error'
+      'local/no-literal-colour': 'error',
+      // T-260828-09: no fs/path/child_process/database symbol reachable
+      // from renderer code — see eslint-rules/no-renderer-node-access.js.
+      'local/no-renderer-node-access': 'error'
     }
   },
   // Renderer stylesheets: same no-literal-colour rule, on the CSS grammar

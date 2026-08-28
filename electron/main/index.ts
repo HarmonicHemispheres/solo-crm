@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import { closeDatabase, openDatabase } from './db/connection'
+import { registerIpcHandlers } from './ipc'
 import { SECURE_WEB_PREFERENCES, installContentSecurityPolicy, registerNavigationGuards } from './security'
 
 /** The dev server's own origin in development, or `null` in a packaged build. */
@@ -70,6 +71,12 @@ app
     // call site. T-260828-06's sync-folder guard and T-260828-07's migration
     // runner both land inside `openDatabase`/immediately after it, not here.
     openDatabase()
+
+    // T-260828-09: registered after openDatabase() — db:schemaVersion's
+    // handler calls getDatabase(), which throws until a connection is open
+    // — and before createWindow(), so every channel is live before the
+    // renderer's preload could plausibly invoke one.
+    registerIpcHandlers()
 
     createWindow()
 
