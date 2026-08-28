@@ -148,9 +148,10 @@ export function installContentSecurityPolicy(session: CspSession, devServerOrigi
  *
  * `file:` URLs don't carry a comparable origin the way `http(s)://` ones do
  * (Chromium treats each as its own opaque origin), so when the app itself
- * was loaded from `file:`, any `file:` target counts as internal — nothing
- * in this app renders arbitrary local files, so nothing else would ever
- * present one.
+ * was loaded from `file:`, a local `file:` target counts as internal. The
+ * host must be empty: `file://evil.example/share/x.html` is a remote UNC/SMB
+ * fetch on Windows (NTLM credential leak, remote HTML in the app window),
+ * not a local file.
  */
 export function isInternalUrl(url: string, appUrl: string): boolean {
   let target: URL
@@ -163,10 +164,27 @@ export function isInternalUrl(url: string, appUrl: string): boolean {
   }
 
   if (app.protocol === 'file:') {
-    return target.protocol === 'file:'
+    return target.protocol === 'file:' && target.host === ''
   }
 
   return target.origin === app.origin
+}
+
+/**
+ * Schemes the app will hand to the OS shell. Anything else — `smb:`,
+ * `ms-msdt:`, and in dev `file:` — reaches the shell's own handler and can
+ * execute or leak credentials. URLs arrive here from imported third-party
+ * data (§6.10), so hostile values are expected input, not an edge case; an
+ * unlisted scheme is dropped, never opened.
+ */
+const OPENABLE_EXTERNAL_SCHEMES = new Set(['http:', 'https:', 'mailto:'])
+
+export function isOpenableExternalUrl(url: string): boolean {
+  try {
+    return OPENABLE_EXTERNAL_SCHEMES.has(new URL(url).protocol)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -199,12 +217,14 @@ export function registerNavigationGuards(
   webContents.on('will-navigate', (event) => {
     if (!isInternalUrl(event.url, appUrl)) {
       event.preventDefault()
-      openExternal(event.url)
+      if (isOpenableExternalUrl(event.url)) {
+        openExternal(event.url)
+      }
     }
   })
 
   webContents.setWindowOpenHandler(({ url }) => {
-    if (!isInternalUrl(url, appUrl)) {
+    if (!isInternalUrl(url, appUrl) && isOpenableExternalUrl(url)) {
       openExternal(url)
     }
     return { action: 'deny' }

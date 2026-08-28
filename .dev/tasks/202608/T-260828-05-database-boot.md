@@ -1,7 +1,7 @@
 ---
 id: T-260828-05
 title: Open the SQLite database in main with WAL, foreign keys and a busy timeout
-status: open
+status: in-progress
 category: data
 plan_ref: P0-03
 created: 2026-08-28

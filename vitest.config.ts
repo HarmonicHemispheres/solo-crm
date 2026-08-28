@@ -41,8 +41,13 @@ export default defineConfig({
           include: ['**/*.test.{ts,tsx}'],
           exclude: [
             '**/node_modules/**',
+            // Agent worktrees carry whole checkouts, tests included — the
+            // normal state mid run-tasks. Collecting them runs foreign tests
+            // in the wrong environment against stale code.
+            '.claude/**',
             'electron/main/**/*.test.ts',
             'electron/preload/**/*.test.ts',
+            'electron/shared/**/*.test.ts',
             'electron/renderer/**/*.test.ts',
             'electron/renderer/**/*.test.tsx'
           ],

@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import {
   SECURE_WEB_PREFERENCES,
   buildContentSecurityPolicy,
   installContentSecurityPolicy,
   isInternalUrl,
+  isOpenableExternalUrl,
   registerNavigationGuards
 } from './security'
 
@@ -93,9 +95,14 @@ describe('isInternalUrl', () => {
     expect(isInternalUrl('http://localhost:9999/', 'http://localhost:5173/')).toBe(false)
   })
 
-  it('treats any file: URL as internal when the app itself loaded from file:', () => {
+  it('treats a local file: URL as internal when the app itself loaded from file:', () => {
     const appUrl = 'file:///C:/app/out/renderer/index.html'
     expect(isInternalUrl('file:///C:/app/out/renderer/other.html', appUrl)).toBe(true)
+  })
+
+  it('treats a file: URL with a remote host (UNC/SMB) as external even from a file: app', () => {
+    const appUrl = 'file:///C:/app/out/renderer/index.html'
+    expect(isInternalUrl('file://evil.example/share/x.html', appUrl)).toBe(false)
   })
 
   it('treats a remote URL as external when the app loaded from file:', () => {
@@ -175,5 +182,50 @@ describe('registerNavigationGuards', () => {
 
     expect(response).toEqual({ action: 'deny' })
     expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  it('drops an external URL whose scheme the shell could execute, opening nothing', () => {
+    const webContents = fakeWebContents()
+    const openExternal = vi.fn()
+    registerNavigationGuards(webContents, 'http://localhost:5173/', openExternal)
+
+    const preventDefault = vi.fn()
+    webContents.emitWillNavigate({ url: 'ms-msdt:/id PCWDiagnostic', preventDefault })
+    const response = webContents.openWindow('file:///C:/temp/evil.bat')
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(response).toEqual({ action: 'deny' })
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+})
+
+describe('isOpenableExternalUrl', () => {
+  it('allows only http, https and mailto through to the OS shell', () => {
+    expect(isOpenableExternalUrl('https://client-example.com')).toBe(true)
+    expect(isOpenableExternalUrl('http://client-example.com')).toBe(true)
+    expect(isOpenableExternalUrl('mailto:kim@client-example.com')).toBe(true)
+    expect(isOpenableExternalUrl('smb://evil.example/share')).toBe(false)
+    expect(isOpenableExternalUrl('file:///C:/temp/evil.bat')).toBe(false)
+    expect(isOpenableExternalUrl('not a url')).toBe(false)
+  })
+})
+
+describe('main window wiring', () => {
+  // security.test.ts can prove SECURE_WEB_PREFERENCES is right, but the flip
+  // that would actually happen in practice is an override next to the spread
+  // in index.ts — which no runtime test here sees, since renderer-globals
+  // boots the constant, not the app's own window config. Assert the source.
+  const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8')
+  const code = source
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n')
+
+  it('spreads SECURE_WEB_PREFERENCES into the window webPreferences', () => {
+    expect(code).toMatch(/\.\.\.SECURE_WEB_PREFERENCES/)
+  })
+
+  it('never overrides a security flag beside the spread', () => {
+    expect(code).not.toMatch(/\b(contextIsolation|nodeIntegration|sandbox|webSecurity)\s*:/)
   })
 })

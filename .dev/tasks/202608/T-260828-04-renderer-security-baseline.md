@@ -1,11 +1,11 @@
 ---
 id: T-260828-04
 title: Seal the renderer — contextIsolation, sandbox, CSP, navigation guards
-status: in-progress
+status: done
 category: ipc
 plan_ref: P0-02
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -77,4 +77,44 @@ security gate (P1-19).
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in run R-260828-01. `electron/main/security.ts` owns the
+baseline: `SECURE_WEB_PREFERENCES` (contextIsolation, sandbox, nodeIntegration,
+webSecurity — all explicit), CSP installed as a response header via
+`onHeadersReceived` (covers both dev http and packaged `file://`; a `<meta>`
+tag could not vary dev/prod), navigation guards, plus real-Electron boot tests
+for the renderer globals and CSP enforcement — both proven failable.
+
+**What the preload may use under `sandbox: true`** (T-260828-09 builds on
+this): `contextBridge.exposeInMainWorld`, `ipcRenderer`, the trimmed `process`
+(no `stdout`/`stderr`), `console`, and web APIs. No Node built-ins, no
+`node_modules` resolution at runtime — anything imported must be bundled into
+the CJS preload (`out/preload/index.cjs`).
+
+**The contextIsolation acceptance step, corrected by evidence:** with
+`sandbox: true` pinned, flipping `contextIsolation` alone cannot leak Node
+globals — Electron 44 never loads Node in the renderer at all. The empirical
+truth table (verified independently by builder and reviewer): only
+`sandbox: false` + `nodeIntegration: true` + `contextIsolation: false` leaks.
+The globals test was proven failable via that combination instead, and a
+source-text test now pins `index.ts` to the spread of `SECURE_WEB_PREFERENCES`
+with no flag overridden beside it.
+
+Review (combined code-review + security-review): 1 blocking + 4 should-fix,
+all applied at merge — vitest catch-all no longer collects `.claude/**` agent
+worktrees (was breaking `npm run test` on main whenever a worktree existed)
+nor double-collects shared tests; `isInternalUrl` rejects `file://` URLs with
+a remote host (UNC/SMB fetch → NTLM leak); `shell.openExternal` is gated by an
+http/https/mailto allowlist (`ms-msdt:`, `smb:`, `file:` are dropped, since
+§6.10 makes hostile URLs expected input). Verify after fixes: typecheck, lint,
+68/68 tests, build — all green (one transient Electron-boot flake observed
+under load, passed clean on re-run).
+
+Follow-ups recorded, not blocking:
+- **P1-19 (favicons):** `onHeadersReceived` keeps one listener per session —
+  a second `webRequest` listener would silently replace the CSP. Nothing
+  enforces this yet; the favicon fetcher must use a separate session or
+  re-install the CSP.
+- `webviewTag` / `nodeIntegrationInSubFrames` left to Electron defaults;
+  could be added to `SECURE_WEB_PREFERENCES` for full explicitness.
+- `devServerUrl()` uses `??` while the load path uses truthiness — an empty
+  `ELECTRON_RENDERER_URL` would misroute in-app navigation.
