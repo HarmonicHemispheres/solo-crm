@@ -1,7 +1,7 @@
 ---
 id: T-260828-03
 title: Stand up the electron-vite + React + TypeScript toolchain
-status: open
+status: in-progress
 category: build
 plan_ref: P0-01
 created: 2026-08-28

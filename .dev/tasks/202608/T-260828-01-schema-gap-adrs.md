@@ -1,7 +1,7 @@
 ---
 id: T-260828-01
 title: Settle the schema gaps G1–G8 and record the binding ones as ADRs
-status: open
+status: in-progress
 category: docs
 plan_ref: D-01
 created: 2026-08-28
