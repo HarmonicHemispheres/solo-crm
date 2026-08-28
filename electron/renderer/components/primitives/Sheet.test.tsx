@@ -28,6 +28,17 @@ describe('Sheet', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('closeOnEscape={false} leaves Escape to whoever owns it centrally — the built-in listener is not registered', () => {
+    const onClose = vi.fn()
+    render(
+      <Sheet open onClose={onClose} closeOnEscape={false} title="Create" aria-label="Create" footer={<button>Save</button>}>
+        <div>body</div>
+      </Sheet>
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('closes on a scrim click but not a click inside the sheet', () => {
     const onClose = vi.fn()
     const { getByRole, container } = renderSheet(true, onClose)

@@ -1,0 +1,159 @@
+/* .rail, .brand, .navgroup, .nav, .rail-foot, .dbchip — planning/solo-crm-mockup.html */
+.rail {
+  width: var(--rail);
+  flex: 0 0 var(--rail);
+  background: var(--ink);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 40;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 19px 17px 16px;
+}
+
+.brand .mark {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  /* rgba(91,164,164,.22) in the mockup is --verdigris at 22% alpha. */
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--verdigris) 22%, transparent));
+}
+
+.wordmark {
+  width: 104px;
+  fill: currentColor;
+  color: var(--papyrus);
+  display: block;
+}
+
+.rail-app {
+  padding: 0 17px 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.rail-app .name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--verdigris);
+}
+
+.rail-app .ver {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+.navgroup {
+  padding: 8px 11px 3px;
+}
+
+.navgroup .lbl {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 6px 7px;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-9);
+  color: var(--mute);
+  border: 1px solid transparent;
+  background: none;
+  width: 100%;
+  text-align: left;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.nav:hover {
+  background: var(--surface-2);
+  color: var(--papyrus);
+}
+
+.nav.on {
+  background: var(--surface-2);
+  color: var(--papyrus);
+  border-color: var(--border-bright);
+}
+
+.nav .ic {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .7;
+}
+
+.nav.on .ic {
+  stroke: var(--verdigris);
+  opacity: 1;
+}
+
+.nav .count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+.rail-foot {
+  margin-top: auto;
+  padding: 13px 17px;
+  border-top: 1px solid var(--border);
+}
+
+.dbchip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+/* The mockup's dbchip button carries `style="background:none;border:0;
+   padding:0;width:100%"` inline — a class instead of an inline style, same
+   effect, plus the full-width row acting as one click target. */
+.dbchip-link {
+  width: 100%;
+}
+
+.dbchip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--green);
+}
+
+@media (max-width: 900px) {
+  .rail {
+    position: fixed;
+    left: -250px;
+    transition: left var(--motion-rail);
+  }
+
+  .rail.open {
+    left: 0;
+  }
+}

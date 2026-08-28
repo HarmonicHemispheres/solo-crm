@@ -1,0 +1,76 @@
+/* .topbar, .crumb, .searchbtn, .menutoggle — planning/solo-crm-mockup.html */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 26px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in srgb, var(--obsidian) 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.menutoggle {
+  display: none;
+}
+
+.crumb {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.searchbtn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+  padding: 7px 11px;
+  color: var(--slate);
+  width: clamp(180px, 26vw, 380px);
+}
+
+.searchbtn:hover {
+  border-color: var(--border-bright);
+  color: var(--papyrus);
+}
+
+.searchbtn .kbd {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-4);
+  padding: 1px 5px;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    padding: 11px 14px;
+  }
+
+  .menutoggle {
+    display: grid;
+  }
+
+  .searchbtn {
+    width: auto;
+    flex: 1;
+  }
+
+  .searchbtn .lbl {
+    display: none;
+  }
+
+  .crumb {
+    display: none;
+  }
+}

@@ -1,0 +1,59 @@
+/*
+ * .btn / .btn-prim / .btn-ghost — planning/solo-crm-mockup.html.
+ *
+ * T-260828-11 deliberately shipped no Button primitive (it wasn't in that
+ * task's closed list, and its own outcome flags this as a gap the first
+ * consumer needs a scope for — see EmptyState.tsx's comment). The shell is
+ * that first consumer: the topbar's "New" button and the placeholder sheet
+ * footers this task adds both need `.btn`. Rather than inventing a
+ * `Button.tsx` outside this task's Touches, these are the mockup's own
+ * classes, imported by every shell file that needs a button
+ * (Topbar.tsx, LayerManager.tsx) — a real Button primitive can absorb this
+ * file wholesale later without changing any class name it renders.
+ */
+.btn {
+  border-radius: var(--radius-9);
+  padding: 8px 13px;
+  font-weight: 600;
+  font-size: 13px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  transition: background var(--motion-hover), border-color var(--motion-hover);
+}
+
+.btn-prim {
+  background: var(--verdigris);
+  color: var(--obsidian);
+}
+
+.btn-prim:hover {
+  background: var(--verdigris-dim);
+}
+
+.btn-ghost {
+  background: var(--surface-2);
+  color: var(--papyrus);
+  border-color: var(--border-bright);
+}
+
+.btn-ghost:hover {
+  background: var(--surface-3);
+}
+
+.btn:disabled {
+  opacity: .5;
+  cursor: default;
+  pointer-events: none;
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}

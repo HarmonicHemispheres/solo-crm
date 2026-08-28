@@ -68,6 +68,7 @@
   --motion-toast: .2s;                           /* .toast opacity/transform */
   --motion-grow: .6s;                            /* .decay .fill grow */
   --motion-ring: .8s;                            /* .ring circle stroke-dashoffset */
+  --motion-rail: .2s;                            /* .rail off-canvas slide (900px, T-260828-12) */
   --ease-grow: cubic-bezier(.2, .8, .3, 1);       /* .decay .fill, .ring circle, panel fadeUp */
   --ease-out: ease-out;                          /* .scrim.open, .menu.open fade */
 

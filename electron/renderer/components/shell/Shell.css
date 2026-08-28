@@ -1,0 +1,25 @@
+/* .app, .main, .view — planning/solo-crm-mockup.html */
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.view {
+  padding: 24px 26px 80px;
+  width: 100%;
+  max-width: 2100px;
+  margin: 0 auto;
+}
+
+@media (max-width: 900px) {
+  .view {
+    padding: 18px 14px 70px;
+  }
+}

@@ -15,19 +15,25 @@ export interface SheetProps {
   footer: ReactNode
   /** `.sheet-f .note` — e.g. "resets the cadence clock". */
   footerNote?: ReactNode
+  /** Default true: the sheet closes itself on Escape via its own
+   * document-level listener, the mockup's standalone behaviour. Set false
+   * when a central manager owns Esc dismissal (LayerManager.tsx) — two
+   * listeners on the same press means one Esc closes two layers. */
+  closeOnEscape?: boolean
   'aria-label': string
 }
 
 /**
  * `.scrim` + `.sheet` from the mockup — the modal used for every create
- * form and the "Log a touch" panel. Closes on Escape and on a scrim click
- * that isn't a click inside the sheet, matching the mockup's own listeners
- * exactly (it has no focus trap either — Tab can still reach the page
+ * form and the "Log a touch" panel. Closes on Escape (unless
+ * `closeOnEscape={false}` hands that to a central manager) and on a scrim
+ * click that isn't a click inside the sheet, matching the mockup's own
+ * listeners (it has no focus trap either — Tab can still reach the page
  * behind it, which is a known gap carried over rather than one this task
  * introduces). Opening moves focus onto the sheet so keyboard users don't
  * have to hunt for it.
  */
-export function Sheet({ open, onClose, title, titleMeta, children, footer, footerNote, 'aria-label': ariaLabel }: SheetProps) {
+export function Sheet({ open, onClose, title, titleMeta, children, footer, footerNote, closeOnEscape = true, 'aria-label': ariaLabel }: SheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null)
 
   // Held in a ref so the focus effect depends on `open` alone: with onClose
@@ -42,13 +48,14 @@ export function Sheet({ open, onClose, title, titleMeta, children, footer, foote
   useEffect(() => {
     if (!open) return
     sheetRef.current?.focus()
+    if (!closeOnEscape) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open])
+  }, [open, closeOnEscape])
 
   if (!open) return null
 
