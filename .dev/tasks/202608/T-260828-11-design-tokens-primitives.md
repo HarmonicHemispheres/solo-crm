@@ -1,11 +1,11 @@
 ---
 id: T-260828-11
 title: Lift tokens.css from the mockup and build the shared primitives
-status: in-progress
+status: done
 category: ui
 plan_ref: P0-09
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -87,4 +87,38 @@ with the view that uses it. Storybook or a component gallery.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in `a860735` (run R-260828-01). `tokens.css` + `base.css`, all
+15 primitives, inline SVG icons on `currentColor`, and a local
+`no-literal-colour` eslint rule covering both TS and CSS (tokens.css the sole
+exemption; proven to fire, not vacuous). The token diff is a **standing test**
+— `tokens.test.ts` re-extracts the mockup's `:root` on every run and asserts
+all 23 properties verbatim.
+
+A finding about the mockup itself: its `:root` holds only colours, two font
+stacks and `--rail` — no type/spacing scale exists to lift. Radii, motion
+timings and shadows recur as closed sets and became clearly-labelled derived
+tokens; font sizes stay per-component literals, as bespoke as the source.
+
+Review: 2 blocking + 7 should-fix, all applied at merge. The blocking one is
+the cautionary tale: **nothing imported tokens.css/base.css — the entire
+design system was dead at runtime while all 73 jsdom tests passed** (jsdom
+loads no stylesheets). Also fixed: Sheet focus effect re-firing on every
+parent render (untypable forms), Ring radius drift (`size/2-3` per the mockup,
+with the test restating the formula independently), undefined `--radius-sm`
+reference, sheet max-height double-count, dropped `.sheet-f .note` styles,
+QuickAdd icon hardcoding a stroke, and NaN cadence rendering as healthy —
+non-finite pct now renders maximally stale per ADR-001, tested. Merge needed
+three mechanical conflict resolutions against T-04/T-08 (tsconfig unions,
+eslint CSS block + `JS_TS_FILES` scoping). Verify after everything: lint,
+both typechecks, 137/137 tests, build — green.
+
+Follow-ups recorded, not blocking:
+- **No Button primitive.** The mockup's `.btn`/`.btn-prim`/`.btn-ghost` are
+  used in Sheet footers and EmptyState actions, but Button wasn't in the
+  closed list. Needs a scope before the first view task ships a styled button.
+- Nits deferred: Toast timer keyed on message value; scrim closes on a
+  text-drag released outside; `--bp-*` tokens can't drive media queries
+  (breakpoints hardcoded twice with sync comments).
+- Two acceptance items are code-review-verified only (no layout engine in
+  jsdom): visible focus rings, no horizontal scroll at 1440/900/700. First
+  real-app screenshot pass should confirm.
