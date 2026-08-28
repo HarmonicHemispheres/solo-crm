@@ -1,11 +1,11 @@
 ---
 id: T-260828-10
 title: Wire TanStack Query over IPC as the renderer's data layer
-status: in-progress
+status: done
 category: ui
 plan_ref: P0-08
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -74,4 +74,41 @@ source is local and synchronous, so there is nothing to persist for.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in run R-260828-01 (commits `92578fb` + fix round `449be5b`).
+`electron/renderer/lib/`: `query-client.ts` (staleTime Infinity, no
+focus/reconnect refetch, no retries — every default deliberate and argued in
+CONVENTIONS.md's new "Query cache" section), `ipc.ts` (`callCrm` converts the
+IpcResult envelope to a typed `IpcCallError` — including a
+`'bridge-unavailable'` code when the preload never exposed `window.crm` —
+plus `ipcQueryFn`/`ipcMutationFn` and `optimisticUpdate`), `query-keys.ts`
+(`[entity, scope, id?]` factories + `invalidate` helpers typed
+`Record<keyof typeof queryKeys, …>` so a new entity without its helper fails
+tsc). Key convention documented in CONVENTIONS.md beside the date rules.
+
+**staleTime: Infinity** — correctness comes from explicit per-entity
+invalidation, not a clock; a missing `invalidate.<entity>()` is the bug to
+fix, never a smaller duration. The P4-01 sync-writer gap this opens is
+recorded with task-ID pointers in CONVENTIONS.md.
+
+Review found the optimistic path genuinely broken and falsely certified:
+rollback was a silent no-op when the key had nothing cached (query-core
+ignores `setQueryData(key, undefined)` — the false value stayed rendered),
+and both tests behind that criterion were vacuous. The fix round: `removeQueries`
+on the empty-snapshot path; both tests rewritten to run the real
+onMutate→error cycle and wait for `mutation.status === 'error'`;
+`optimisticUpdate` now REQUIRES the per-entity invalidate helper as its
+`reconcile` argument (the raw-key invalidation contradicted the branch's own
+convention — the P1-07 trip hazard); a real per-key mutex serializes
+concurrent optimistic mutations across the full cycle (TanStack's `scope`
+only serializes the network call — discovered empirically); the window-focus
+test is load-bearing (fails if the flag flips); App provider smoke test.
+Every fix proven by reintroducing the bug and watching its test fail.
+
+Verify after fixes: 284/284 tests, all gates green. Declined with reasoning:
+DataTag key↔data typing (would couple key factories 1:1 to channel names;
+revisit at P1-07).
+
+Handoff for P1-07 and the view tasks: build keys only via `queryKeys.*`
+factories, invalidate only via `invalidate.<entity>()`, and use
+`optimisticUpdate` for §6.6's inline interactions — the reconcile argument is
+required on purpose.

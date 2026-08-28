@@ -1,7 +1,7 @@
 ---
 id: T-260828-12
 title: Build the app shell — rail, topbar, router, layer dismissal
-status: open
+status: in-progress
 category: ui
 plan_ref: P0-10
 created: 2026-08-28
