@@ -389,10 +389,16 @@ describe('a process killed mid-transaction', () => {
       // Inserts one committed sentinel row, then opens an explicit
       // transaction and writes inside it forever — it never reaches COMMIT,
       // by design, so however long the parent waits before killing it, the
-      // transaction is still open and uncommitted at that point.
+      // transaction is still open and uncommitted at that point. The `ready`
+      // file is the handshake: written only once the child is inside the
+      // open transaction, so the parent kills at a known state instead of
+      // after a fixed sleep that raced a cold start (the flake T-260828-06's
+      // review pinned down).
+      const readyPath = join(tmpDir, 'writer-ready')
       writeFileSync(
         writerScript,
         [
+          `const { writeFileSync } = require('node:fs')`,
           `const { openDatabase, getDatabase } = require(${JSON.stringify(connectionPath)})`,
           `openDatabase({ userDataDir: ${JSON.stringify(tmpDir)} })`,
           `const db = getDatabase()`,
@@ -400,7 +406,9 @@ describe('a process killed mid-transaction', () => {
           `db.prepare('INSERT INTO t (id) VALUES (0)').run()`,
           `const insert = db.prepare('INSERT INTO t (id) VALUES (?)')`,
           `db.exec('BEGIN')`,
-          `let i = 1`,
+          `insert.run(1)`,
+          `writeFileSync(${JSON.stringify(readyPath)}, 'ready')`,
+          `let i = 2`,
           `while (true) {`,
           `  insert.run(i)`,
           `  i += 1`,
@@ -415,10 +423,17 @@ describe('a process killed mid-transaction', () => {
           child.once('exit', () => resolveExit())
         })
 
-        // Long enough for the writer to be well inside its open transaction
-        // (thousands of inserts), short enough to keep the WAL file this
-        // produces small.
-        await new Promise((r) => setTimeout(r, 200))
+        // Wait for the handshake file, not a fixed interval: the child
+        // writes it only once it is inside the open transaction. The
+        // deadline is a loud failure, never a false pass.
+        const deadline = Date.now() + 15_000
+        while (!existsSync(readyPath)) {
+          if (Date.now() > deadline) {
+            child.kill()
+            throw new Error('writer child never signalled readiness — it likely crashed before BEGIN')
+          }
+          await new Promise((r) => setTimeout(r, 25))
+        }
         child.kill()
         await exited
 

@@ -1,7 +1,12 @@
 import { join } from 'node:path'
 import { app } from 'electron'
 import Database from 'better-sqlite3'
-import { findSyncFolderMatch, isSyncFolderGuardOverridden, SyncFolderGuardError } from './sync-folder-guard'
+import {
+  findSyncFolderMatch,
+  isSyncFolderGuardOverridden,
+  SYNC_FOLDER_GUARD_OVERRIDE_ENV,
+  SyncFolderGuardError
+} from './sync-folder-guard'
 
 /**
  * The single owner of the SQLite connection. AGENTS.md: "the renderer never
@@ -77,7 +82,14 @@ export function openDatabase(options: OpenDatabaseOptions = {}): Database.Databa
   // existing startup-failure handler (dialog.showErrorBox + app.exit(1))
   // catches it and shows this error's own message, which names the refused
   // path, the reason, and the override.
-  if (!isSyncFolderGuardOverridden()) {
+  if (isSyncFolderGuardOverridden()) {
+    // The breadcrumb that explains a corruption report weeks later — an
+    // overridden guard leaving no trace would make the eventual failure
+    // look like a SQLite bug.
+    console.warn(
+      `[db] ${SYNC_FOLDER_GUARD_OVERRIDE_ENV}=1 — sync-folder guard skipped for ${dbPath}`
+    )
+  } else {
     const match = findSyncFolderMatch(dbPath)
     if (match) {
       throw new SyncFolderGuardError(match)

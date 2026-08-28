@@ -30,8 +30,22 @@ export const SYNC_FOLDER_MARKERS: readonly string[] = [
   'My Drive',
   'Dropbox',
   'iCloud Drive',
+  'iCloudDrive', // iCloud for Windows' actual on-disk folder — no space
   'Mobile Documents',
   'OneDrive'
+]
+
+/**
+ * The real services decorate their folder names: business OneDrive is
+ * `OneDrive - Contoso Ltd` (or `OneDrive-Personal` under macOS
+ * CloudStorage), a Dropbox team account is `Dropbox (Personal)`. Matched as
+ * anchored prefixes that REQUIRE the decoration separator, so
+ * `OneDriveSync` and `dropbox-clone` still fall through to the
+ * whole-segment rule and do not match.
+ */
+export const SYNC_FOLDER_MARKER_PATTERNS: readonly RegExp[] = [
+  /^onedrive[ -]/i,
+  /^dropbox \(/i
 ]
 
 /**
@@ -73,7 +87,12 @@ export function realpathWithFallback(targetPath: string): string {
     return realpathSync(targetPath)
   } catch (error) {
     if (!isErrnoException(error) || error.code !== 'ENOENT') {
-      throw error
+      // Any other failure (an unreachable UNC share throws UNKNOWN on
+      // Windows, EACCES elsewhere) degrades to the unresolved path — the
+      // segment check still runs against it, which fails safe in both
+      // directions: no hard startup refusal on an error that has nothing to
+      // do with sync folders, and no skipped check either.
+      return targetPath
     }
     const parent = dirname(targetPath)
     if (parent === targetPath) {
@@ -133,6 +152,9 @@ export function findSyncFolderMatch(targetPath: string): SyncFolderMatch | null 
     if (marker) {
       return { marker, resolvedPath }
     }
+    if (SYNC_FOLDER_MARKER_PATTERNS.some((pattern) => pattern.test(segment))) {
+      return { marker: segment, resolvedPath }
+    }
   }
 
   return null
@@ -150,8 +172,8 @@ export class SyncFolderGuardError extends Error {
 
   constructor(match: SyncFolderMatch) {
     super(
-      `Solo CRM will not open its database inside "${match.resolvedPath}" because it is inside a ` +
-        `${match.marker} folder. File-sync services (Google Drive, Dropbox, iCloud, OneDrive) and SQLite ` +
+      `Solo CRM will not open its database at "${match.resolvedPath}" because that path runs through a ` +
+        `"${match.marker}" folder. File-sync services (Google Drive, Dropbox, iCloud, OneDrive) and SQLite ` +
         `write to the same file at the same time and corrupt each other — this is not a database bug, it ` +
         `only shows up later as one. Move Solo CRM's data out of the synced folder and restart the app. ` +
         `If you understand the risk and want to proceed anyway, set the environment variable ` +

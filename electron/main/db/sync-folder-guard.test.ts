@@ -102,10 +102,38 @@ describe('findSyncFolderMatch: matching', () => {
   })
 })
 
+describe('findSyncFolderMatch: decorated real-world folder names', () => {
+  // The actual on-disk names the services create — the review's finding was
+  // that matching only the display names would "look done while protecting
+  // nothing" for these setups (T-260828-06 review, should-fix 1).
+  it.each([
+    ['iCloud for Windows', 'iCloudDrive'],
+    ['business OneDrive', 'OneDrive - Contoso Ltd'],
+    ['macOS CloudStorage OneDrive', 'OneDrive-Personal'],
+    ['Dropbox team account', 'Dropbox (Personal)']
+  ])('refuses %s (%s)', (_label, folderName) => {
+    const tmpDir = makeTmpDir('solo-crm-guard-')
+    const syncDir = join(tmpDir, folderName)
+    mkdirSync(syncDir, { recursive: true })
+    const dbPath = join(syncDir, 'userData', 'solocrm.db')
+
+    expect(findSyncFolderMatch(dbPath)).not.toBeNull()
+  })
+})
+
 describe('findSyncFolderMatch: non-matching', () => {
   it('does not refuse a segment that merely contains a marker as a substring', () => {
     const tmpDir = makeTmpDir('solo-crm-guard-')
     const lookalikeDir = join(tmpDir, 'projects', 'dropbox-clone')
+    mkdirSync(lookalikeDir, { recursive: true })
+    const dbPath = join(lookalikeDir, 'userData', 'solocrm.db')
+
+    expect(findSyncFolderMatch(dbPath)).toBeNull()
+  })
+
+  it('does not refuse a marker-prefixed name without the decoration separator (OneDriveSync)', () => {
+    const tmpDir = makeTmpDir('solo-crm-guard-')
+    const lookalikeDir = join(tmpDir, 'OneDriveSync')
     mkdirSync(lookalikeDir, { recursive: true })
     const dbPath = join(lookalikeDir, 'userData', 'solocrm.db')
 
