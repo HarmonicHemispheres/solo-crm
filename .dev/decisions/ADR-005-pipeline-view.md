@@ -39,16 +39,19 @@ by mockup line number:
 | Samay + platform (`:672`) | `e4` Samay — AI timesheet agent (`:635`), `e6` Platform advisory (`:639`) | `Active`, `Active` |
 
 Every Committed item is exactly the set of engagements with `status = 'Active'`
-for that client. "Signed recurring work" is not a state the board invents —
+for that billing company — the axis matters: EZDeploy's card covers `e4`, which
+is delivered to W+K (`client:'wk'`) and only billed via EZDeploy (`:635`). "Signed recurring work" is not a state the board invents —
 it is the mockup's own name for what `status = 'active'` already means. The
 Engagements cards view, grouped by status (§6.4), reproduces Committed exactly
 by rendering its Active group; nothing about signed, underway work needs a
 second column to exist in.
 
-The other four columns strengthen the case rather than complicate it. Lead,
-Qualified and Scoped hold pure prospects with no engagement row at all —
-Northbank referrals (`:665`), Post-grant build (`:667`) — which is consistent
-with §1: this business does not track probability-weighted deals, it tracks
+The other four columns strengthen the case rather than complicate it. Only
+Lead holds a pure prospect with no engagement row — Northbank referrals
+(`:665`). Qualified's sole item is `e11` (`status = 'Proposed'`, `:649`) and
+Scoped's Post-grant build (`:667`) is `e10` (`status = 'Pending'`), so both
+already surface in the cards view without a board. The pure-prospect case is
+consistent with §1: this business does not track probability-weighted deals, it tracks
 companies that stay warm or go cold, which is what the Today view's cadence
 and decay ring already do. Proposed is where the mapping gets inconsistent
 rather than clean: `e11` (Discovery Audit, `status = 'Proposed'`, `:649`) sits
@@ -57,7 +60,11 @@ SOW, also `status = 'Proposed'`, `:645`) sits in the pipeline's **Proposed**
 column at 55%. Two engagements sharing one `status` value sit in two different
 pipeline stages in the mockup's own hand-authored data. There is no fixed
 status→column map that reproduces the board as drawn — which matters for the
-option this ADR rejects below.
+option this ADR rejects below. The one board item outside every bucket above,
+radial's VedX phase two (`:668`, $15,000 at 25%), has no engagement row and is
+already in the record as activity `a7` ("Phase two mentioned, no timeline",
+`:659`) — exactly the prospect case the Consequences paragraph declines to
+track as a stage.
 
 ## Decision
 
@@ -67,8 +74,8 @@ P1-15), grouped by `status`, is the sole view of engagement state — proposed,
 pending, active, held, delivered or lost — and covers everything about signed
 or in-flight work that the Pipeline board showed under Committed and Proposed.
 
-Pre-engagement prospecting — the Lead, Qualified and Scoped stages, which
-never had an engagement row — is not ported in any form. A company that is
+Pre-engagement prospecting — board items with no engagement row, like Lead's
+Northbank referrals and radial's VedX phase two — is not ported in any form. A company that is
 being courted but has not signed anything is tracked the way §1 already argues
 it should be: by activity logged against the company and by its cadence/decay
 state on the Today view, not by a probability-weighted deal stage. If a

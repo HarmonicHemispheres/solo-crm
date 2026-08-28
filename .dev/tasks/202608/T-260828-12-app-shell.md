@@ -23,7 +23,8 @@ of eleven times.
   items and count slots, the database chip at the foot. Counts wire up as their
   entities arrive; render a placeholder rather than a zero that looks like data.
 - The topbar: breadcrumb, search button with its `⌘K` hint, the New menu.
-- Routing for all eleven views plus the two detail routes (`company/:id`,
+- Routing for all ten views — Pipeline is dropped (ADR-005), do not port its
+  nav item or route — plus the two detail routes (`company/:id`,
   `person/:id`), with the active nav item derived from the route — including
   detail routes highlighting their parent, as the mockup does.
 - A layer manager: palette, sheet, log sheet, menu and popover. **`Esc` closes

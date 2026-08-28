@@ -210,7 +210,8 @@ task.
 - [ ] **P0-10 · App shell** — 🎨 ui · M · after P0-09
   Rail with the three nav groups, counts and database chip; topbar with
   breadcrumb, search button and New menu; router; the 900px collapse.
-  - [ ] Every route in the mockup resolves and highlights its nav item
+  - [ ] Every route in the mockup except Pipeline (dropped, ADR-005) resolves
+        and highlights its nav item
   - [ ] `Esc` closes any open layer — palette, sheet, menu, popover
   - [ ] Below 900px the rail collapses and the topbar keeps its actions
 

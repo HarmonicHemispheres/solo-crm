@@ -1,11 +1,11 @@
 ---
 id: T-260828-02
 title: Decide whether the Pipeline view ships, and record it
-status: in-progress
+status: done
 category: docs
 plan_ref: D-02
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -72,4 +72,22 @@ declined.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in `eaa603d` (run R-260828-01). **Option 1 — the Pipeline view
+is dropped.** ADR-005 records it; the taskplan's P1-15 and P0-10 lines and
+T-260828-12's scope now say no Pipeline nav item or route ships, and AGENTS.md
+carries the note beside the mockup reference.
+
+The deciding evidence came from the mockup's own seed data rather than the
+recommendation alone: every Committed item maps to already-`Active` engagements
+(grouped by billing company — EZDeploy's card covers work delivered to W+K),
+and option 2 (derive from status) is disproven outright — `e9` and `e11` share
+`status = 'Proposed'` yet sit in two different board columns, so no fixed
+status→column map reproduces the board as drawn.
+
+Review (combined code-review + architecture-review): no blocking findings;
+three should-fix factual corrections (Committed identity stated on the wrong
+join axis, Qualified/Scoped wrongly called engagement-free, P0-10's route
+criterion left counting eleven) and one nit (radial's VedX phase two item
+unenumerated) were applied by the orchestrator at merge in the close commit.
+Verify: docs-only change on a tree whose code was already verified green at
+`b12ac84`; no code checks re-run.
