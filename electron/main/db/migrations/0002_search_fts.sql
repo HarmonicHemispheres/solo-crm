@@ -47,7 +47,16 @@
 --   1 = person     (people.name)         4 = activity (activity.body)
 --   2 = engagement (engagements.name)
 
-CREATE VIEW search_fts_content AS
+-- Named `search_source`, not `search_fts_content`: FTS5 reserves
+-- `<table>_content` as the shadow table name for a *self-contained*
+-- `search_fts` (one with no `content=` option at all). A view already
+-- sitting on that name forecloses ever dropping and recreating `search_fts`
+-- as self-contained later -- verified by hand: `DROP TABLE search_fts;
+-- CREATE VIRTUAL TABLE search_fts USING fts5(...)` (no content= option)
+-- fails with "error creating shadow table search_fts_content: view
+-- 'search_fts_content' already exists" when this view is named
+-- `search_fts_content`, and succeeds when it is named anything else.
+CREATE VIEW search_source AS
   SELECT rowid * 8 + 0 AS content_rowid, 'company'    AS kind, id AS source_id, name  AS text FROM companies
   UNION ALL
   SELECT rowid * 8 + 1,                  'person',           id,              name         FROM people
@@ -62,13 +71,13 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
   kind UNINDEXED,
   source_id UNINDEXED,
   text,
-  content='search_fts_content',
+  content='search_source',
   content_rowid='content_rowid'
 );
 
 -- Backfill: this table is brand new and, on a database migrated straight
 -- from 0001 (whether empty or already carrying the seed fixture — this
--- task's acceptance criteria name both), every row `search_fts_content`
+-- task's acceptance criteria name both), every row `search_source`
 -- selects predates every trigger below. The triggers only ever fire on a
 -- write that happens *after* they exist, so without this one-time bulk
 -- insert every pre-existing row would stay unsearchable until it was next
@@ -76,7 +85,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 -- (search.ts) issues after emptying the table, run once here against an
 -- index that starts empty rather than one being emptied first.
 INSERT INTO search_fts(rowid, kind, source_id, text)
-  SELECT content_rowid, kind, source_id, text FROM search_fts_content;
+  SELECT content_rowid, kind, source_id, text FROM search_source;
 
 -- companies (kind code 0)
 

@@ -124,7 +124,7 @@ export function searchAll(db: Database.Database, input: unknown): readonly Searc
  * Drops every row from `search_fts` — FTS5's own `'delete-all'` special
  * command, the documented way to empty an external-content table without
  * dropping and recreating the virtual table — and repopulates it in one pass
- * by selecting straight out of `search_fts_content`
+ * by selecting straight out of `search_source`
  * (`0002_search_fts.sql`'s union view). That is the same view every
  * trigger's `rowid * 8 + <kind code>` formula targets, so a freshly rebuilt
  * index and an incrementally-triggered one hold identical rows for identical
@@ -136,7 +136,7 @@ export function rebuildSearchIndex(db: Database.Database): void {
   const run = db.transaction(() => {
     db.prepare("INSERT INTO search_fts(search_fts) VALUES ('delete-all')").run()
     db.prepare(
-      'INSERT INTO search_fts(rowid, kind, source_id, text) SELECT content_rowid, kind, source_id, text FROM search_fts_content'
+      'INSERT INTO search_fts(rowid, kind, source_id, text) SELECT content_rowid, kind, source_id, text FROM search_source'
     ).run()
   })
   run()

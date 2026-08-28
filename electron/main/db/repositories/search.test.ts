@@ -6,7 +6,7 @@ import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import { nowTimestamp } from '../../../shared/format'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
-import { MIGRATIONS } from '../migrations'
+import { MIGRATIONS, type MigrationDefinition } from '../migrations'
 import { ValidationError } from './errors'
 import { DEFAULT_SEARCH_LIMIT, rebuildSearchIndex, searchAll } from './search'
 
@@ -31,6 +31,15 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 function makeTmpDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
+
+// Looked up by version, not `MIGRATIONS[0]` — a migration inserted ahead of
+// 0001 in the array would silently repoint an index-based reference at the
+// wrong file while every assertion here stayed green.
+const MIGRATION_0001: MigrationDefinition = (() => {
+  const found = MIGRATIONS.find((m) => m.version === 1)
+  if (!found) throw new Error('MIGRATIONS is missing migration version 1')
+  return found
+})()
 
 afterEach(() => {
   closeDatabase()
@@ -136,7 +145,7 @@ describe('0002_search_fts: applies cleanly on a database already migrated by 000
   it('creates search_fts and its five per-table trigger sets on an empty, freshly-migrated-by-0001 database', () => {
     const tmpDir = makeTmpDir('solo-crm-search-migrate-empty-')
     try {
-      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
       closeDatabase()
 
       expect(() => openDatabase({ userDataDir: tmpDir })).not.toThrow()
@@ -163,7 +172,7 @@ describe('0002_search_fts: applies cleanly on a database already migrated by 000
   it('applies cleanly on a database that already contains rows, and indexes every pre-existing row via the migration\'s own backfill', () => {
     const tmpDir = makeTmpDir('solo-crm-search-migrate-populated-')
     try {
-      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
       const seedDb = getDatabase()
       const companyId = insertCompany(seedDb, 'Pre-Existing Co')
       const personId = insertPerson(seedDb, 'Pre-Existing Person')
@@ -307,7 +316,7 @@ describe('rebuildSearchIndex: identical to the incrementally maintained index', 
   it('a database migrated straight from 0001 with pre-existing rows still equals its own rebuild', () => {
     const tmpDir = makeTmpDir('solo-crm-search-rebuild-migrate-')
     try {
-      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
       insertCompany(getDatabase(), 'Backfilled Co')
       insertActivity(getDatabase(), 'Backfilled Activity')
       closeDatabase()
@@ -322,6 +331,56 @@ describe('rebuildSearchIndex: identical to the incrementally maintained index', 
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// rebuildSearchIndex: recovers from a corrupted / drifted index
+// ---------------------------------------------------------------------------
+//
+// Mutation-proven: deleting the `INSERT INTO search_fts(search_fts) VALUES
+// ('delete-all')` line out of `rebuildSearchIndex` leaves every other test in
+// this file green, because the rest of the suite only ever rebuilds an
+// index that is already correct — re-inserting identical rowids over
+// themselves is a silent no-op, so nothing catches the delete-all being
+// skipped. Recovering from drift (an orphan row with no matching source
+// row) is the function's entire reason to exist, so it needs a fixture that
+// is actually broken before rebuild runs.
+
+describe('rebuildSearchIndex: recovers from an orphaned index row', () => {
+  it('an orphan row makes a matching query throw SQLITE_CORRUPT_VTAB, and rebuildSearchIndex clears it', () => {
+    withDatabase((db) => {
+      insertCompany(db, 'Acme Corp')
+
+      // Planted directly, bypassing every trigger and the union view: a row
+      // in `search_fts` with no corresponding row in `search_source`. FTS5
+      // detects this itself on the next query that touches it.
+      db.prepare(
+        "INSERT INTO search_fts(rowid, kind, source_id, text) VALUES (9999, 'company', 'ghost', 'Ghostly')"
+      ).run()
+
+      let caught: unknown
+      try {
+        searchAll(db, { query: 'Ghostly' })
+      } catch (error) {
+        caught = error
+      }
+      expect(caught).toBeDefined()
+      expect((caught as { code?: string }).code).toBe('SQLITE_CORRUPT_VTAB')
+
+      // A query that never touches the orphan rowid is unaffected — the
+      // corruption is confined to that one FTS5 row until rebuild runs.
+      expect(searchAll(db, { query: 'Acme' })).toHaveLength(1)
+
+      rebuildSearchIndex(db)
+
+      // Rebuild throws away every existing row (including the orphan) before
+      // repopulating straight from `search_source` — the orphan cannot
+      // survive because it was never a source row to begin with.
+      expect(searchAll(db, { query: 'Ghostly' })).toEqual([])
+      expect(searchAll(db, { query: 'Acme' })).toHaveLength(1)
+      expect(ftsCount(db)).toBe(1)
+    })
   })
 })
 
@@ -375,6 +434,23 @@ describe('searchAll: prefix matching, kind labelling, and limit', () => {
       const results = searchAll(db, { query: 'acme consul' })
       expect(results).toHaveLength(1)
       expect(results[0].text).toBe('Acme Consulting')
+    })
+  })
+
+  it('ranks a short, exact-match row ahead of a longer row that only dilutes the same term', () => {
+    withDatabase((db) => {
+      // Inserted in this order deliberately: with `ORDER BY rank` removed
+      // from searchAll's query, FTS5 falls back to rowid order, which would
+      // put the long, worse-matching row first — the opposite of what this
+      // test asserts. Confirmed by hand against a standalone fixture.
+      insertCompany(db, 'Nimbus Global Consulting Partners Alliance Holdings International Group')
+      insertCompany(db, 'Nimbus')
+
+      const results = searchAll(db, { query: 'Nimbus' })
+      expect(results.map((r) => r.text)).toEqual([
+        'Nimbus',
+        'Nimbus Global Consulting Partners Alliance Holdings International Group'
+      ])
     })
   })
 

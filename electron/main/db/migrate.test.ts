@@ -24,6 +24,15 @@ function makeTmpDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
+// Looked up by version, not `MIGRATIONS[0]` — a migration inserted ahead of
+// 0001 in the array would silently repoint an index-based reference at the
+// wrong file while every assertion here stayed green.
+const MIGRATION_0001: MigrationDefinition = (() => {
+  const found = MIGRATIONS.find((m) => m.version === 1)
+  if (!found) throw new Error('MIGRATIONS is missing migration version 1')
+  return found
+})()
+
 function dumpSchema(db: Database.Database): unknown[] {
   return db.prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name, type").all()
 }
@@ -242,7 +251,7 @@ describe('getSchemaVersion', () => {
       // Scoped to migration 0001 alone, not the app's default set — this
       // test is specifically about what running 0001 leaves behind; the
       // default set has included 0002 (`search_fts`) since T-260828-36.
-      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
       const info = getSchemaVersion(getDatabase())
       expect(info.version).toBe(1)
       expect(info.lastMigrationAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
@@ -259,7 +268,7 @@ describe('migration 0001 excludes search_fts (G6 / P1-06 owns it)', () => {
     try {
       // Scoped to migration 0001 alone — see the version-applied test above
       // for why this can no longer be the default `openDatabase()` call.
-      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
       const db = getDatabase()
       const ftsTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_fts'").get()
       const triggers = db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'").all()

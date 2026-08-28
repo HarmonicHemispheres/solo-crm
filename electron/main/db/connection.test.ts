@@ -61,6 +61,15 @@ function makeTmpDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
+// Looked up by version, not `MIGRATIONS[0]` — a migration inserted ahead of
+// 0001 in the array would silently repoint an index-based reference at the
+// wrong file while every assertion here stayed green.
+const MIGRATION_0001: MigrationDefinition = (() => {
+  const found = MIGRATIONS.find((m) => m.version === 1)
+  if (!found) throw new Error('MIGRATIONS is missing migration version 1')
+  return found
+})()
+
 afterEach(() => {
   closeDatabase()
 })
@@ -294,7 +303,7 @@ describe('openDatabase and the migration runner (T-260828-07)', () => {
       // Scoped to migration 0001 alone, not the app's default set — this
       // test is specifically about what running 0001 leaves behind; the
       // default set has included 0002 (`search_fts`) since T-260828-36.
-      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
       const db = getDatabase()
 
       const companiesTable = db

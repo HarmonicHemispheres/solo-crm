@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { closeDatabase, getDatabase, openDatabase } from './connection'
-import { MIGRATIONS } from './migrations'
+import { MIGRATIONS, type MigrationDefinition } from './migrations'
 
 /**
  * Asserts the *shape* migration 0001 produces — every table requirements §5
@@ -45,10 +45,19 @@ function withMigratedDb<T>(fn: (db: Database.Database) => T): T {
  * and wrongly broken by 0002 legitimately adding that table to every
  * *default* `openDatabase()` call, so it opens through this instead.
  */
+// Looked up by version, not `MIGRATIONS[0]` — a migration inserted ahead of
+// 0001 in the array would silently repoint an index-based reference at the
+// wrong file while every assertion here stayed green.
+const MIGRATION_0001: MigrationDefinition = (() => {
+  const found = MIGRATIONS.find((m) => m.version === 1)
+  if (!found) throw new Error('MIGRATIONS is missing migration version 1')
+  return found
+})()
+
 function withMigration0001OnlyDb<T>(fn: (db: Database.Database) => T): T {
   const tmpDir = makeTmpDir('solo-crm-schema-0001-only-')
   try {
-    openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
+    openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
     return fn(getDatabase())
   } finally {
     closeDatabase()

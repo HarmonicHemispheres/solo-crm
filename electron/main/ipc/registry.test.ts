@@ -3,6 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CHANNEL_NAMES } from '../../shared/ipc-types'
+import { MIGRATIONS } from '../db/migrations'
+
+// Derived, not hardcoded: a fresh database's schema version is whatever the
+// latest registered migration leaves it at. T-260828-36 added migration 0002,
+// bumping a freshly migrated database from 1 to 2 — hardcoding either number
+// here would silently re-break the moment another migration lands.
+const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version
 
 // electron/main/db/connection.ts imports `app` from 'electron' at its own
 // top level (for the no-override resolveDatabasePath path, unused below
@@ -61,7 +68,7 @@ describe("'db:schemaVersion'", () => {
     try {
       openDatabase({ userDataDir: tmpDir })
       const result = await registry['db:schemaVersion'].handler(undefined)
-      expect(result).toEqual({ version: 1, lastMigrationAt: expect.any(String) })
+      expect(result).toEqual({ version: LATEST_SCHEMA_VERSION, lastMigrationAt: expect.any(String) })
       expect(registry['db:schemaVersion'].response.safeParse(result).success).toBe(true)
     } finally {
       closeDatabase()
