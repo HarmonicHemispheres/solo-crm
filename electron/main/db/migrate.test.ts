@@ -61,8 +61,11 @@ describe('runMigrations: fresh vs replayed schema identity', () => {
     // code path (T-260828-07 review, should-fix 1).
     const oneShotDir = makeTmpDir('solo-crm-migrate-oneshot-')
     const incrementalDir = makeTmpDir('solo-crm-migrate-incremental-')
+    // Versioned 3, not 2: T-260828-36 gave the real migration set its own
+    // version 2 (`0002_search_fts`), so a synthetic "next" migration for
+    // this generic-mechanics test has to start past it.
     const synthetic: MigrationDefinition = {
-      version: 2,
+      version: 3,
       name: 'test_add_marker_column',
       sql: 'ALTER TABLE companies ADD COLUMN test_marker TEXT;'
     }
@@ -103,7 +106,9 @@ describe('runMigrations: fresh vs replayed schema identity', () => {
       runMigrations(db)
 
       expect(dumpSchema(db)).toEqual(dumpBefore)
-      expect(getSchemaVersion(db).version).toBe(1)
+      // 2, not 1: the default migration set is 0001 + 0002 (`search_fts`,
+      // T-260828-36) as of this test's next edit.
+      expect(getSchemaVersion(db).version).toBe(2)
     } finally {
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })
@@ -129,14 +134,16 @@ describe('runMigrations: applies cleanly to a populated copy', () => {
         'INSERT INTO engagements (id, name, started_on, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
       ).run('engagement-1', 'Advisory retainer', '2026-01-01', now, now)
 
-      const secondMigration: MigrationDefinition = {
-        version: 2,
+      // Versioned 3: version 2 is the real `0002_search_fts` migration
+      // (T-260828-36) since this test was written.
+      const thirdMigration: MigrationDefinition = {
+        version: 3,
         name: 'test_add_marker_column',
         sql: 'ALTER TABLE companies ADD COLUMN test_marker TEXT;'
       }
-      runMigrations(db, [...MIGRATIONS, secondMigration])
+      runMigrations(db, [...MIGRATIONS, thirdMigration])
 
-      expect(getSchemaVersion(db).version).toBe(2)
+      expect(getSchemaVersion(db).version).toBe(3)
       const company = db.prepare('SELECT id, name, test_marker FROM companies WHERE id = ?').get('company-1') as {
         id: string
         name: string
@@ -158,10 +165,12 @@ describe('runMigrations: a throwing migration', () => {
     try {
       openDatabase({ userDataDir: tmpDir })
       const db = getDatabase()
-      expect(getSchemaVersion(db).version).toBe(1)
+      // 2, not 1: the default migration set is 0001 + 0002 (`search_fts`,
+      // T-260828-36).
+      expect(getSchemaVersion(db).version).toBe(2)
 
       const breakingMigration: MigrationDefinition = {
-        version: 2,
+        version: 3,
         name: 'test_broken',
         // The first statement succeeds in isolation; the second is invalid
         // SQL. Proven by hand (outside this suite) that without a shared
@@ -173,7 +182,7 @@ describe('runMigrations: a throwing migration', () => {
 
       expect(() => runMigrations(db, [...MIGRATIONS, breakingMigration])).toThrow()
 
-      expect(getSchemaVersion(db).version).toBe(1)
+      expect(getSchemaVersion(db).version).toBe(2)
       const partialTable = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'test_partial'")
         .get()
@@ -190,16 +199,20 @@ describe('runMigrations: a throwing migration', () => {
       openDatabase({ userDataDir: tmpDir })
       const db = getDatabase()
 
-      const breaking: MigrationDefinition = { version: 2, name: 'test_broken', sql: 'THIS IS NOT VALID SQL;' }
+      // Versioned 3/4, not 2/3: version 2 is the real `0002_search_fts`
+      // migration (T-260828-36) since this test was written.
+      const breaking: MigrationDefinition = { version: 3, name: 'test_broken', sql: 'THIS IS NOT VALID SQL;' }
       const wouldFollow: MigrationDefinition = {
-        version: 3,
+        version: 4,
         name: 'test_would_follow',
         sql: 'CREATE TABLE test_should_not_exist (id TEXT PRIMARY KEY);'
       }
 
       expect(() => runMigrations(db, [...MIGRATIONS, breaking, wouldFollow])).toThrow()
 
-      expect(getSchemaVersion(db).version).toBe(1)
+      // 2, not 1: the default migration set is 0001 + 0002 (`search_fts`,
+      // T-260828-36).
+      expect(getSchemaVersion(db).version).toBe(2)
       const followTable = db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'test_should_not_exist'")
         .get()
@@ -226,7 +239,10 @@ describe('getSchemaVersion', () => {
   it('reads the applied version and an ISO-8601 UTC applied_at after migration 0001 runs', () => {
     const tmpDir = makeTmpDir('solo-crm-migrate-version-applied-')
     try {
-      openDatabase({ userDataDir: tmpDir })
+      // Scoped to migration 0001 alone, not the app's default set — this
+      // test is specifically about what running 0001 leaves behind; the
+      // default set has included 0002 (`search_fts`) since T-260828-36.
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
       const info = getSchemaVersion(getDatabase())
       expect(info.version).toBe(1)
       expect(info.lastMigrationAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
@@ -241,7 +257,9 @@ describe('migration 0001 excludes search_fts (G6 / P1-06 owns it)', () => {
   it('creates no search_fts table and no trigger', () => {
     const tmpDir = makeTmpDir('solo-crm-migrate-no-fts-')
     try {
-      openDatabase({ userDataDir: tmpDir })
+      // Scoped to migration 0001 alone — see the version-applied test above
+      // for why this can no longer be the default `openDatabase()` call.
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATIONS[0]] })
       const db = getDatabase()
       const ftsTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_fts'").get()
       const triggers = db.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'").all()
