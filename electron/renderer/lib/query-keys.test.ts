@@ -19,6 +19,34 @@ describe('queryKeys', () => {
   })
 })
 
+describe('queryKeys — T-260828-26 entities', () => {
+  it('list()/detail(id) follow the [entity, scope, id?] shape and start with all()', () => {
+    expect(queryKeys.companies.all()).toEqual(['companies'])
+    expect(queryKeys.companies.list()).toEqual(['companies', 'list'])
+    expect(queryKeys.companies.detail('c1')).toEqual(['companies', 'detail', 'c1'])
+
+    expect(queryKeys.people.detail('p1')).toEqual(['people', 'detail', 'p1'])
+    expect(queryKeys.engagements.detail('e1')).toEqual(['engagements', 'detail', 'e1'])
+    expect(queryKeys.engagements.milestones('e1')).toEqual(['engagements', 'milestones', 'e1'])
+    expect(queryKeys.tasks.detail('t1')).toEqual(['tasks', 'detail', 't1'])
+    expect(queryKeys.tasks.countOpen()).toEqual(['tasks', 'countOpen'])
+    expect(queryKeys.activity.detail('a1')).toEqual(['activity', 'detail', 'a1'])
+    expect(queryKeys.settings.detail('workspace.name')).toEqual(['settings', 'detail', 'workspace.name'])
+  })
+
+  it('every scoped key starts with its entity’s all() prefix', () => {
+    for (const entity of ['companies', 'people', 'engagements', 'tasks', 'activity', 'settings'] as const) {
+      const all = queryKeys[entity].all()
+      const detail = queryKeys[entity].detail('x')
+      expect(detail.slice(0, all.length)).toEqual(all)
+    }
+  })
+
+  it('G8: no activity key beyond list/detail — no update or delete scope exists to key', () => {
+    expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'detail', 'list'])
+  })
+})
+
 describe('invalidate', () => {
   it('invalidate.app invalidates the app entity’s prefix, covering every app-scoped key', () => {
     const queryClient = new QueryClient()
@@ -36,6 +64,18 @@ describe('invalidate', () => {
     invalidate.db(queryClient)
 
     expect(spy).toHaveBeenCalledWith({ queryKey: ['db'] })
+  })
+
+  it('invalidate.<entity> invalidates each T-260828-26 entity’s own prefix, not another entity’s', () => {
+    const queryClient = new QueryClient()
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    invalidate.companies(queryClient)
+    invalidate.tasks(queryClient)
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['companies'] })
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['tasks'] })
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ['people'] })
   })
 
   it('a prefix invalidation actually marks a longer, real key stale (not just the spy assertion above)', async () => {

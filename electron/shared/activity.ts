@@ -90,3 +90,29 @@ export const recordContactEntitySchema = z.union([
   z.object({ personId: z.string().min(1) }).strict()
 ])
 export type RecordContactEntity = z.infer<typeof recordContactEntitySchema>
+
+/**
+ * `listActivity`'s filter — moved here from a bare TypeScript interface in
+ * `electron/main/db/repositories/activity.ts` (T-260828-24's review,
+ * carried into this task): every other repository's read filter that
+ * crosses IPC gets a zod schema in its `electron/shared/<entity>.ts` module,
+ * and `activity:list` (this task) needs exactly that to declare its request
+ * schema per ADR-007 rule 5 — importing it, not redeclaring its fields a
+ * second time in `electron/shared/ipc-types.ts`.
+ *
+ * `.strict()`, matching every other filter/input schema in this file: an
+ * unknown key crossing the IPC boundary is a `ValidationError`, not a
+ * silently-ignored no-op.
+ */
+export const activityFiltersSchema = z
+  .object({
+    companyId: z.string().min(1).optional(),
+    personId: z.string().min(1).optional(),
+    engagementId: z.string().min(1).optional(),
+    /** Inclusive lower bound on `occurredAt` (a `timestampSchema` value). */
+    occurredFrom: timestampSchema.optional(),
+    /** Inclusive upper bound on `occurredAt` (a `timestampSchema` value). */
+    occurredTo: timestampSchema.optional()
+  })
+  .strict()
+export type ActivityFilters = z.infer<typeof activityFiltersSchema>
