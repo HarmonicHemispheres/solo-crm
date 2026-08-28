@@ -1,0 +1,13 @@
+/* .ring — planning/solo-crm-mockup.html */
+.ring {
+  transform: rotate(-90deg);
+}
+
+.ring circle {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.ring circle:last-child {
+  transition: stroke-dashoffset var(--motion-ring) var(--ease-grow);
+}

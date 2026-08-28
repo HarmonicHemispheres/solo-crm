@@ -1,0 +1,19 @@
+/* .chip — planning/solo-crm-mockup.html */
+.chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-7);
+  padding: 6px 10px;
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  transition: var(--motion-hover);
+}
+
+.chip.on {
+  border-color: var(--verdigris);
+  color: var(--verdigris);
+  background: color-mix(in srgb, var(--verdigris) 10%, transparent);
+}

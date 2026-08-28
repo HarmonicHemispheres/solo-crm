@@ -1,0 +1,97 @@
+/*
+ * Global reset, focus rings, scrollbars and motion handling — ported from
+ * the top of planning/solo-crm-mockup.html's stylesheet (the rules before
+ * its first named component, `.card`). Imported once by the renderer entry
+ * point, never per-component.
+ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--obsidian);
+  color: var(--papyrus);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--verdigris) 30%, transparent);
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+
+a {
+  color: var(--verdigris);
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--verdigris);
+  outline-offset: 2px;
+  border-radius: var(--radius-4);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 6px;
+  border: 3px solid var(--obsidian);
+}
+
+/* Shared text utilities used by more than one primitive. */
+.mono {
+  font-family: var(--mono);
+}
+
+.meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: .4px;
+}
+
+/*
+ * prefers-reduced-motion, handled once, centrally.
+ *
+ * The mockup does this in two parts: a blanket kill of every animation and
+ * transition, plus a second rule that pins the handful of elements whose
+ * animation *starts* at width:0 and grows to a --w custom property (decay
+ * bars, value bars, pipeline-card probability bars) to that final width —
+ * otherwise disabling only the animation would freeze them at their start
+ * state, not their end state, which would remove the meaning along with the
+ * motion. DecayMeter is the one primitive in this task's closed list that
+ * uses that --w pattern (its .fill element); the rule is written generally
+ * so any future grow-from-zero element opts in by using the same --w custom
+ * property and is carried by this rule rather than needing its own — a
+ * future grow-from-zero element adds its selector to the list below rather
+ * than inventing a new reduced-motion rule elsewhere.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .decay .fill {
+    width: var(--w) !important;
+  }
+}

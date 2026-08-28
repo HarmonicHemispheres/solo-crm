@@ -1,0 +1,95 @@
+/* .row — planning/solo-crm-mockup.html */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--border);
+  width: 100%;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  text-align: left;
+  transition: background var(--motion-hover);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row:hover,
+.row:focus-within {
+  background: var(--surface-2);
+}
+
+.row .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.row .nm {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.row .sub {
+  display: block;
+  font-size: 11px;
+  color: var(--slate);
+  margin-top: 2px;
+  font-family: var(--mono);
+}
+
+.trunc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Row with a trailing actions slot: the outer element is a div (padding,
+   border, hover background all live here), the navigable content is an
+   inner reset button so it can sit next to — not inside — the action
+   buttons. */
+.row-with-actions {
+  padding: 0;
+}
+
+.row-hit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 11px 15px;
+  background: none;
+  border: 0;
+  text-align: left;
+}
+
+.row-actions {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding-right: 15px;
+  opacity: 0;
+  transition: opacity var(--motion-fade);
+}
+
+.row-with-actions:hover .row-actions,
+.row-with-actions:focus-within .row-actions {
+  opacity: 1;
+}
+
+/* No hover on touch: below the mockup's 700px breakpoint (--bp-mobile in
+   tokens.css — media queries can't read a custom property in the condition
+   itself, so this literal has to be kept in sync with that token by hand),
+   row actions stay revealed instead of requiring a hover that can't
+   happen. */
+@media (max-width: 700px) {
+  .row-actions {
+    opacity: 1;
+  }
+}

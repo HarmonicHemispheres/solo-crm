@@ -1,0 +1,87 @@
+/*
+ * Design tokens for Solo CRM.
+ *
+ * The `:root` block below is lifted VERBATIM from the `:root` block in
+ * planning/solo-crm-mockup.html — same custom property names, same values,
+ * same grouping/order. Do not hand-edit a value here without also changing
+ * the mockup; if the two ever disagree, extract the mockup's `:root`
+ * programmatically and diff it (see the token-diff check referenced from
+ * .dev/tasks/202608/T-260828-11-design-tokens-primitives.md) rather than
+ * eyeballing it.
+ *
+ * The mockup's `:root` only defines colour, the two font stacks, and the
+ * rail width — it does not define a type scale, spacing scale, radius scale
+ * or motion tokens as custom properties (checked mechanically: the mockup's
+ * :root has exactly 23 declarations, all colour/font/--rail). Everything
+ * below the `:root` block is therefore NOT a verbatim transcription — it is
+ * a small set of tokens this task derives from values that repeat, verbatim,
+ * across the mockup's CSS for the primitives this task builds (radii,
+ * shadows, motion durations/easing, breakpoints). Font sizes and spacing stay
+ * as literal per-component values in each primitive, exactly as the mockup
+ * itself hand-tunes them (e.g. 12.5px, 9.5px) rather than snapping them to an
+ * invented scale that isn't actually there.
+ */
+
+:root {
+  --obsidian:#0B0E14; --ink:#0E1219; --surface:#11151C; --surface-2:#161C26; --surface-3:#1E2630;
+  --border:#242D39; --border-bright:#34404F;
+  --verdigris:#5BA4A4; --verdigris-dim:#46807F; --gold:#C9A84C; --butter:#E6D28A;
+  --lapis:#6F9BD8; --lapis-deep:#4A6FA5;
+  --papyrus:#E8E4DB; --mute:#B6B1A6; --slate:#888F9C; --faint:#5A626F;
+  --green:#3FA96A; --orange:#D8A23A; --red:#D9614A;
+  --font:'Inter',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  --rail:230px;
+}
+
+/*
+ * ── derived tokens ──────────────────────────────────────────────────────
+ * Not present in the mockup's :root. Each value below is copied from the
+ * specific mockup selector named in the comment, not invented — this is
+ * still a transcription, just of a value that recurs across selectors
+ * instead of one that already had a custom-property name.
+ */
+:root {
+  /* Radii. The mockup reuses a handful of exact pixel values across every
+     card, control and pill — but not as a clean t-shirt scale (2, 3, 4, 5,
+     6, 7, 9, 10, 11, 13, 14px and 50% all appear), so naming them --radius-sm
+     /--radius-lg would invent gaps the mockup doesn't have. Named by their
+     own pixel value instead: unambiguous, and a new primitive that needs
+     "the 10px one" doesn't have to guess whether that's sm, md or lg. */
+  --radius-4: 4px;    /* .modeltag, .kbdx, .favi */
+  --radius-5: 5px;    /* .card-h .c, .tag, focus-visible outline */
+  --radius-7: 7px;    /* .iconbtn, .chip, .toggle button, .tli .bul */
+  --radius-9: 9px;    /* .nav, .btn, .toggle, .inp/select/textarea */
+  --radius-10: 10px;  /* .toast, .pal-i, .pcard */
+  --radius-11: 11px;  /* .pop, .menu, .col-body */
+  --radius-13: 13px;  /* .card, .stat, .ccard, .scard, .dbanner */
+  --radius-14: 14px;  /* .pal, .sheet */
+  --radius-full: 50%; /* .dbchip .dot, .info, .switch span */
+
+  /* Motion durations + easing, named for what they're timing rather than
+     as an abstract t-shirt scale — the mockup doesn't have one, it just
+     reuses these exact numbers at each of these call sites. */
+  --motion-hover: .12s;                          /* .row, .iconbtn, .nav hover/focus transitions */
+  --motion-fade: .14s;                           /* .scrim.open fade-in, .menu.open fadeUp-in */
+  --motion-popover: .16s;                        /* .pop.open fadeUp-in */
+  --motion-panel: .18s;                          /* .pal, .sheet fadeUp-in */
+  --motion-toast: .2s;                           /* .toast opacity/transform */
+  --motion-grow: .6s;                            /* .decay .fill grow */
+  --motion-ring: .8s;                            /* .ring circle stroke-dashoffset */
+  --ease-grow: cubic-bezier(.2, .8, .3, 1);       /* .decay .fill, .ring circle, panel fadeUp */
+  --ease-out: ease-out;                          /* .scrim.open, .menu.open fade */
+
+  /* Shadows and the modal backdrop. The mockup writes these as one-off
+     rgba(0,0,0,X) literals with no token backing them (unlike the alpha
+     overlays on tag/chip/stat borders, which decompose into
+     color-mix(in srgb, var(--x) N%, transparent) and need no token of their
+     own) — named here once so component CSS never repeats the literal. */
+  --shadow-toggle: 0 1px 4px rgba(0, 0, 0, .3);     /* .toggle button.on */
+  --shadow-popover: 0 18px 44px rgba(0, 0, 0, .55); /* .pop */
+  --shadow-panel: 0 26px 70px rgba(0, 0, 0, .6);    /* .pal, .sheet */
+  --scrim: rgba(4, 6, 10, .7);                      /* .scrim background */
+
+  /* Breakpoints, as the pixel values the mockup's two @media queries use. */
+  --bp-tablet: 900px; /* rail off-canvas, two-column sheets collapse */
+  --bp-mobile: 700px; /* hover-revealed row actions stay visible */
+}

@@ -1,0 +1,29 @@
+/* .quickadd — planning/solo-crm-mockup.html */
+.quickadd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  border-top: 1px solid var(--border);
+}
+
+/* The plus icon rides on currentColor like every icon (ui-design.md); the
+   container sets the colour rather than the SVG hardcoding a stroke. */
+.quickadd > svg {
+  color: var(--faint);
+  flex-shrink: 0;
+}
+
+.quickadd input {
+  flex: 1;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.quickadd input::placeholder {
+  color: var(--faint);
+}
