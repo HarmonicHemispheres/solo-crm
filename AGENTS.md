@@ -9,10 +9,17 @@ typed IPC · SQLite FTS5. See [README](README.md) for the why.
 
 ## How work happens
 
-Scope with `scope-task`, build with `run-tasks`, gate with `verify` and the
-built-in `code-review`. Task scopes, run summaries and decisions live in `.dev/`
-— [.dev/README.md](.dev/README.md) is the process. Write development context
-there, not into the working tree.
+New behaviour starts with `scope-task`, not with an edit — it writes scopes to
+`.dev/tasks/` for the user to approve or cut before any code exists. `run-tasks`
+builds the approved ones. **It never starts on its own**; fanning out subagents
+and merging into the working branch needs an explicit go. `verify` and the
+built-in `code-review` are the gates, and neither is optional.
+
+A one-line fix skips all of this. The process is for work worth a record.
+
+[.dev/README.md](.dev/README.md) is the full procedure — pipeline, status and
+category vocabulary, which review each category triggers. Development context is
+written there, never into the working tree.
 
 ## References
 
