@@ -1,6 +1,6 @@
 import { join } from 'node:path'
-import { app } from 'electron'
 import Database from 'better-sqlite3'
+import { resolveDataRoot } from './data-root'
 import { runMigrations } from './migrate'
 import type { MigrationDefinition } from './migrations'
 import {
@@ -33,14 +33,18 @@ const BUSY_TIMEOUT_MS = 5_000
 
 export interface OpenDatabaseOptions {
   /**
-   * Overrides the directory `solocrm.db` is resolved under. Tests only —
-   * production always resolves through `app.getPath('userData')`. There is
-   * deliberately no environment-variable fallback: an override has to be
-   * passed explicitly by the caller, so a test can never silently inherit a
-   * relaxed default (T-260828-05's Risks note, and the AGENTS.md gotcha this
-   * exists to protect: the database must never end up resolved into a Drive,
-   * Dropbox or iCloud folder because a convenient default let a path go
-   * unchecked).
+   * Overrides the directory `app.getPath('userData')` would otherwise
+   * resolve to — both the folder `solocrm.db` lives under directly (no
+   * pointer file present) and the folder T-260828-17's `data-root.ts` reads
+   * `data-location.json` from. Tests only — production always resolves
+   * through the real `app.getPath('userData')`. There is deliberately no
+   * environment-variable fallback: an override has to be passed explicitly
+   * by the caller, so a test can never silently inherit a relaxed default
+   * (T-260828-05's Risks note, and the AGENTS.md gotcha this exists to
+   * protect: the database must never end up resolved into a Drive, Dropbox
+   * or iCloud folder because a convenient default let a path go unchecked).
+   * ADR-006 keeps this exact semantics rather than widening it into a
+   * production data-root override.
    */
   userDataDir?: string
   /**
@@ -60,10 +64,21 @@ export interface OpenDatabaseOptions {
  * separate from `openDatabase` below so T-260828-06's sync-folder guard can
  * run against this exact path *before* the file is created — see the call
  * site inside `openDatabase`.
+ *
+ * Composes with `resolveDataRoot` (T-260828-17's `data-root.ts`) rather than
+ * resolving `app.getPath('userData')` itself: with no `data-location.json`
+ * pointer present, `resolveDataRoot` returns `userDataDir` unchanged, so this
+ * function's result is byte-for-byte what it was before that task existed.
+ * The pointer read (and the directory-creation it can trigger) deliberately
+ * stays inside `data-root.ts` rather than inlined here — this function
+ * doing the read itself would be exactly the "hidden filesystem access"
+ * ADR-006 and this task's Risks note call out as the thing to avoid, since
+ * the guard below depends on being able to reason about this function as one
+ * explicit, visible composition rather than an opaque call.
  */
 export function resolveDatabasePath(options: OpenDatabaseOptions = {}): string {
-  const userDataDir = options.userDataDir ?? app.getPath('userData')
-  return join(userDataDir, DB_FILENAME)
+  const dataRoot = resolveDataRoot({ userDataDir: options.userDataDir })
+  return join(dataRoot, DB_FILENAME)
 }
 
 let handle: Database.Database | null = null
