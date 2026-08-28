@@ -68,7 +68,9 @@ The rules that go with it:
      before the row existed.
    - **`favicons`, keyed by `host`.** The host is what the fetch-once-and-cache
      path (§6.10) looks up and upserts on. A surrogate UUID would add a second
-     way to hold two cached icons for one host and buy nothing.
+     way to hold two cached icons for one host and buy nothing. It carries
+     `fetched_at` and neither `created_at` nor `updated_at`: a cache entry has
+     one timestamp that matters, which is when it was last fetched.
 
    The test for membership: the key is a value the outside world already
    guarantees unique, and no other table holds a foreign key to the row. Both
@@ -88,12 +90,22 @@ The rules that go with it:
      genuinely unique — a tag applies to a thing once — so it is enforced, as an
      index rather than as the key.
 
-   No table in §5 is now implicit about its primary key.
+   No table in §5 is now implicit about its primary key. Timestamps are mostly
+   settled the same way: eight tables that had been carrying the rule only by
+   implication — `service_categories`, `service_versions`, `milestones`,
+   `revenue_lines`, `time_entries`, `links`, `external_refs`, `tags` — now
+   spell out `created_at` / `updated_at` in the DDL, and the two exempt tables
+   each say in place why they do not. **One is still open: `activity` declares
+   neither, and this ADR does not settle it** — the table is append-only by G8,
+   so whether `updated_at` means anything there is a question for whoever
+   settles it, and P0-05 should not invent an answer.
 6. **No secret may ever be stored in `settings`.** See ADR-004, which states
    that rule as a property of this table rather than as a note about Stripe.
 
-Requirements §5 is amended as of 2026-08-28 to carry the `settings` table and to
-make the primary keys of `favicons`, `affiliations` and `taggings` explicit.
+Requirements §5 is amended as of 2026-08-28 to carry the `settings` table, to
+make the primary keys of `favicons`, `affiliations` and `taggings` explicit, and
+to write `created_at` / `updated_at` into the eight non-exempt tables named
+above.
 AGENTS.md, requirements §4, the `architecture-review` skill and P0-05's
 acceptance criteria each carry the exemption clause, because those are the four
 places a future agent reads the unqualified rule first.

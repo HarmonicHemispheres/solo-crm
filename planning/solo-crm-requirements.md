@@ -11,8 +11,11 @@
 >
 > - `companies.last_touch_at` and `people.last_contact_at` (ADR-001)
 > - `activity.source` — `gmail` marked reserved, with no writer (ADR-001)
-> - the `settings` table, and the primary-key status of `favicons`,
->   `affiliations` and `taggings` made explicit (ADR-002)
+> - the `settings` table; the primary-key status of `favicons`, `affiliations`
+>   and `taggings` made explicit; and `created_at` / `updated_at` written into
+>   eight tables that had been leaving them implicit —
+>   `service_categories`, `service_versions`, `milestones`, `revenue_lines`,
+>   `time_entries`, `links`, `external_refs`, `tags` (ADR-002)
 > - the `revenue_lines` modelling note sharpened to `SUM(amount_cents)`, the
 >   estimate/actual replacement rule, and where `billing_model` may be branched
 >   on (ADR-003)
@@ -127,7 +130,7 @@ affiliations (
 )
 
 -- Catalogue: what you sell, and what it costs
-service_categories ( id uuid pk, name text, color text, sort integer )
+service_categories ( id uuid pk, name text, color text, sort integer, created_at, updated_at )
 
 services (
   id uuid pk, name text not null,
@@ -143,7 +146,8 @@ services (
 service_versions (
   id uuid pk, service_id uuid references services(id),
   version integer, rate_cents integer,
-  effective_from date, effective_to date null
+  effective_from date, effective_to date null,
+  created_at, updated_at
 )
 
 -- Engagements: the money-bearing unit
@@ -170,7 +174,8 @@ engagements (
 milestones (
   id uuid pk, engagement_id uuid references engagements(id),
   name text, sort integer, completed_at timestamp null,
-  amount_cents integer null, expected_month date
+  amount_cents integer null, expected_month date,
+  created_at, updated_at
 )
 
 -- Materialised revenue: one row per expected/actual amount per month
@@ -181,14 +186,17 @@ revenue_lines (
   kind    text,   -- retainer | milestone | tm_estimate | tm_actual | expense
   status  text,   -- projected | invoiced | paid
   invoiced_at timestamp null, paid_at timestamp null,
-  stripe_invoice_id text null
+  stripe_invoice_id text null,
+  created_at, updated_at
 )
 
 -- Time
 time_entries (
   id uuid pk, engagement_id uuid null references engagements(id),
   company_id uuid null references companies(id),
-  worked_on date, hours numeric, note text, source text  -- manual | timelog_csv
+  worked_on date, hours numeric, note text,
+  source text,   -- manual | timelog_csv
+  created_at, updated_at
 )
 
 -- Work
@@ -218,19 +226,23 @@ activity (
 links (
   id uuid pk, entity_type text, entity_id uuid,
   url text, title text, kind text,   -- drive | notion | github | figma | stripe | pdf | slack | web
-  added_at timestamp
+  added_at timestamp,
+  created_at, updated_at
 )
 
 -- Keyed by host: a natural identity, so exempt from the UUID key rule along
--- with settings. The host is what the fetch-once-and-cache path looks up. ADR-002
+-- with settings. The host is what the fetch-once-and-cache path looks up.
+-- Carries fetched_at and no created_at / updated_at: the row is a cache entry
+-- with one timestamp that matters. ADR-002
 favicons ( host text pk, bytes blob, fetched_at timestamp )
 
 external_refs (
   id uuid pk, entity_type text, entity_id uuid,
-  source text, external_id text, url text, last_synced_at timestamp
+  source text, external_id text, url text, last_synced_at timestamp,
+  created_at, updated_at
 )
 
-tags ( id uuid pk, name text, color text )
+tags ( id uuid pk, name text, color text, created_at, updated_at )
 
 -- Keeps a UUID key; the natural triple is enforced as a unique index, not as
 -- the primary key. ADR-002
