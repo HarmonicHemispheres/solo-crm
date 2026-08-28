@@ -1,11 +1,11 @@
 ---
 id: T-260828-08
 title: Fix the date and money representations and enforce them at the boundary
-status: open
+status: done
 category: docs
 plan_ref: P0-06
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -77,4 +77,27 @@ handling for calendar events (P4-06's problem, and it should read this file).
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in run R-260828-01. `CONVENTIONS.md` plus the enforcement:
+`dateOnlySchema`, `timestampSchema`, `periodMonthSchema`, `centsSchema`,
+`hoursSchema` in `electron/shared/types.ts` (zod ^4.4.3, runtime dependency —
+main resolves it from node_modules at runtime), format helpers in
+`electron/shared/format.ts`. `electron/shared/` is typechecked under BOTH
+tsconfigs, which is the real boundary gate — a `process` reference in a shared
+file fails the renderer typecheck. Timezone-immunity proven by a TZ-mutating
+test under `electron/main/`; the reviewer independently re-ran it under
+`TZ=Pacific/Kiritimati` (UTC+14) to confirm the proof is real.
+
+Review: no blocking; applied at merge — SQL-side timestamp rule added to
+CONVENTIONS.md (`CURRENT_TIMESTAMP` produces a format `timestampSchema`
+rejects; T-260828-07 must write timestamps from JS or use
+`strftime('%Y-%m-%dT%H:%M:%fZ','now')`), TZ-restore bug in the test's
+`afterEach` (undefined → literal `"undefined"`), `formatTimestamp` doc-comment
+mechanism, AGENTS.md now references CONVENTIONS.md. Verify after fixes:
+typecheck, lint, 44/44 tests, build — all green.
+
+Handoffs recorded:
+- **T-260828-07:** never use SQLite timestamp defaults — see the new
+  CONVENTIONS.md rule.
+- **T-260828-09:** the preload builds with `externalizeDeps: true`; a sandboxed
+  preload cannot resolve `node_modules`, so if it imports these schemas, zod
+  must be bundled into the preload (noExternal), not left external.

@@ -31,6 +31,9 @@ written there, never into the working tree.
   not an omission to fix.
 - [planning/solo-crm-requirements.md](planning/solo-crm-requirements.md) — scope,
   data model, integrations, non-functional requirements.
+- [CONVENTIONS.md](CONVENTIONS.md) — date, timestamp and money representations.
+  The zod schemas in `electron/shared/` are the enforcement; read this before
+  writing anything that stores or crosses IPC with either.
 - [.claude/rules/ui-design.md](.claude/rules/ui-design.md) — design principles,
   loaded automatically when working on renderer or CSS files.
 

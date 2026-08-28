@@ -1,7 +1,7 @@
 ---
 id: T-260828-11
 title: Lift tokens.css from the mockup and build the shared primitives
-status: open
+status: in-progress
 category: ui
 plan_ref: P0-09
 created: 2026-08-28

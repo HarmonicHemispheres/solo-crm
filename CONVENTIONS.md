@@ -13,6 +13,11 @@ enforcement. This file explains them; it does not stand in for them.
 - **Timestamps are ISO-8601 UTC `TEXT`**, millisecond precision, always ending
   in `Z` — the exact format `Date#toISOString()` produces — enforced by
   `timestampSchema`.
+- **SQLite must not default timestamps.** `CURRENT_TIMESTAMP` and
+  `datetime('now')` produce `2026-08-28 10:15:00` — space separator, no `Z`, no
+  milliseconds — which `timestampSchema` rejects. `created_at` / `updated_at`
+  are written from JS via `nowTimestamp()`; if a SQL-side value is ever
+  unavoidable, it is `strftime('%Y-%m-%dT%H:%M:%fZ','now')`, never the default.
 - **Money is integer cents, always.** A column holding money ends its name in
   `_cents` so a bare number is visibly suspect — enforced by `centsSchema`,
   which rejects any non-integer value.

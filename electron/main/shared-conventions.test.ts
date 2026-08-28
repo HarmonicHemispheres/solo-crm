@@ -12,7 +12,11 @@ describe('date round-trip is immune to the machine timezone', () => {
   const originalTz = process.env.TZ
 
   afterEach(() => {
-    process.env.TZ = originalTz
+    if (originalTz === undefined) {
+      delete process.env.TZ
+    } else {
+      process.env.TZ = originalTz
+    }
   })
 
   it('does not shift the day when the machine timezone is behind UTC', () => {

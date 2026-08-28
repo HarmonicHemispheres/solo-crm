@@ -44,9 +44,9 @@ export function parseTimestamp(value: string): Date {
 
 /**
  * Format a Date as the millisecond-precision ISO-8601 UTC string
- * CONVENTIONS.md requires — `Date#toISOString()`'s own format, validated
- * back through `timestampSchema` so a non-finite Date fails loudly here
- * rather than silently producing `"Invalid Date"`.
+ * CONVENTIONS.md requires — `Date#toISOString()`'s own format. A non-finite
+ * Date fails loudly here because `toISOString()` itself throws a RangeError
+ * before zod is reached; the schema guards the string shape on the way out.
  */
 export function formatTimestamp(date: Date): Timestamp {
   return timestampSchema.parse(date.toISOString())

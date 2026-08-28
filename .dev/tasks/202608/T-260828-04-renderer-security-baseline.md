@@ -1,7 +1,7 @@
 ---
 id: T-260828-04
 title: Seal the renderer — contextIsolation, sandbox, CSP, navigation guards
-status: open
+status: in-progress
 category: ipc
 plan_ref: P0-02
 created: 2026-08-28
