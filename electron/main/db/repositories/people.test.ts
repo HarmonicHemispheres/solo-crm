@@ -238,11 +238,16 @@ describe('the same person affiliated to the same company twice', () => {
       const co = createCompany(db, { name: 'Boomerang Co' })
       const person = createPerson(db, { name: 'Boomerang Person' })
 
-      const first = addAffiliation(db, { personId: person.id, companyId: co.id, started: '2020-01-01', ended: '2021-06-01' })
-      const second = addAffiliation(db, { personId: person.id, companyId: co.id, started: '2024-03-01' })
+      // Inserted out of started-order on purpose — the later stint first, the
+      // earlier one second — so a missing `ORDER BY started ASC` would leave
+      // rowid order (later, earlier) instead of the expected (earlier,
+      // later). Insert order previously matched started order here, which
+      // let the assertion pass even with the ORDER BY deleted.
+      const later = addAffiliation(db, { personId: person.id, companyId: co.id, started: '2024-03-01' })
+      const earlier = addAffiliation(db, { personId: person.id, companyId: co.id, started: '2020-01-01', ended: '2021-06-01' })
 
       const rows = listAffiliationsForPerson(db, person.id)
-      expect(rows.map((r) => r.id)).toEqual([first.id, second.id])
+      expect(rows.map((r) => r.id)).toEqual([earlier.id, later.id])
       expect(rows[0].ended).toBe('2021-06-01')
       expect(rows[1].ended).toBeNull()
     })
@@ -251,21 +256,55 @@ describe('the same person affiliated to the same company twice', () => {
 
 describe('is_primary: setting one clears the others at the same company', () => {
   it('addAffiliation with isPrimary:true clears is_primary on the other affiliation at that company', () => {
+    // Fake timers, same as the ADR-002 timestamps test below: both
+    // addAffiliation calls otherwise land in the same millisecond and
+    // nowTimestamp() returns an identical ISO string, making the
+    // updatedAt-changed assertion flaky on wall-clock resolution.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-08-28T10:00:00.000Z'))
+      withDatabase((db) => {
+        const co = createCompany(db, { name: 'Multi-Contact Co' })
+        const personA = createPerson(db, { name: 'Contact A' })
+        const personB = createPerson(db, { name: 'Contact B' })
+
+        const affA = addAffiliation(db, { personId: personA.id, companyId: co.id, started: '2025-01-01', isPrimary: true })
+        expect(affA.isPrimary).toBe(true)
+
+        vi.setSystemTime(new Date('2026-08-28T10:05:00.000Z'))
+        const affB = addAffiliation(db, { personId: personB.id, companyId: co.id, started: '2025-06-01', isPrimary: true })
+        expect(affB.isPrimary).toBe(true)
+
+        const rows = listAffiliationsForCompany(db, co.id)
+        const reloadedA = rows.find((r) => r.id === affA.id)
+        expect(reloadedA?.isPrimary).toBe(false)
+        expect(reloadedA?.updatedAt).not.toBe(affA.updatedAt)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not clear is_primary on a closed affiliation at the same company — that stint is history', () => {
     withDatabase((db) => {
-      const co = createCompany(db, { name: 'Multi-Contact Co' })
-      const personA = createPerson(db, { name: 'Contact A' })
-      const personB = createPerson(db, { name: 'Contact B' })
+      const co = createCompany(db, { name: 'Historical Primary Co' })
+      const personA = createPerson(db, { name: 'Former Primary' })
+      const personB = createPerson(db, { name: 'Current Primary' })
 
-      const affA = addAffiliation(db, { personId: personA.id, companyId: co.id, started: '2025-01-01', isPrimary: true })
-      expect(affA.isPrimary).toBe(true)
+      const closed = addAffiliation(db, {
+        personId: personA.id,
+        companyId: co.id,
+        started: '2018-01-01',
+        ended: '2020-01-01',
+        isPrimary: true
+      })
+      expect(closed.isPrimary).toBe(true)
 
-      const affB = addAffiliation(db, { personId: personB.id, companyId: co.id, started: '2025-06-01', isPrimary: true })
-      expect(affB.isPrimary).toBe(true)
+      addAffiliation(db, { personId: personB.id, companyId: co.id, started: '2025-01-01', isPrimary: true })
 
-      const rows = listAffiliationsForCompany(db, co.id)
-      const reloadedA = rows.find((r) => r.id === affA.id)
-      expect(reloadedA?.isPrimary).toBe(false)
-      expect(reloadedA?.updatedAt).not.toBe(affA.updatedAt)
+      const reloadedClosed = listAffiliationsForCompany(db, co.id).find((r) => r.id === closed.id)
+      expect(reloadedClosed?.isPrimary).toBe(true)
+      expect(reloadedClosed?.updatedAt).toBe(closed.updatedAt)
     })
   })
 

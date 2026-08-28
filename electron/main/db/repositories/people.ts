@@ -387,15 +387,16 @@ export function listAffiliationsForCompany(db: Database.Database, companyId: str
 // for at once (a board, several contacts at one client): which one is the
 // main point of contact. So setting isPrimary on one affiliation clears it
 // on every *other* affiliation at the same company — not the same person —
-// in the same transaction.
+// in the same transaction. Scoped further to `ended IS NULL`: a closed
+// affiliation is history, exactly like which company someone used to work
+// for, and naming a new primary contact must not rewrite who was primary
+// during a stint that already ended.
 // ---------------------------------------------------------------------------
 
 function clearOtherPrimaries(db: Database.Database, companyId: string, exceptId: string, timestamp: string): void {
-  db.prepare('UPDATE affiliations SET is_primary = 0, updated_at = ? WHERE company_id = ? AND id != ? AND is_primary = 1').run(
-    timestamp,
-    companyId,
-    exceptId
-  )
+  db.prepare(
+    'UPDATE affiliations SET is_primary = 0, updated_at = ? WHERE company_id = ? AND id != ? AND is_primary = 1 AND ended IS NULL'
+  ).run(timestamp, companyId, exceptId)
 }
 
 /**

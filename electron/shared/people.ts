@@ -109,26 +109,22 @@ const affiliationWritableFieldsSchema = z
   .strict()
 
 /**
- * `personId`/`companyId` are written directly here, not via
- * `affiliationWritableFieldsSchema.partial().extend(...)` — a second,
- * independently declared object, deliberately not derived by composing
- * `.extend()` onto the shared field set. `updateAffiliationInputSchema`
- * below still derives from `affiliationWritableFieldsSchema` via
- * `.partial()`, the same as every other repository's update schema, so
- * `title`/`isPrimary`/`started`/`ended` can never drift between create and
- * update — only `personId`/`companyId`, which update deliberately omits,
+ * Derived from `affiliationWritableFieldsSchema` the same way
+ * `companies.ts`'s `createCompanyInputSchema` derives from
+ * `companyWritableFieldsSchema` — `.partial()` for the optional fields, then
+ * `.extend()` to add the two fields that only exist at creation. This keeps
+ * `title`/`isPrimary`/`started`/`ended` declared in exactly one place, shared
+ * with `updateAffiliationInputSchema` below; only `personId`/`companyId`,
+ * which the update schema deliberately omits (an affiliation's person and
+ * company are its identity, not a patchable field — see this file's header),
  * live outside that shared base.
  */
-export const createAffiliationInputSchema = z
-  .object({
+export const createAffiliationInputSchema = affiliationWritableFieldsSchema
+  .partial({ title: true, isPrimary: true, ended: true })
+  .extend({
     personId: z.string().min(1, 'personId is required'),
-    companyId: z.string().min(1, 'companyId is required'),
-    title: z.string().nullable().optional(),
-    isPrimary: z.boolean().nullable().optional(),
-    started: dateOnlySchema,
-    ended: dateOnlySchema.nullable().optional()
+    companyId: z.string().min(1, 'companyId is required')
   })
-  .strict()
 export type CreateAffiliationInput = z.infer<typeof createAffiliationInputSchema>
 
 export const updateAffiliationInputSchema = affiliationWritableFieldsSchema.partial()
