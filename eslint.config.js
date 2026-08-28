@@ -71,6 +71,17 @@ export default tseslint.config(
       'local/no-renderer-node-access': 'error'
     }
   },
+  // electron/shared/** is imported by renderer code (window.d.ts →
+  // ipc-types), so the renderer's Node-access boundary applies to it too —
+  // without this block a fs/database import smuggled through shared/
+  // reaches the renderer with zero lint findings (T-260828-09 review).
+  {
+    files: ['electron/shared/**/*.ts'],
+    plugins: { local },
+    rules: {
+      'local/no-renderer-node-access': 'error'
+    }
+  },
   // Renderer stylesheets: same no-literal-colour rule, on the CSS grammar
   // instead of the JS one. tokens.css is the one file allowed to declare a
   // literal colour — it's the source of truth every other file points at.

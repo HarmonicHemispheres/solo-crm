@@ -49,7 +49,11 @@ if (process.contextIsolated) {
     throw error
   }
 } else {
-  // @ts-expect-error — contextIsolation is always on; this branch is
-  // unreachable but keeps the preload from throwing if it's ever disabled.
-  window.crm = api
+  // Unreachable by construction — SECURE_WEB_PREFERENCES hardcodes
+  // contextIsolation: true — and deliberately NOT a fallback assignment: a
+  // bare `window.crm = api` here would silently hand the bridge to a
+  // non-isolated world if the flag were ever flipped, exactly the failure
+  // T-260828-04's source-binding test exists to prevent. Fail loudly
+  // instead.
+  throw new Error('[preload] contextIsolation is off — refusing to expose window.crm outside an isolated world')
 }

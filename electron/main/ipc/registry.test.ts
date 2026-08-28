@@ -32,11 +32,12 @@ afterEach(() => {
 
 describe('registry keys match electron/shared/ipc-types.ts CHANNEL_NAMES', () => {
   it('has exactly the same channel names as the shared, preload-safe mirror', () => {
-    // The runtime half of the drift guard described in ipc-types.ts's header
-    // comment (the compile-time half is the AssertEqualKeys assignment in
-    // that same file). registry.ts is the single source for what a channel
-    // validates and does; CHANNEL_NAMES is the one thing that has to be
-    // named a second time, for preload — this proves the two never diverge.
+    // The runtime half of the drift guard (the compile-time half is the
+    // mapped-type `satisfies` in registry.ts, which couples the channel set
+    // AND each entry's schemas to CHANNEL_CONTRACTS). registry.ts is the
+    // single source for what a channel validates and does; CHANNEL_NAMES is
+    // the one thing named a second time, for preload — this proves the two
+    // never diverge.
     expect(Object.keys(registry).sort()).toEqual([...CHANNEL_NAMES].sort())
   })
 })

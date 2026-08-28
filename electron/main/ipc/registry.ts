@@ -63,6 +63,16 @@ export const registry = {
     ...CHANNEL_CONTRACTS['db:schemaVersion'],
     handler: () => getSchemaVersion(getDatabase())
   })
-} satisfies Record<ChannelName, ChannelDefinition>
+  // Mapped over the contract's own schema types, not the default-widened
+  // ChannelDefinition: a bare Record<ChannelName, ChannelDefinition> couples
+  // only the channel SET, so an entry spreading the wrong contract (or
+  // redefining a schema) would typecheck while renderer and main disagree on
+  // the wire shape (T-260828-09 review, should-fix 1).
+} satisfies {
+  [K in ChannelName]: ChannelDefinition<
+    (typeof CHANNEL_CONTRACTS)[K]['request'],
+    (typeof CHANNEL_CONTRACTS)[K]['response']
+  >
+}
 
 export type Registry = typeof registry
