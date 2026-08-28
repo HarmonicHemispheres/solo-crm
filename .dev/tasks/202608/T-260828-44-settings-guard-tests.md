@@ -1,7 +1,7 @@
 ---
 id: T-260828-44
 title: Make the settings credential guard's test actually guard it
-status: open
+status: in-progress
 category: data
 plan_ref:
 created: 2026-08-28

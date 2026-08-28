@@ -9,7 +9,7 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 |---|---|---|---|---|
 | ◐ in-progress | [T-260828-14](T-260828-14-button-primitive.md) | Fold the shell's raw `.btn` classes into a Button primitive | 🎨 ui | P0-09 |
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
-| ○ open | [T-260828-17](T-260828-17-data-root-pointer.md) | Resolve the data root from a pointer file so its location can be a choice | 🗄 data | P0-03 |
+| ◐ in-progress | [T-260828-17](T-260828-17-data-root-pointer.md) | Resolve the data root from a pointer file so its location can be a choice | 🗄 data | P0-03 |
 | ○ open | [T-260828-18](T-260828-18-first-run-location-chooser.md) | Ask where the data goes on first run, and never ask again | 🗄 data | P0-03 |
 | ○ open | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | P0-03 |
 
@@ -43,7 +43,7 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 | ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
 | ○ open | [T-260828-42](T-260828-42-billed-via-cycle-guard.md) | Refuse a billed-via cycle in the repository, as the seed loader already does | 🗄 data | *(review)* |
 | ○ open | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | *(review)* |
-| ○ open | [T-260828-44](T-260828-44-settings-guard-tests.md) | Make the settings credential guard test actually guard it | 🗄 data | *(review)* |
+| ◐ in-progress | [T-260828-44](T-260828-44-settings-guard-tests.md) | Make the settings credential guard test actually guard it | 🗄 data | *(review)* |
 | ○ open | [T-260828-45](T-260828-45-brand-asset-generator-hardening.md) | Pin the brand generator scale factor and put its test under a tsconfig | 📦 build | *(review)* |
 | ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
 | ◐ in-progress | [T-260828-47](T-260828-47-stabilise-real-electron-tests.md) | Stop the real-Electron tests timing out under parallel load | 📦 build | *(review)* |
