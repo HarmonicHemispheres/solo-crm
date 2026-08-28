@@ -1,11 +1,11 @@
 import { useRef, type MouseEvent } from 'react'
 import { useLayerManager } from './layer-manager-context'
+import { Button } from '../primitives/Button'
 import { NewCompanyIcon, NewEngagementIcon, NewPersonIcon, TouchIcon } from './icons'
 // PlusIcon lives in the shared components/icons.tsx (T-260828-11 already
 // uses it for QuickAdd's leading glyph) — reused here rather than redrawn.
 import { PlusIcon } from '../icons'
 import './NewMenu.css'
-import './buttons.css'
 
 /**
  * `.menuwrap` / `#newMenu` from the mockup — the topbar's "New" button and
@@ -29,10 +29,10 @@ export function NewMenu() {
 
   return (
     <div className="menuwrap">
-      <button ref={buttonRef} type="button" className="btn btn-prim" onClick={handleToggle} aria-expanded={open} aria-haspopup="menu">
+      <Button ref={buttonRef} variant="primary" onClick={handleToggle} aria-expanded={open} aria-haspopup="menu">
         <PlusIcon />
         New
-      </button>
+      </Button>
       {open && (
         <div className="menu" role="menu" aria-label="Create">
           <button type="button" role="menuitem" onClick={() => openSheet('New company', buttonRef.current)}>
