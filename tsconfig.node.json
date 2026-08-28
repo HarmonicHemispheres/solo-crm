@@ -19,6 +19,7 @@
     "electron.vite.config.ts",
     "electron/main/**/*",
     "electron/preload/**/*",
+    "electron/shared/**/*",
     "vitest.config.ts"
   ]
 }
