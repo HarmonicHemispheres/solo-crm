@@ -22,7 +22,7 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-20](T-260828-20-companies-repository.md) | Build the companies repository — CRUD, billing links, referential refusals | 🗄 data | P1-01 · P1-CUT |
+| ◐ in-progress | [T-260828-20](T-260828-20-companies-repository.md) | Build the companies repository — CRUD, billing links, referential refusals | 🗄 data | P1-01 · P1-CUT |
 | ○ open | [T-260828-21](T-260828-21-people-affiliations-repository.md) | Build the people and affiliations repository — history-preserving company moves | 🗄 data | P1-02 |
 | ○ open | [T-260828-22](T-260828-22-engagements-repository.md) | Build the engagements repository — split billing, model-specific fields, six statuses | 🗄 data | P1-03 · P1-CUT |
 | ○ open | [T-260828-23](T-260828-23-tasks-repository.md) | Build the tasks repository — next-step exclusivity, waiting transitions, open counts | 🗄 data | P1-04 · P1-CUT |
@@ -40,6 +40,15 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ○ open | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | P1-09 · P1-CUT |
 | ○ open | [T-260828-36](T-260828-36-fts5-index-triggers.md) | Create the FTS5 search index and its triggers in their own migration | 🗄 data | P1-06 |
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
+
+### Follow-ups from review
+
+Real findings from T-260828-20's review, deferred rather than widening its diff.
+
+| | ID | Title | Cat | Plan |
+|---|---|---|---|---|
+| ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
+| ○ open | [T-260828-42](T-260828-42-billed-via-cycle-guard.md) | Refuse a billed-via cycle in the repository, as the seed loader already does | 🗄 data | *(review)* |
 
 ### Workspace — the two blank pages
 

@@ -1,7 +1,7 @@
 ---
 id: T-260828-20
 title: Build the companies repository — CRUD, billing links, referential refusals
-status: open
+status: in-progress
 category: data
 plan_ref: P1-01
 created: 2026-08-28
