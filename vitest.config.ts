@@ -12,7 +12,11 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'node',
-          include: ['electron/main/**/*.test.ts', 'electron/preload/**/*.test.ts'],
+          include: [
+            'electron/main/**/*.test.ts',
+            'electron/preload/**/*.test.ts',
+            'electron/shared/**/*.test.ts'
+          ],
           environment: 'node'
         }
       },
