@@ -1,7 +1,7 @@
 ---
 id: T-260828-07
 title: Write the Drizzle schema and the migration runner
-status: open
+status: in-progress
 category: data
 plan_ref: P0-05
 created: 2026-08-28

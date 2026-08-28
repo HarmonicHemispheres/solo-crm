@@ -1,11 +1,11 @@
 ---
 id: T-260828-06
 title: Refuse to open a database inside a file-sync folder
-status: in-progress
+status: done
 category: data
 plan_ref: P0-04
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -72,4 +72,26 @@ allowed to write into Drive, since a JSON export is not a live SQLite file.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in run R-260828-01 (merge + fix commits through `b64562e`).
+`electron/main/db/sync-folder-guard.ts` is a pure function of the path:
+symlinks resolved with a walk-up fallback for not-yet-existing tails,
+whole-segment case-insensitive matching on both separators. Wired into
+`openDatabase()` between path resolution and `new Database()` — a refusal
+throws `SyncFolderGuardError` into the existing startup error-box + exit path,
+and tests prove no `solocrm.db`/`-wal`/`-shm` exists afterwards.
+
+**Override:** `SOLOCRM_ALLOW_SYNC_FOLDER_DB=1` exactly (any other value keeps
+the guard on), named in the refusal dialog, and leaves a console breadcrumb
+when used so an eventual corruption report has a trace.
+
+Review (code + architecture): no blocking; the important should-fix was that
+the scope's six markers miss the services' real on-disk names. Applied at
+merge: `iCloudDrive` (iCloud for Windows), anchored prefix patterns for
+`OneDrive - Tenant` / `OneDrive-Personal` and `Dropbox (Personal)` — with
+`OneDriveSync` and `dropbox-clone` proven to still pass. Also applied:
+realpath failures other than ENOENT (unreachable UNC shares throw UNKNOWN on
+Windows) degrade to checking the unresolved path instead of hard-refusing
+startup; and the pre-existing kill-mid-transaction flake from T-260828-05 got
+its readiness handshake (child signals from inside the open transaction;
+fixed sleep removed). Verify after fixes: 174/174 tests, all gates green, db
+suite stable across repeated runs.
