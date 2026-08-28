@@ -33,6 +33,9 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ○ open | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | P1-09 · P1-CUT |
 | ◐ in-progress | [T-260828-36](T-260828-36-fts5-index-triggers.md) | Create the FTS5 search index and its triggers in their own migration | 🗄 data | P1-06 |
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
+| ○ open | [T-260828-48](T-260828-48-links-repository.md) | Build the links repository — paste a URL on any entity, host decides the kind | 🗄 data | P1-18 |
+| ○ open | [T-260828-49](T-260828-49-favicon-fetch-cache.md) | Fetch and cache favicons in main, once per host, never through a third party | 🔗 integration | P1-19 |
+| ○ open | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
 
 ### Follow-ups from review
 
