@@ -43,21 +43,35 @@ export type { BillingModel, CreateEngagementInput, Engagement, EngagementStatus,
 // ---------------------------------------------------------------------------
 
 function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
-  const result = schema.safeParse(input)
-  if (!result.success) {
-    const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, result.error.issues)
-  }
   // Same reasoning as companies.ts's parseInput: zod's `.partial()` marks a
   // field optional, not absent, so a patch carrying an explicit
   // `undefined`-valued key (the shape a renderer's
   // `{ field: dirty ? value : undefined }` naturally produces, preserved
-  // across Electron's structured-clone IPC boundary) still parses with that
-  // key present. Every write path below distinguishes "key absent" from
-  // "key present" via `in`, so stripping undefined-valued keys here, once,
+  // across Electron's structured-clone IPC boundary) still has that key
+  // present in `Object.keys`. Every write path below distinguishes "key
+  // absent" from "key present" via `in`, so stripping undefined-valued keys
   // makes "absent" and "explicitly undefined" the same thing for every
   // caller.
-  return stripUndefinedValues(result.data)
+  //
+  // This has to happen BEFORE `safeParse`, not after: `updateEngagementInputSchema`
+  // is a `z.union([engagementCommonPatchSchema, engagementModelPatchSchema])`,
+  // and stripping after parsing cannot influence which union branch was
+  // chosen. `{ billingModel: undefined, notes: 'x' }` defeats both branches
+  // as parsed — `engagementCommonPatchSchema` is `.strict()` with no
+  // `billingModel` key at all, and `engagementModelPatchSchema`'s
+  // `discriminatedUnion` looks up `billingModel`, finds `undefined`, and
+  // matches no branch — even though the caller's actual intent ("leave
+  // billingModel alone") is exactly what an absent key means. Stripping
+  // before `safeParse` makes that patch parse as `{ notes: 'x' }`, which
+  // `engagementCommonPatchSchema` accepts.
+  const stripped = stripUndefinedValues(input)
+  const result = schema.safeParse(stripped)
+  if (!result.success) {
+    const issues = flattenIssues(result.error.issues)
+    const message = issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
+    throw new ValidationError(message, issues)
+  }
+  return result.data
 }
 
 function stripUndefinedValues<T>(value: T): T {
@@ -67,6 +81,32 @@ function stripUndefinedValues<T>(value: T): T {
     if (cleaned[key] === undefined) delete cleaned[key]
   }
   return cleaned as T
+}
+
+/**
+ * zod v4 nests a union branch's own issues inside `issue.errors` (one array
+ * per branch) rather than flattening them onto the top-level issues array,
+ * so a plain `.error.issues` read on a `z.union` (`updateEngagementInputSchema`)
+ * or `z.discriminatedUnion` (its `engagementModelPatchSchema` member) sees
+ * only a single top-level `invalid_union` issue with message "Invalid
+ * input" — a mismatched model field, an unknown key and a bad date all
+ * collapse to the same useless message. This recurses into `issue.errors`
+ * to surface what actually failed in each branch. A branch that failed with
+ * an empty `errors` array (a discriminator that matched no option at all) is
+ * kept as-is — that issue, naming the discriminator and the values it
+ * accepts, IS the useful signal in that case.
+ */
+function flattenIssues(issues: readonly z.ZodIssue[]): z.ZodIssue[] {
+  const flat: z.ZodIssue[] = []
+  for (const issue of issues) {
+    if (issue.code === 'invalid_union') {
+      const nested = issue.errors.flatMap((branch) => flattenIssues(branch))
+      flat.push(...(nested.length > 0 ? nested : [issue]))
+    } else {
+      flat.push(issue)
+    }
+  }
+  return flat
 }
 
 // ---------------------------------------------------------------------------
@@ -307,10 +347,20 @@ export function getEngagement(db: Database.Database, id: string): Engagement | n
   return row ? mapEngagementRow(row) : null
 }
 
-/** Milestone *editing* stays P3-09 (this task's Scope) — this is a read-only list for a fixed-scope detail view to render. */
+/**
+ * Milestone *editing* stays P3-09 (this task's Scope) — this is a read-only
+ * list for a fixed-scope detail view to render.
+ *
+ * `milestones.sort` is nullable, and plain `ORDER BY sort ASC` sorts SQLite
+ * NULLs first — an unsorted milestone would lead the list ahead of every
+ * milestone that actually has a position. `sort IS NULL` evaluates to 0 for
+ * a sorted row and 1 for an unsorted one, so ordering by that first pushes
+ * NULLs to the end; `sort ASC` then orders the sorted rows among themselves,
+ * and `created_at ASC` breaks ties (including among unsorted rows).
+ */
 export function listMilestones(db: Database.Database, engagementId: string): readonly Milestone[] {
   const rows = db
-    .prepare('SELECT * FROM milestones WHERE engagement_id = ? ORDER BY sort ASC, created_at ASC')
+    .prepare('SELECT * FROM milestones WHERE engagement_id = ? ORDER BY sort IS NULL, sort ASC, created_at ASC')
     .all(engagementId) as MilestoneRow[]
   return rows.map(mapMilestoneRow)
 }
@@ -347,7 +397,8 @@ export function createEngagement(db: Database.Database, input: unknown): Engagem
 export function updateEngagement(db: Database.Database, id: string, patch: unknown): Engagement {
   const parsed = parseInput(updateEngagementInputSchema, patch) as unknown as Record<string, unknown>
 
-  if (!getEngagementRow(db, id)) {
+  const currentRow = getEngagementRow(db, id)
+  if (!currentRow) {
     throw new NotFoundError('Engagement', id)
   }
 
@@ -371,19 +422,30 @@ export function updateEngagement(db: Database.Database, id: string, patch: unkno
   // taken at signature cannot drift by accident, and there is no re-rate
   // path in this task's Scope — see electron/shared/engagements.ts's header.
 
-  // Model-specific columns only move as a set, and only when the patch
-  // actually names a billing model — switching `billingModel` writes the
-  // matching column(s) from the patch and resets the other model's stale
-  // columns to NULL, rather than leaving e.g. a retainer's `hoursIncluded`
-  // sitting on a row that just became `fixed`. A patch that does not
-  // mention `billingModel` at all leaves every one of these five columns
-  // untouched.
+  // Model-specific columns only move as a set — and only reset to NULL the
+  // ones the patch does not carry — when the patch actually *changes* the
+  // billing model. Switching `billingModel` writes the matching column(s)
+  // from the patch and resets the other model's stale columns to NULL,
+  // rather than leaving e.g. a retainer's `hoursIncluded` sitting on a row
+  // that just became `fixed`. But a patch that names the *same* model the
+  // row already has — `{ billingModel: 'tm', hourlyRateCents: 30000 }` on an
+  // already-`tm` engagement — is a partial patch within that model, not a
+  // switch: unnamed columns (`estimatedHours`, `notToExceedCents`) must be
+  // left alone, exactly like `UPDATE_COMMON_COLUMNS` above, not NULLed out.
+  // A patch that does not mention `billingModel` at all leaves every one of
+  // these five columns untouched, same as before.
   if ('billingModel' in parsed) {
     setClauses.push('billing_model = ?')
     values.push(parsed.billingModel)
+    const modelIsChanging = parsed.billingModel !== currentRow.billing_model
     for (const spec of MODEL_SPECIFIC_COLUMNS) {
-      setClauses.push(`${spec.column} = ?`)
-      values.push(spec.key in parsed ? (parsed[spec.key] ?? null) : null)
+      if (modelIsChanging) {
+        setClauses.push(`${spec.column} = ?`)
+        values.push(spec.key in parsed ? (parsed[spec.key] ?? null) : null)
+      } else if (spec.key in parsed) {
+        setClauses.push(`${spec.column} = ?`)
+        values.push(parsed[spec.key] ?? null)
+      }
     }
   }
 

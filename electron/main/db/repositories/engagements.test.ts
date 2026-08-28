@@ -135,6 +135,30 @@ describe('createEngagement / getEngagement: billing party and client are indepen
       expect(wrongSide.map((e) => e.id)).not.toContain(created.id)
     })
   })
+
+  it('creating with only billingCompanyId leaves clientCompanyId null — no coalesce (review item 4, this task\'s headline risk)', () => {
+    withDatabase((db) => {
+      const ezDeploy = createCompany(db, { name: 'EZDeploy Solo' })
+
+      const created = createEngagement(db, {
+        name: 'Solo Billed',
+        billingModel: 'none',
+        billingCompanyId: ezDeploy.id,
+        startedOn: '2026-01-01'
+      })
+
+      expect(created.billingCompanyId).toBe(ezDeploy.id)
+      expect(created.clientCompanyId).toBeNull()
+
+      const fetched = getEngagement(db, created.id)
+      expect(fetched?.clientCompanyId).toBeNull()
+
+      const raw = db.prepare('SELECT client_company_id FROM engagements WHERE id = ?').get(created.id) as {
+        client_company_id: unknown
+      }
+      expect(raw.client_company_id).toBeNull()
+    })
+  })
 })
 
 describe('endsOn: null means rolling, never defaulted or coalesced', () => {
@@ -401,6 +425,16 @@ describe('updateEngagement: undefined-valued keys and switching billing model', 
     })
   })
 
+  it('accepts an explicit billingModel: undefined alongside other fields (review item 2) — the same shape the code documents parseInput normalises', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'Undefined Model Patch Co', billingModel: 'none', startedOn: '2026-01-01' })
+
+      const updated = updateEngagement(db, created.id, { billingModel: undefined, notes: 'x' })
+      expect(updated.notes).toBe('x')
+      expect(updated.billingModel).toBe('none')
+    })
+  })
+
   it('a patch that switches billingModel from retainer to fixed writes the new field and clears the old one', () => {
     withDatabase((db) => {
       const created = createEngagement(db, {
@@ -415,6 +449,33 @@ describe('updateEngagement: undefined-valued keys and switching billing model', 
       expect(updated.billingModel).toBe('fixed')
       expect(updated.contractValueCents).toBe(800000)
       expect(updated.hoursIncluded).toBeNull()
+    })
+  })
+
+  it('a partial patch naming the SAME billingModel the row already has leaves unnamed model-specific columns alone (review item 1: silent data loss)', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Same Model Patch Co',
+        billingModel: 'tm',
+        startedOn: '2026-01-01',
+        hourlyRateCents: 20000,
+        estimatedHours: 40,
+        notToExceedCents: 1000000
+      })
+      expect(created.estimatedHours).toBe(40)
+      expect(created.notToExceedCents).toBe(1000000)
+
+      const updated = updateEngagement(db, created.id, { billingModel: 'tm', hourlyRateCents: 30000 })
+      expect(updated.hourlyRateCents).toBe(30000)
+      expect(updated.estimatedHours).toBe(40)
+      expect(updated.notToExceedCents).toBe(1000000)
+
+      const raw = db
+        .prepare('SELECT hourly_rate_cents, estimated_hours, not_to_exceed_cents FROM engagements WHERE id = ?')
+        .get(created.id) as { hourly_rate_cents: number; estimated_hours: number; not_to_exceed_cents: number }
+      expect(raw.hourly_rate_cents).toBe(30000)
+      expect(raw.estimated_hours).toBe(40)
+      expect(raw.not_to_exceed_cents).toBe(1000000)
     })
   })
 
@@ -451,6 +512,33 @@ describe('updateEngagement: undefined-valued keys and switching billing model', 
   it('updateEngagement throws NotFoundError for an id that does not exist', () => {
     withDatabase((db) => {
       expect(() => updateEngagement(db, randomUUID(), { notes: 'x' })).toThrow(NotFoundError)
+    })
+  })
+
+  it('a validation failure names the actual offending field, not just "(root): Invalid input" (review item 3)', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Distinguishable Errors Co',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        hoursIncluded: 10
+      })
+
+      let thrown: unknown
+      try {
+        // A retainer patch carrying a fixed-only field: a real bug in
+        // zod v4's `z.union` collapses this to one useless "(root): Invalid
+        // input" issue with no mention of the field that is actually wrong.
+        updateEngagement(db, created.id, { billingModel: 'retainer', contractValueCents: 500000 })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(ValidationError)
+      const validationError = thrown as ValidationError
+      expect(validationError.message).not.toBe('(root): Invalid input')
+      expect(validationError.message).toContain('contractValueCents')
+      expect(validationError.issues?.length ?? 0).toBeGreaterThan(0)
     })
   })
 })
@@ -510,6 +598,102 @@ describe('input validation', () => {
   })
 })
 
+describe('constraint translation: a write referencing a nonexistent company or service version is refused, not a bare SqliteError (review item 5)', () => {
+  it('createEngagement with a nonexistent billingCompanyId is refused', () => {
+    withDatabase((db) => {
+      let thrown: unknown
+      try {
+        createEngagement(db, {
+          name: 'Bad Billing Company Co',
+          billingModel: 'none',
+          billingCompanyId: randomUUID(),
+          startedOn: '2026-01-01'
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('foreign-key')
+    })
+  })
+
+  it('createEngagement with a nonexistent clientCompanyId is refused', () => {
+    withDatabase((db) => {
+      let thrown: unknown
+      try {
+        createEngagement(db, {
+          name: 'Bad Client Company Co',
+          billingModel: 'none',
+          clientCompanyId: randomUUID(),
+          startedOn: '2026-01-01'
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('foreign-key')
+    })
+  })
+
+  it('createEngagement with a nonexistent serviceVersionId is refused', () => {
+    withDatabase((db) => {
+      let thrown: unknown
+      try {
+        createEngagement(db, {
+          name: 'Bad Service Version Co',
+          billingModel: 'none',
+          serviceVersionId: randomUUID(),
+          startedOn: '2026-01-01'
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('foreign-key')
+    })
+  })
+
+  it('updateEngagement with a nonexistent billingCompanyId is refused, and the row is unchanged', () => {
+    withDatabase((db) => {
+      const ezDeploy = createCompany(db, { name: 'EZDeploy FK' })
+      const created = createEngagement(db, {
+        name: 'Refused Update Co',
+        billingModel: 'none',
+        billingCompanyId: ezDeploy.id,
+        startedOn: '2026-01-01'
+      })
+
+      let thrown: unknown
+      try {
+        updateEngagement(db, created.id, { billingCompanyId: randomUUID() })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('foreign-key')
+
+      const unchanged = getEngagement(db, created.id)
+      expect(unchanged?.billingCompanyId).toBe(ezDeploy.id)
+    })
+  })
+
+  it('updateEngagement with a nonexistent clientCompanyId is refused', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'Refused Client Update Co', billingModel: 'none', startedOn: '2026-01-01' })
+
+      expect(() => updateEngagement(db, created.id, { clientCompanyId: randomUUID() })).toThrow(RefusalError)
+    })
+  })
+
+  it('updateEngagement with a nonexistent serviceVersionId is refused', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'Refused Service Update Co', billingModel: 'none', startedOn: '2026-01-01' })
+
+      expect(() => updateEngagement(db, created.id, { serviceVersionId: randomUUID() })).toThrow(RefusalError)
+    })
+  })
+})
+
 describe('listMilestones', () => {
   it('returns every milestone for an engagement, ordered by sort', () => {
     withDatabase((db) => {
@@ -541,6 +725,43 @@ describe('listMilestones', () => {
     withDatabase((db) => {
       const engagement = createEngagement(db, { name: 'Bare Co', billingModel: 'none', startedOn: '2026-01-01' })
       expect(listMilestones(db, engagement.id)).toEqual([])
+    })
+  })
+
+  it('an unsorted (sort: null) milestone does not lead the list ahead of sorted ones (review item 6)', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Nullable Sort Co', billingModel: 'fixed', startedOn: '2026-01-01' })
+      const now = nowTimestamp()
+      // Inserted first, so a plain "sort ASC" (NULLs first in SQLite) would
+      // put this one at the head of the list even though it has no
+      // position — it must sort AFTER every milestone that has a `sort`.
+      db.prepare('INSERT INTO milestones (id, engagement_id, name, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        randomUUID(),
+        engagement.id,
+        'Unsorted',
+        null,
+        now,
+        now
+      )
+      db.prepare('INSERT INTO milestones (id, engagement_id, name, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        randomUUID(),
+        engagement.id,
+        'Second',
+        2,
+        now,
+        now
+      )
+      db.prepare('INSERT INTO milestones (id, engagement_id, name, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        randomUUID(),
+        engagement.id,
+        'First',
+        1,
+        now,
+        now
+      )
+
+      const milestones = listMilestones(db, engagement.id)
+      expect(milestones.map((m) => m.name)).toEqual(['First', 'Second', 'Unsorted'])
     })
   })
 })
