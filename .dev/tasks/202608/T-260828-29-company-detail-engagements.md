@@ -1,7 +1,7 @@
 ---
 id: T-260828-29
 title: Build company detail — engagements billed here, delivered here, end clients, details
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-12
 created: 2026-08-28

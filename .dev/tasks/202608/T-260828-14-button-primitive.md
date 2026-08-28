@@ -1,11 +1,11 @@
 ---
 id: T-260828-14
 title: Fold the shell's raw `.btn` classes into a Button primitive
-status: in-progress
+status: done
 category: ui
 plan_ref: P0-09
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -59,3 +59,17 @@ the nav-group rule applies to the design system too. Any view content.
 ## Outcome
 
 *Appended at close. Delete this heading if the task is dropped.*
+
+
+---
+
+## Outcome
+
+Merged as `f9e6f85`. Review non-blocking.
+
+**Changed:** `components/primitives/Button.tsx` and its test;
+`shell/buttons.css` renamed to `primitives/Button.css` beside the component;
+raw `.btn` usages in the shell migrated.
+
+Landed before the create sheets and the companies view so those write `Button`
+rather than raw `.btn` markup that would have to be unpicked afterwards.

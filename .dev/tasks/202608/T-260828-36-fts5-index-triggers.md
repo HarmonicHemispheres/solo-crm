@@ -1,11 +1,11 @@
 ---
 id: T-260828-36
 title: Create the FTS5 search index and its triggers in their own migration
-status: in-progress
+status: done
 category: data
 plan_ref: P1-06
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -86,3 +86,50 @@ G6 names, no more. Fuzzy or typo-tolerant matching; FTS5 prefix queries are what
 - **Contentless vs external-content confusion.** A contentless table cannot be
   queried for its columns and would force a second copy; G6 chose
   external-content deliberately.
+
+
+---
+
+## Outcome
+
+Merged as `879cd1c`, resolving one conflict by hand.
+
+**Changed:** `migrations/0002_search_fts.sql` (new — the FTS5 table, the
+`search_source` union view and AFTER INSERT/UPDATE/DELETE triggers on all five
+source tables), `repositories/search.ts` and its test, plus version-expectation
+updates in `migrate`, `connection`, `schema`, `registry` and `bridge` tests.
+
+**Review:** blocking. All fixed before merge.
+
+1. *(blocking)* `registry.test.ts` and `bridge.test.ts` hardcoded schema version
+   1; migration 0002 makes a fresh database version 2. Both now derive it from
+   `MIGRATIONS` so migration 0003 will not re-break them.
+2. The content view was named `search_fts_content` — **exactly the shadow table
+   FTS5 reserves for `search_fts`**. Proven: `DROP TABLE search_fts` then
+   `CREATE VIRTUAL TABLE` fails with "view 'search_fts_content' already exists",
+   and succeeds once renamed. Nothing broke today; it would have permanently
+   foreclosed drop-and-recreate for every future migration. Renamed to
+   `search_source` while the migration was still unshipped — afterwards it costs
+   a migration against every existing database.
+3. Mutation-proven: deleting `rebuildSearchIndex`'s `'delete-all'` left all 68
+   tests green, because the suite only ever rebuilt an already-correct index
+   where re-inserting identical rowids is a silent no-op. Recovery from drift is
+   the function's entire purpose. Now covered by a planted-orphan test.
+4. Mutation-proven: removing `ORDER BY rank` also left the suite green.
+5. Four test files reached for migration 0001 as `MIGRATIONS[0]`; now
+   `MIGRATIONS.find(m => m.version === 1)`, so inserting a migration at index 0
+   cannot silently repoint the guards that keep 0001 and 0002 from colliding.
+
+**Merge conflict:** `registry.test.ts`, against T-260828-26. Both sides were
+right — T-26 added a `callChannel` helper that parses request *and* response
+through the contract; T-36 derived the version constant. Resolved by taking
+both, and dropping T-36's explicit `safeParse` since `callChannel` subsumes it.
+
+**Deferred → T-260828-51:** the union view's `content_rowid` is a computed
+expression, so no index can serve it. Measured at 10× volume: 95 / 488 / 581 ms
+against §8's 100 ms budget, versus 13.8 / 124 / 41 ms self-contained. `"a"*` is
+not pathological — it is what the palette issues after one keystroke.
+
+**Deferred → T-260828-52:** no ADR for the union view or the `rowid * 8 + kind`
+encoding, which is a cross-cutting contract any sixth searchable table must
+honour.

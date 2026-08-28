@@ -1,11 +1,11 @@
 ---
 id: T-260828-44
 title: Make the settings credential guard's test actually guard it
-status: in-progress
+status: done
 category: data
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -86,3 +86,32 @@ ADR-004 permits them but they belong to the P4 adapter tasks that need them.
 - **A compile-time assertion that does not assert.** `@ts-expect-error` passes
   silently if the error moves to a different line. Prefer a type-level
   equality check that fails loudly.
+
+
+---
+
+## Outcome
+
+Merged as `ed4ee43`. Review non-blocking.
+
+**Changed:** `repositories/settings.test.ts`, and a type-only addition to
+`electron/shared/settings.ts`. **The runtime guard and the word list are
+unchanged** — this task was tests only, and that was the scope.
+
+The original test re-declared `FORBIDDEN_KEY_WORDS` as its own regex literal and
+never called `assertNoSecretKeys` at all, so deleting six words from the real
+constant left all 27 tests green. It is now driven from the constant itself, one
+case per word, plus a test that every registered key passes through the guard
+and a `stripe.apiSecret` case mixed into the real key set.
+
+The integration toggle keys are now pinned to `INTEGRATION_SOURCES` the way the
+cadence keys were already pinned to `COMPANY_KINDS` — that asymmetry was the
+defect, since a fourth source would silently have got no key.
+
+The `as never` cast in the type-level test is replaced with a real compile-time
+assertion that fails if `getSetting`'s `key` is ever widened to `string` — likely
+pressure from T-260828-26, where the key arrives as `unknown`.
+
+ADR-004 is the reason this mattered: credentials stay out of the `settings` table
+so the nightly JSON backup can never leak one, and a guard whose test cannot fail
+is not a guard.

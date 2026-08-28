@@ -1,11 +1,11 @@
 ---
 id: T-260828-47
 title: Stop the real-Electron tests timing out under parallel load
-status: in-progress
+status: done
 category: build
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -102,3 +102,31 @@ exercise the real runtime.
   never resolves rather than because it is slow, serialising it hides a real
   bug. Confirm each one actually completes, and how long it takes, before
   choosing its budget.
+
+
+---
+
+## Outcome
+
+Merged as `afebcd5`.
+
+**Changed:** `vitest.config.ts` becomes a five-project config — `node`,
+`renderer`, `catch-all`, plus `runtime-boot-node` and `runtime-boot-renderer`
+with `fileParallelism: false`. `package.json`'s `test` runs the fast pools and
+then the boot pools as **two separate invocations**, because `fileParallelism`
+only serialises files *within* a project — it does not stop Vitest running
+another project's pool concurrently.
+
+Also adds `test:unit`, and a `catch-all` project so a test file landing outside
+every named glob is run rather than silently collected by nothing.
+
+**Review:** non-blocking.
+
+Test count is preserved exactly: 48 + 5 = 53 files, 538 + 37 = 575 tests,
+matching main before the split. Worth stating plainly because the orchestrator
+briefly misread it as 48 files being dropped — `npm test` now prints two
+summaries and `tail` showed only the second.
+
+**Note for anyone reading a verify report from here on:** `npm test` emits two
+summaries. Reading only the last one reports the 5-file boot pool as the whole
+suite.

@@ -1,11 +1,11 @@
 ---
 id: T-260828-26
 title: Expose the repositories over IPC — entity channels for companies, people, engagements, tasks, activity, settings
-status: in-progress
+status: done
 category: ipc
 plan_ref: P1-07
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -101,3 +101,62 @@ payload)` escape hatch, which would undo the boundary the preload exists to hold
 - **Over-wide list responses.** Returning every column of every row for the
   palette's benefit will not scale to the 10× volume X-07 measures. Shape list
   responses to what the views read.
+
+
+---
+
+## Outcome
+
+Merged as `0b021b1`. 34 entity channels across companies,
+people, engagements, tasks, activity and settings, plus the two proof channels.
+
+**Changed:** `electron/shared/ipc-types.ts`, all six `electron/shared/<entity>.ts`
+modules, `electron/main/ipc/registry.ts` and its test,
+`electron/renderer/lib/{ipc,query-keys}.ts` and tests, `stub-crm.ts` and a new
+test for it, `repositories/activity.ts`.
+
+**`electron/preload/index.ts` and `electron/main/ipc/index.ts` are untouched** —
+both stay generic loops, which was the point of T-260828-09's design. Verified
+by adding a contract entry with no handler and confirming `tsc` fails (TS1360).
+
+**A design decision worth keeping**, made by the builder and not in the scope:
+`electron/main/ipc/index.ts` discards a thrown handler error's `.message`
+entirely. So a repository refusal that is *thrown* loses its reason at the
+boundary. Every mutating channel therefore returns
+`{ ok: true, data } | { ok: false, error }` and `runMutation` catches repository
+errors and returns them **as data**. A genuine bug still throws and reaches the
+existing handler-error path unchanged.
+
+**Review:** security-review non-blocking (nits only, on the entire
+renderer-to-main attack surface). code-review **blocking**, fixed before merge:
+
+1. *(blocking)* ADR-007 redefinition — `taskFilterSchema` and
+   `listEngagementsFilterSchema` redeclared their repository interfaces field by
+   field, while the same diff moved `ActivityFilters` into shared correctly and
+   wrote a comment stating the rule. Two of three filters broke the rule the
+   third established.
+2. `satisfies` catches renames and type changes but **not additions** — proven by
+   adding `taxId` to `Company`, mapping it, and watching both tsconfigs pass while
+   the field never crossed IPC.
+3. `RefusalError.blocker` was being dropped by `runMutation`, leaving views to
+   parse prose — the exact string-matching `errors.ts` exists to prevent.
+4. **No entity channel's schemas were ever exercised.** Every test called
+   `handler(payload)` directly, bypassing both halves of what `index.ts` validates
+   in production — 32 channels where a mismatch ships dead with a green suite.
+   That is why finding 1 survived.
+
+The fix moved each entity's **whole wire surface** into
+`electron/shared/<entity>.ts` (create input, update input, read shape, list
+filter) with types derived by `z.infer`, carried `blocker` through the envelope,
+and routed every channel test through `CHANNEL_CONTRACTS`.
+
+**Deferred:** list channels return every column of every row — defensible while
+no view exists to say what it reads, and the thing X-07 will measure. Security
+nits: `settings:set('backup.folder')` is the one channel accepting a filesystem
+path (inert until X-04 wires it), and `companies.website` has no scheme
+constraint — to be constrained at its two sinks, the view `href` and the favicon
+fetch, which is now written into T-260828-48's scope.
+
+**Not verified:** a live Electron window round trip. No GUI in the agent
+environment; `bridge.test.ts` proves the generic wiring end to end for the
+existing channels and every new one follows it identically.

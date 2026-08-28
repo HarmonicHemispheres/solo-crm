@@ -1,11 +1,11 @@
 ---
 id: T-260828-17
 title: Resolve the data root from a pointer file so its location can be a choice
-status: in-progress
+status: done
 category: data
 plan_ref: P0-03
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -131,3 +131,30 @@ byte-for-byte what it is today.
 **Review:** what `code-review` found and what was done about each finding.
 
 **Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+
+
+---
+
+## Outcome
+
+Merged as `29617bc`. Review non-blocking.
+
+**Changed:** `electron/main/db/data-root.ts` and its test, `connection.ts`,
+`ADR-006-data-root-pointer-file.md`.
+
+The finding that mattered was whether a configurable data root still routes
+through T-260828-06's sync-folder guard — AGENTS.md makes "never in a Drive,
+Dropbox or iCloud folder" a standing gotcha because file-sync daemons and SQLite
+corrupt each other silently, and a bypass would not have shown up as a test
+failure. It does: `resolveDatabasePath` composes with `resolveDataRoot` and still
+returns to the same guard call site in `openDatabase`, so a pointer-supplied
+sync-folder path is refused exactly as a hardcoded one would be. A test proves
+the refusal names the pointed-at path rather than `userData`'s.
+
+`writeDataRootPointer` is exported for T-260828-18 to call; nothing in this task
+calls it.
+
+**A launch failure worth recording:** this task's first dispatch died before any
+code was written — a worktree isolation error, when git was tracking 13 working
+trees. The cleanup that followed is what damaged the shared `node_modules` (see
+the run summary).

@@ -1,7 +1,7 @@
 ---
 id: T-260828-27
 title: Build the create sheets — company, person, engagement, todo
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-08
 created: 2026-08-28

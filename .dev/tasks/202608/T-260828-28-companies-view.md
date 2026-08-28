@@ -1,7 +1,7 @@
 ---
 id: T-260828-28
 title: Build the Companies view — card and list presentations with a real record set
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-11
 created: 2026-08-28
