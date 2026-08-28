@@ -1,11 +1,11 @@
 ---
 id: T-260828-03
 title: Stand up the electron-vite + React + TypeScript toolchain
-status: in-progress
+status: done
 category: build
 plan_ref: P0-01
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -78,4 +78,37 @@ because there is nothing to run.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in `b12ac84` (run R-260828-01). Full electron-vite + React +
+TypeScript scaffold: split tsconfigs per process (renderer `import fs` fails
+typecheck, asserted by test), eslint, vitest (node/jsdom project split), the §4
+directory layout, electron-builder configured but producing nothing. Verify:
+typecheck, lint, test (6), build all exit 0.
+
+Findings worth remembering:
+
+- **The preload must be CJS.** `"type": "module"` makes electron-vite emit an
+  ESM preload, which Electron's sandboxed renderer silently refuses to load —
+  `window.crm` would never exist, invisible until T-260828-09. Review caught it;
+  fixed to `format: 'cjs'` / `index.cjs` and proven against the real Electron 44
+  binary (`typeof window.crm === 'object'`, renderer `sandboxed: true`).
+- **`dev` script needs `electron-vite dev --watch`** — without the flag, main
+  edits never rebuild/restart; only the renderer stays live.
+- **Version pins:** vite pinned ^7 (electron-vite 5 rejects 8); typescript
+  pinned ^6.0.3 (typescript-eslint 8 rejects 7.x, which npm now resolves by
+  default). Do not let later tasks float these without checking.
+- This environment sets `ELECTRON_RUN_AS_NODE=1` globally — unset it to launch
+  the real app.
+
+Follow-ups from the confirmation review, recorded not blocking:
+
+- **N1 → T-260828-04:** preload catch block writes to `process.stderr`, which
+  is `undefined` in a sandboxed preload — the log line throws before the
+  rethrow, masking the real error. Use `console.error` + `throw`.
+- **N2 → T-260828-04:** vitest `projects` split silently collects nothing for
+  tests outside main/preload/renderer globs; add a catch-all or coverage assert.
+- **N3 → T-260828-04:** rescoped eslint test-override block is now dead config.
+- **N4 → T-260828-04:** `toolchain.test.ts` uses `JSON.parse` on tsconfig —
+  JSONC comments there would fail the suite with a parse error.
+- **N5 (latent, revisit with CI):** `postinstall: electron-builder
+  install-app-deps` breaks `npm ci --omit=dev` since electron-builder is a
+  devDependency. No CI exists yet.
