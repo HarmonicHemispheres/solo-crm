@@ -51,6 +51,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.102.8",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
     "zod": "^4.4.3"
