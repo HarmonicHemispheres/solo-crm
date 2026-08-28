@@ -245,6 +245,11 @@ is not what makes it start.
   - [ ] `billed_via_company_id` cannot point at itself, enforced in the database
   - [ ] Deleting a company that is a billing party for another is refused with a
         reason, not a foreign-key error string
+  - [ ] Deleting a company (or person, or engagement) with activity rows is
+        likewise refused with a reason — migration 0001 gave `activity`'s
+        back-links RESTRICT FKs deliberately (T-260828-07): activity is the
+        append-only record of what happened (G8, ADR-001), so history blocks
+        deletion rather than being silently orphaned
 
 - [ ] **P1-02 · People + affiliations repository** — 🗄 data · M · after P0-05
   People independent of companies. Affiliations carry `title`, `is_primary`,

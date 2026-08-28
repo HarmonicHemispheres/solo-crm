@@ -54,6 +54,41 @@ describe('runMigrations: fresh vs replayed schema identity', () => {
     }
   })
 
+  it('one-shot and incremental application of the same sequence produce an identical sqlite_master dump', () => {
+    // The acceptance criterion proper: a database built fresh in one run
+    // must match one migrated incrementally across separate boots — the
+    // two-fresh-databases test above only proves determinism of a single
+    // code path (T-260828-07 review, should-fix 1).
+    const oneShotDir = makeTmpDir('solo-crm-migrate-oneshot-')
+    const incrementalDir = makeTmpDir('solo-crm-migrate-incremental-')
+    const synthetic: MigrationDefinition = {
+      version: 2,
+      name: 'test_add_marker_column',
+      sql: 'ALTER TABLE companies ADD COLUMN test_marker TEXT;'
+    }
+    try {
+      openDatabase({ userDataDir: oneShotDir, migrations: [...MIGRATIONS, synthetic] })
+      const oneShotDump = dumpSchema(getDatabase())
+      closeDatabase()
+
+      // Incremental: 0001 lands, the app "quits", a later boot applies the
+      // next migration to the existing file.
+      openDatabase({ userDataDir: incrementalDir })
+      closeDatabase()
+      openDatabase({ userDataDir: incrementalDir, migrations: [...MIGRATIONS, synthetic] })
+      const incrementalDump = dumpSchema(getDatabase())
+      closeDatabase()
+
+      expect(incrementalDump).toEqual(oneShotDump)
+      expect(oneShotDump.length).toBeGreaterThan(0)
+      expect(JSON.stringify(oneShotDump)).toContain('test_marker')
+    } finally {
+      closeDatabase()
+      rmSync(oneShotDir, { recursive: true, force: true })
+      rmSync(incrementalDir, { recursive: true, force: true })
+    }
+  })
+
   it('re-running the migrator against an already-migrated connection is a no-op, not a duplication', () => {
     const tmpDir = makeTmpDir('solo-crm-migrate-replay-')
     try {
