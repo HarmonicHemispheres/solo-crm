@@ -12,17 +12,27 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "seed": "electron-vite build && electron out/main/seed.js"
+    "seed": "electron-vite build && electron out/main/seed.js",
+    "dist": "electron-vite build && electron-builder --win --publish never"
   },
   "build": {
     "appId": "com.magicpilllabs.solocrm",
     "productName": "Solo CRM",
     "directories": {
-      "output": "dist"
+      "output": "release"
     },
     "files": [
-      "out/**/*"
-    ]
+      "out/**/*",
+      "!out/main/seed.js"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    }
   },
   "devDependencies": {
     "@eslint/css": "^1.4.0",
