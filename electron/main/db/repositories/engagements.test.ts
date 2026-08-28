@@ -1,0 +1,666 @@
+import { randomUUID } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type Database from 'better-sqlite3'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nowTimestamp } from '../../../shared/format'
+import { closeDatabase, getDatabase, openDatabase } from '../connection'
+import { createCompany } from './companies'
+import {
+  createEngagement,
+  deleteEngagement,
+  getEngagement,
+  listEngagements,
+  listMilestones,
+  updateEngagement
+} from './engagements'
+import { NotFoundError, RefusalError, ValidationError } from './errors'
+
+/**
+ * Same real-database discipline as companies.test.ts: every test runs
+ * against a real, migrated database opened through
+ * `openDatabase({ userDataDir })`, not a mock.
+ */
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function makeTmpDir(): string {
+  return mkdtempSync(join(tmpdir(), 'solo-crm-engagements-repo-'))
+}
+
+afterEach(() => {
+  closeDatabase()
+})
+
+function withDatabase<T>(fn: (db: Database.Database) => T): T {
+  const tmpDir = makeTmpDir()
+  try {
+    openDatabase({ userDataDir: tmpDir })
+    return fn(getDatabase())
+  } finally {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Raw inserts into the tables migration 0001 gives a foreign key at
+ * `engagements.id` — every one of `deleteEngagement`'s five blockers needs
+ * a fixture row in the table it guards, and each of those repositories
+ * (activity, tasks, time entries) is a separate task, so these are the
+ * blocker fixtures for *this* task's tests, not a claim about any of those
+ * repositories' future APIs.
+ */
+function insertMilestone(db: Database.Database, engagementId: string): void {
+  const now = nowTimestamp()
+  db.prepare('INSERT INTO milestones (id, engagement_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(
+    randomUUID(),
+    engagementId,
+    'Kickoff',
+    now,
+    now
+  )
+}
+
+function insertRevenueLine(db: Database.Database, engagementId: string): void {
+  const now = nowTimestamp()
+  db.prepare(
+    `INSERT INTO revenue_lines (id, engagement_id, period_month, amount_cents, kind, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(randomUUID(), engagementId, '2026-08-01', 100000, 'retainer', 'projected', now, now)
+}
+
+function insertTimeEntry(db: Database.Database, engagementId: string): void {
+  const now = nowTimestamp()
+  db.prepare('INSERT INTO time_entries (id, engagement_id, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
+    randomUUID(),
+    engagementId,
+    now,
+    now
+  )
+}
+
+function insertTask(db: Database.Database, engagementId: string): void {
+  const now = nowTimestamp()
+  db.prepare('INSERT INTO tasks (id, title, engagement_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(
+    randomUUID(),
+    'Follow up',
+    engagementId,
+    now,
+    now
+  )
+}
+
+function insertActivity(db: Database.Database, engagementId: string): void {
+  const now = nowTimestamp()
+  db.prepare(
+    `INSERT INTO activity (id, occurred_at, kind, title, body, company_id, person_id, engagement_id, source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(randomUUID(), now, 'note', 'Touch', null, null, null, engagementId, 'manual', now, now)
+}
+
+describe('createEngagement / getEngagement: billing party and client are independent columns', () => {
+  it("the seed fixture's Samay-shaped case — billed through one company, delivered to another — persists both and is returned by a query from either side", () => {
+    withDatabase((db) => {
+      const ezDeploy = createCompany(db, { name: 'EZDeploy' })
+      const wPlusK = createCompany(db, { name: 'W+K' })
+
+      const created = createEngagement(db, {
+        name: 'Samay build',
+        billingModel: 'retainer',
+        billingCompanyId: ezDeploy.id,
+        clientCompanyId: wPlusK.id,
+        startedOn: '2026-01-01',
+        hoursIncluded: 40
+      })
+
+      expect(created.billingCompanyId).toBe(ezDeploy.id)
+      expect(created.clientCompanyId).toBe(wPlusK.id)
+      expect(created.billingCompanyId).not.toBe(created.clientCompanyId)
+
+      const fetched = getEngagement(db, created.id)
+      expect(fetched?.billingCompanyId).toBe(ezDeploy.id)
+      expect(fetched?.clientCompanyId).toBe(wPlusK.id)
+
+      const byBilling = listEngagements(db, { billingCompanyId: ezDeploy.id })
+      expect(byBilling.map((e) => e.id)).toContain(created.id)
+
+      const byClient = listEngagements(db, { clientCompanyId: wPlusK.id })
+      expect(byClient.map((e) => e.id)).toContain(created.id)
+
+      // Querying the billing company's id as a *client* filter must not
+      // match — the two columns are never coalesced.
+      const wrongSide = listEngagements(db, { clientCompanyId: ezDeploy.id })
+      expect(wrongSide.map((e) => e.id)).not.toContain(created.id)
+    })
+  })
+})
+
+describe('endsOn: null means rolling, never defaulted or coalesced', () => {
+  it('survives create -> read -> update -> read with no sentinel substituted, asserted on the raw column value', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Rolling Retainer',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        endsOn: null
+      })
+      expect(created.endsOn).toBeNull()
+
+      const fetchedAfterCreate = getEngagement(db, created.id)
+      expect(fetchedAfterCreate?.endsOn).toBeNull()
+
+      const rawAfterCreate = db.prepare('SELECT ends_on FROM engagements WHERE id = ?').get(created.id) as {
+        ends_on: unknown
+      }
+      expect(rawAfterCreate.ends_on).toBeNull()
+
+      const updated = updateEngagement(db, created.id, { notes: 'still rolling' })
+      expect(updated.endsOn).toBeNull()
+
+      const rawAfterUpdate = db.prepare('SELECT ends_on FROM engagements WHERE id = ?').get(created.id) as {
+        ends_on: unknown
+      }
+      expect(rawAfterUpdate.ends_on).toBeNull()
+
+      const fetchedAfterUpdate = getEngagement(db, created.id)
+      expect(fetchedAfterUpdate?.endsOn).toBeNull()
+    })
+  })
+
+  it('omitting endsOn entirely on create also leaves it null, not defaulted', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'No End Date', billingModel: 'none', startedOn: '2026-01-01' })
+      expect(created.endsOn).toBeNull()
+    })
+  })
+})
+
+describe('billingModel: a real discriminated union, not a flat optional schema', () => {
+  it("createEngagement({ billingModel: 'retainer', contractValueCents: ... }) is rejected, naming the offending field", () => {
+    withDatabase((db) => {
+      let thrown: unknown
+      try {
+        createEngagement(db, {
+          name: 'Mismatched Model',
+          billingModel: 'retainer',
+          startedOn: '2026-01-01',
+          contractValueCents: 500000
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(ValidationError)
+      expect((thrown as ValidationError).message).toContain('contractValueCents')
+    })
+  })
+
+  it('rejects a tm field on a fixed engagement', () => {
+    withDatabase((db) => {
+      expect(() =>
+        createEngagement(db, {
+          name: 'Fixed With TM Field',
+          billingModel: 'fixed',
+          startedOn: '2026-01-01',
+          hourlyRateCents: 15000
+        })
+      ).toThrow(ValidationError)
+    })
+  })
+
+  it('retainer carries hoursIncluded and round-trips it', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Retainer Co',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        hoursIncluded: 20
+      })
+      expect(created.hoursIncluded).toBe(20)
+      expect(created.contractValueCents).toBeNull()
+      expect(created.hourlyRateCents).toBeNull()
+    })
+  })
+
+  it('fixed carries contractValueCents and round-trips it', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Fixed Co',
+        billingModel: 'fixed',
+        startedOn: '2026-01-01',
+        contractValueCents: 1200000
+      })
+      expect(created.contractValueCents).toBe(1200000)
+      expect(created.hoursIncluded).toBeNull()
+    })
+  })
+
+  it('tm carries hourlyRateCents, estimatedHours and notToExceedCents and round-trips them', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'TM Co',
+        billingModel: 'tm',
+        startedOn: '2026-01-01',
+        hourlyRateCents: 25000,
+        estimatedHours: 80,
+        notToExceedCents: 2000000
+      })
+      expect(created.hourlyRateCents).toBe(25000)
+      expect(created.estimatedHours).toBe(80)
+      expect(created.notToExceedCents).toBe(2000000)
+    })
+  })
+
+  it('equity carries no model-specific columns and is accepted', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'Equity Co', billingModel: 'equity', startedOn: '2026-01-01' })
+      expect(created.billingModel).toBe('equity')
+      expect(created.hoursIncluded).toBeNull()
+      expect(created.contractValueCents).toBeNull()
+    })
+  })
+
+  it('none carries no model-specific columns and is accepted', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'No Model Co', billingModel: 'none', startedOn: '2026-01-01' })
+      expect(created.billingModel).toBe('none')
+    })
+  })
+
+  it('rejects a create with no billingModel at all', () => {
+    withDatabase((db) => {
+      expect(() => createEngagement(db, { name: 'No Model At All', startedOn: '2026-01-01' })).toThrow(ValidationError)
+    })
+  })
+
+  it('rejects an unknown billingModel value', () => {
+    withDatabase((db) => {
+      expect(() =>
+        createEngagement(db, { name: 'Bad Model', billingModel: 'subscription', startedOn: '2026-01-01' })
+      ).toThrow(ValidationError)
+    })
+  })
+})
+
+describe('status: all six values round-trip, lost included', () => {
+  const statuses = ['active', 'pending', 'proposed', 'held', 'delivered', 'lost'] as const
+
+  it.each(statuses)('round-trips status=%s', (status) => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: `Status ${status}`,
+        billingModel: 'none',
+        startedOn: '2026-01-01',
+        status
+      })
+      expect(created.status).toBe(status)
+
+      const fetched = getEngagement(db, created.id)
+      expect(fetched?.status).toBe(status)
+
+      const filtered = listEngagements(db, { status })
+      expect(filtered.map((e) => e.id)).toContain(created.id)
+    })
+  })
+
+  it('rejects an unknown status value', () => {
+    withDatabase((db) => {
+      expect(() =>
+        createEngagement(db, { name: 'Bad Status', billingModel: 'none', startedOn: '2026-01-01', status: 'won' })
+      ).toThrow(ValidationError)
+    })
+  })
+})
+
+describe('startedOn is required on create', () => {
+  it('rejects a create with no startedOn, rather than defaulting to today', () => {
+    withDatabase((db) => {
+      expect(() => createEngagement(db, { name: 'No Start Date', billingModel: 'none' })).toThrow(ValidationError)
+    })
+  })
+})
+
+describe('agreedRateCents: writable on create, ignored on update', () => {
+  it('is stored as given on create', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Rated Co',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        agreedRateCents: 15000,
+        hoursIncluded: 10
+      })
+      expect(created.agreedRateCents).toBe(15000)
+    })
+  })
+
+  it('updateEngagement cannot change agreedRateCents — the stored value is unchanged after an update that includes it', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Snapshot Co',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        agreedRateCents: 15000,
+        hoursIncluded: 10
+      })
+      expect(created.agreedRateCents).toBe(15000)
+
+      // The update patch includes agreedRateCents with a different value —
+      // this must not throw (the schema accepts the key) and must not
+      // change the stored column.
+      const updated = updateEngagement(db, created.id, { agreedRateCents: 99999, notes: 'renegotiation discussed' })
+      expect(updated.agreedRateCents).toBe(15000)
+      expect(updated.notes).toBe('renegotiation discussed')
+
+      const raw = db.prepare('SELECT agreed_rate_cents FROM engagements WHERE id = ?').get(created.id) as {
+        agreed_rate_cents: number
+      }
+      expect(raw.agreed_rate_cents).toBe(15000)
+    })
+  })
+})
+
+describe('money is integer cents end to end', () => {
+  it('rejects a float for agreedRateCents', () => {
+    withDatabase((db) => {
+      expect(() =>
+        createEngagement(db, {
+          name: 'Float Rate Co',
+          billingModel: 'retainer',
+          startedOn: '2026-01-01',
+          agreedRateCents: 150.5
+        })
+      ).toThrow(ValidationError)
+    })
+  })
+
+  it('rejects a float for contractValueCents', () => {
+    withDatabase((db) => {
+      expect(() =>
+        createEngagement(db, {
+          name: 'Float Contract Co',
+          billingModel: 'fixed',
+          startedOn: '2026-01-01',
+          contractValueCents: 1200000.5
+        })
+      ).toThrow(ValidationError)
+    })
+  })
+})
+
+describe('updateEngagement: undefined-valued keys and switching billing model', () => {
+  it('a patch with an explicit undefined-valued key leaves the column untouched, same as an absent key', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'Undefined Patch Co', billingModel: 'none', startedOn: '2026-01-01', notes: 'original' })
+      expect(created.notes).toBe('original')
+
+      const updated = updateEngagement(db, created.id, { notes: undefined, status: 'active' })
+      expect(updated.notes).toBe('original')
+      expect(updated.status).toBe('active')
+    })
+  })
+
+  it('a patch that switches billingModel from retainer to fixed writes the new field and clears the old one', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Switching Co',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        hoursIncluded: 30
+      })
+      expect(created.hoursIncluded).toBe(30)
+
+      const updated = updateEngagement(db, created.id, { billingModel: 'fixed', contractValueCents: 800000 })
+      expect(updated.billingModel).toBe('fixed')
+      expect(updated.contractValueCents).toBe(800000)
+      expect(updated.hoursIncluded).toBeNull()
+    })
+  })
+
+  it('a patch that omits billingModel leaves every model-specific column untouched', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Untouched Model Co',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        hoursIncluded: 15
+      })
+
+      const updated = updateEngagement(db, created.id, { status: 'active' })
+      expect(updated.billingModel).toBe('retainer')
+      expect(updated.hoursIncluded).toBe(15)
+    })
+  })
+
+  it('rejects a patch that switches to retainer while still carrying a fixed-only field', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, {
+        name: 'Bad Switch Co',
+        billingModel: 'fixed',
+        startedOn: '2026-01-01',
+        contractValueCents: 500000
+      })
+
+      expect(() => updateEngagement(db, created.id, { billingModel: 'retainer', contractValueCents: 500000 })).toThrow(
+        ValidationError
+      )
+    })
+  })
+
+  it('updateEngagement throws NotFoundError for an id that does not exist', () => {
+    withDatabase((db) => {
+      expect(() => updateEngagement(db, randomUUID(), { notes: 'x' })).toThrow(NotFoundError)
+    })
+  })
+})
+
+describe('createEngagement / updateEngagement: id and timestamps', () => {
+  it('assigns a UUID id and equal created_at/updated_at on create; update moves updated_at and leaves created_at', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-08-28T10:00:00.000Z'))
+      withDatabase((db) => {
+        const created = createEngagement(db, { name: 'Time Co', billingModel: 'none', startedOn: '2026-01-01' })
+        expect(created.id).toMatch(UUID_PATTERN)
+        expect(created.createdAt).toBe('2026-08-28T10:00:00.000Z')
+        expect(created.updatedAt).toBe('2026-08-28T10:00:00.000Z')
+
+        vi.setSystemTime(new Date('2026-08-28T10:05:00.000Z'))
+        const updated = updateEngagement(db, created.id, { notes: 'touched' })
+        expect(updated.createdAt).toBe(created.createdAt)
+        expect(updated.updatedAt).toBe('2026-08-28T10:05:00.000Z')
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('input validation', () => {
+  it('createEngagement rejects a blank name', () => {
+    withDatabase((db) => {
+      expect(() => createEngagement(db, { name: '', billingModel: 'none', startedOn: '2026-01-01' })).toThrow(
+        ValidationError
+      )
+    })
+  })
+
+  it('createEngagement rejects an unknown field name', () => {
+    withDatabase((db) => {
+      expect(() =>
+        createEngagement(db, { name: 'Typo Co', billingModel: 'none', startedOn: '2026-01-01', nmae: 'Typo Co' })
+      ).toThrow(ValidationError)
+    })
+  })
+
+  it('updateEngagement rejects a non-object patch', () => {
+    withDatabase((db) => {
+      const created = createEngagement(db, { name: 'Patch Co', billingModel: 'none', startedOn: '2026-01-01' })
+      expect(() => updateEngagement(db, created.id, 'not an object')).toThrow(ValidationError)
+    })
+  })
+
+  it("rejects a since-style bad date ('2026-1-1') for startedOn", () => {
+    withDatabase((db) => {
+      expect(() =>
+        createEngagement(db, { name: 'Bad Date Co', billingModel: 'none', startedOn: '2026-1-1' })
+      ).toThrow(ValidationError)
+    })
+  })
+})
+
+describe('listMilestones', () => {
+  it('returns every milestone for an engagement, ordered by sort', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Fixed Scope Co', billingModel: 'fixed', startedOn: '2026-01-01' })
+      const now = nowTimestamp()
+      db.prepare('INSERT INTO milestones (id, engagement_id, name, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        randomUUID(),
+        engagement.id,
+        'Second',
+        2,
+        now,
+        now
+      )
+      db.prepare('INSERT INTO milestones (id, engagement_id, name, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        randomUUID(),
+        engagement.id,
+        'First',
+        1,
+        now,
+        now
+      )
+
+      const milestones = listMilestones(db, engagement.id)
+      expect(milestones.map((m) => m.name)).toEqual(['First', 'Second'])
+    })
+  })
+
+  it('returns an empty list for an engagement with no milestones', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Bare Co', billingModel: 'none', startedOn: '2026-01-01' })
+      expect(listMilestones(db, engagement.id)).toEqual([])
+    })
+  })
+})
+
+describe('deleteEngagement: referential refusals — all five foreign keys migration 0001 points at engagements.id', () => {
+  it('refuses to delete an engagement referenced by a milestone; the row survives', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Milestoned Co', billingModel: 'fixed', startedOn: '2026-01-01' })
+      insertMilestone(db, engagement.id)
+
+      let thrown: unknown
+      try {
+        deleteEngagement(db, engagement.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'milestones', count: 1 })
+      expect(getEngagement(db, engagement.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete an engagement referenced by a revenue line; the row survives', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Revenue Co', billingModel: 'retainer', startedOn: '2026-01-01' })
+      insertRevenueLine(db, engagement.id)
+
+      let thrown: unknown
+      try {
+        deleteEngagement(db, engagement.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'revenue-lines', count: 1 })
+      expect(getEngagement(db, engagement.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete an engagement referenced by a time entry; the row survives', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Timelogged Co', billingModel: 'tm', startedOn: '2026-01-01' })
+      insertTimeEntry(db, engagement.id)
+
+      let thrown: unknown
+      try {
+        deleteEngagement(db, engagement.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'time-entries', count: 1 })
+      expect(getEngagement(db, engagement.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete an engagement referenced by a task; the row survives', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Tasked Co', billingModel: 'none', startedOn: '2026-01-01' })
+      insertTask(db, engagement.id)
+
+      let thrown: unknown
+      try {
+        deleteEngagement(db, engagement.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'tasks', count: 1 })
+      expect(getEngagement(db, engagement.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete an engagement with activity rows; the row survives and no activity row is deleted or orphaned', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Active Co', billingModel: 'none', startedOn: '2026-01-01' })
+      insertActivity(db, engagement.id)
+
+      let thrown: unknown
+      try {
+        deleteEngagement(db, engagement.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'activity', count: 1 })
+
+      const activityCount = (
+        db.prepare('SELECT COUNT(*) AS count FROM activity WHERE engagement_id = ?').get(engagement.id) as {
+          count: number
+        }
+      ).count
+      expect(activityCount).toBe(1)
+      expect(getEngagement(db, engagement.id)).not.toBeNull()
+    })
+  })
+
+  it('deletes cleanly when nothing blocks it', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, { name: 'Deletable Co', billingModel: 'none', startedOn: '2026-01-01' })
+      deleteEngagement(db, engagement.id)
+      expect(getEngagement(db, engagement.id)).toBeNull()
+    })
+  })
+
+  it('throws NotFoundError for an id that does not exist', () => {
+    withDatabase((db) => {
+      expect(() => deleteEngagement(db, randomUUID())).toThrow(NotFoundError)
+    })
+  })
+})
+
+describe('this file computes no summed, projected or per-month figure (ADR-003 / this task Risks)', () => {
+  it('contains no SUM in its source — every revenue question stays in the revenue-lines generator (P3-05)', () => {
+    const source = readFileSync(join(__dirname, 'engagements.ts'), 'utf8')
+    expect(source).not.toMatch(/\bSUM\s*\(/i)
+  })
+})
