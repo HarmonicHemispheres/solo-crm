@@ -25,9 +25,14 @@ import { NotFoundError, RefusalError, ValidationError } from './errors'
  *    company may be the next step") enforced by one `db.transaction()` that
  *    clears `is_next_step` from every other open task for the company before
  *    setting it on the target. `is_next_step` is not part of
- *    `createTaskInputSchema`/`updateTaskInputSchema` at all — the only way a
- *    caller can move it is through this function, which always writes an
- *    explicit `1`/`0`, never a patch that could omit it.
+ *    `createTaskInputSchema`/`updateTaskInputSchema` at all — a caller can
+ *    only ever *set* it to `true` through `setNextStep`, which always writes
+ *    an explicit `1`/`0`, never a patch that could omit it. `updateTask` is
+ *    the one other writer, and only ever *clears* it (to `0`) — see its
+ *    "next-step invariant" comment — when a write it is already making would
+ *    otherwise strand a stale `1` outside `setNextStep`'s reach: reopening a
+ *    waiting/done task, or moving a flagged task to a different company.
+ *    `setNextStep` remains the only path to `true`.
  * 2. Status-transition-owned timestamps — `waiting_since` and `done_at` are
  *    likewise absent from the writable schemas (see `shared/tasks.ts`'s
  *    header comment); `statusTransitionColumns` below is the one place that
@@ -108,21 +113,33 @@ const CREATE_DEFAULTS: Partial<Record<WritableKey, unknown>> = {
 // (countOpenTasks's WHERE clause and setNextStep's clear-the-others update)
 // both build their SQL from OPEN_STATUS_SQL below rather than each writing
 // their own `status NOT IN (...)` fragment that could quietly drift apart.
+//
+// Review fix (item 3): `isTaskOpen` and `OPEN_STATUS_SQL` used to hand-write
+// the same `waiting`/`done` exclusion twice — a JS function and a SQL
+// string that "agreed today, by hand" and nothing stopped them drifting.
+// Both now derive from the single `NON_OPEN_STATUSES` list below instead of
+// restating the exclusion. `isTaskOpen` is also no longer dead: `updateTask`
+// calls it to detect a reopening transition (see its "next-step invariant"
+// comment).
 // ---------------------------------------------------------------------------
+
+/** The one list of statuses that are not "open" — everything else, including `null`, is. */
+const NON_OPEN_STATUSES: readonly TaskStatus[] = ['waiting', 'done']
 
 /** `true` for `todo` and for a `null` status; `false` for `waiting` and `done`. */
 export function isTaskOpen(status: TaskStatus | null): boolean {
-  return status !== 'waiting' && status !== 'done'
+  return status === null || !NON_OPEN_STATUSES.includes(status)
 }
 
 /**
- * SQL fragment form of `isTaskOpen`, for use inside a `WHERE`. NULL-safe:
- * `status NOT IN (...)` alone evaluates to NULL (excluding the row) when
- * `status` is NULL, which is wrong here — a task with no status set is open,
- * not excluded — so the `OR status IS NULL` branch is required, not
- * decorative.
+ * SQL fragment form of `isTaskOpen`, for use inside a `WHERE`, built from the
+ * same `NON_OPEN_STATUSES` list rather than a separately hand-written
+ * `NOT IN (...)`. NULL-safe: `status NOT IN (...)` alone evaluates to NULL
+ * (excluding the row) when `status` is NULL, which is wrong here — a task
+ * with no status set is open, not excluded — so the `OR status IS NULL`
+ * branch is required, not decorative.
  */
-const OPEN_STATUS_SQL = "(status IS NULL OR status NOT IN ('waiting', 'done'))"
+export const OPEN_STATUS_SQL = `(status IS NULL OR status NOT IN (${NON_OPEN_STATUSES.map((status) => `'${status}'`).join(', ')}))`
 
 interface StatusTransitionColumns {
   readonly waitingSince?: string | null
@@ -256,6 +273,16 @@ export interface TaskFilter {
   readonly dueFrom?: string
   /** Inclusive upper bound on `due_on` (`dateOnlySchema` shape). */
   readonly dueTo?: string
+  /**
+   * Review fix (item 4): the one thing every real consumer needs
+   * (`countOpenTasks`, the future Todos and Today views) is "open", and until
+   * now `listTasks` could only filter by an *exact* status, forcing each
+   * consumer to hand-roll `status NOT IN ('waiting', 'done')` itself — the
+   * "open defined twice" risk arriving through the read path. `true` applies
+   * `OPEN_STATUS_SQL`, the same definition `countOpenTasks` and `setNextStep`
+   * use; `false`/`undefined` apply no open/closed restriction.
+   */
+  readonly open?: boolean
 }
 
 function buildFilterClause(filter: TaskFilter | undefined): { readonly clause: string; readonly values: unknown[] } {
@@ -285,6 +312,9 @@ function buildFilterClause(filter: TaskFilter | undefined): { readonly clause: s
   if (filter?.dueTo !== undefined) {
     conditions.push('due_on <= ?')
     values.push(filter.dueTo)
+  }
+  if (filter?.open) {
+    conditions.push(OPEN_STATUS_SQL)
   }
 
   return { clause: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', values }
@@ -317,12 +347,25 @@ export type OpenTasksFilter = Omit<TaskFilter, 'status'>
  * twice... One exported predicate, used everywhere") — `waiting` and `done`
  * excluded, everything else (including a `null` status) counted. The Todos
  * view's owed count and Today's next-step count both call this rather than
- * each composing their own `status NOT IN (...)` filter.
+ * each composing their own `status NOT IN (...)` filter. Built on the same
+ * `open` filter `listTasks` exposes (this task's review fix item 4), not a
+ * separately hand-assembled clause.
+ *
+ * Review fix (item 5): `OpenTasksFilter` (`Omit<TaskFilter, 'status'>`) keeps
+ * a *typed* caller from passing `status` — but `Omit` erases at compile
+ * time, not runtime. An unvalidated object crossing IPC as `{ status: 'done'
+ * }` arrives here with no type to strip anything from; combined naively with
+ * `OPEN_STATUS_SQL` that produces the self-contradicting
+ * `status = 'done' AND (status NOT IN ('waiting', 'done'))`, which silently
+ * returns 0 instead of surfacing the caller's mistake. `status` is therefore
+ * stripped here, at runtime, before the filter reaches `buildFilterClause` —
+ * belt-and-suspenders under the type-level `Omit`, not a replacement for it.
  */
 export function countOpenTasks(db: Database.Database, filter?: OpenTasksFilter): number {
-  const { clause, values } = buildFilterClause(filter)
-  const openClause = clause ? `${clause} AND ${OPEN_STATUS_SQL}` : `WHERE ${OPEN_STATUS_SQL}`
-  const row = db.prepare(`SELECT COUNT(*) AS count FROM tasks ${openClause}`).get(...values) as { count: number }
+  const rawFilter: Record<string, unknown> = { ...(filter ?? {}) }
+  delete rawFilter.status
+  const { clause, values } = buildFilterClause({ ...(rawFilter as TaskFilter), open: true })
+  const row = db.prepare(`SELECT COUNT(*) AS count FROM tasks ${clause}`).get(...values) as { count: number }
   return row.count
 }
 
@@ -400,19 +443,58 @@ export function updateTask(db: Database.Database, id: string, patch: unknown): T
   // recomputed when the patch actually mentions `status`, and only when it
   // differs from the row's current value (a patch that resends the same
   // status is a no-op on these two columns, not a re-stamp).
-  if ('status' in parsed) {
+  const statusChanged = 'status' in parsed && (parsed.status ?? null) !== (current.status as TaskStatus | null)
+  if (statusChanged) {
     const prevStatus = current.status as TaskStatus | null
     const nextStatus = (parsed.status ?? null) as TaskStatus | null
-    if (nextStatus !== prevStatus) {
-      const statusColumns = statusTransitionColumns(prevStatus, nextStatus, timestamp)
-      if ('waitingSince' in statusColumns) {
-        setClauses.push('waiting_since = ?')
-        values.push(statusColumns.waitingSince)
-      }
-      if ('doneAt' in statusColumns) {
-        setClauses.push('done_at = ?')
-        values.push(statusColumns.doneAt)
-      }
+    const statusColumns = statusTransitionColumns(prevStatus, nextStatus, timestamp)
+    if ('waitingSince' in statusColumns) {
+      setClauses.push('waiting_since = ?')
+      values.push(statusColumns.waitingSince)
+    }
+    if ('doneAt' in statusColumns) {
+      setClauses.push('done_at = ?')
+      values.push(statusColumns.doneAt)
+    }
+  }
+
+  // Review fix (item 1): `setNextStep`'s exclusivity guarantee — "exactly
+  // one *open* task per company may be the next step" — only holds for open
+  // tasks, so it can be silently broken by writes that never go through
+  // `setNextStep` at all:
+  //
+  //  (A/A2) A task that is the flagged next step moves to `waiting` or
+  //  `done`. It drops out of `OPEN_STATUS_SQL`, so a later `setNextStep` for
+  //  a sibling task in the same company has nothing to clear — the flagged
+  //  task is invisible to it while non-open. If that task is later reopened
+  //  (back to `todo`) with the stale flag still set, the company now has TWO
+  //  open tasks with `is_next_step = 1`: the reopened one and whatever
+  //  `setNextStep` picked while it was away.
+  //
+  //  (B) A flagged, open task's `companyId` changes. The invariant is
+  //  per-company; the flag it carries was only ever exclusive within its
+  //  OLD company, and the new company may already have its own next step.
+  //
+  // Both are fixed the same way, in this same UPDATE (one statement is
+  // already one transaction — no separate `db.transaction()` needed here):
+  // clear `is_next_step` whenever the row it's currently set on either
+  // reopens (a non-open -> open status transition) or changes company.
+  // Clearing is the deliberate, safer default over re-asserting the flag —
+  // stated per this task's instructions: the company may have chosen a new
+  // next step while this task was waiting, done, or in another company, and
+  // this function has no way to know that without another read. A caller
+  // that wants a fresh next step calls `setNextStep` again, which is exactly
+  // what already owns that decision everywhere else.
+  //
+  // A *done* task's flag is deliberately left alone by everything BUT this
+  // reopening case — closed history is not rewritten (Acceptance) — so the
+  // only moment this touches a done/waiting task's flag is the moment it
+  // stops being done/waiting.
+  if (current.is_next_step === 1) {
+    const reopened = statusChanged && !isTaskOpen(current.status as TaskStatus | null) && isTaskOpen((parsed.status ?? null) as TaskStatus | null)
+    const movedCompany = 'companyId' in parsed && (parsed.companyId ?? null) !== current.company_id
+    if (reopened || movedCompany) {
+      setClauses.push('is_next_step = 0')
     }
   }
 

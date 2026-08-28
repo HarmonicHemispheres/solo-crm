@@ -5,9 +5,19 @@ import { join } from 'node:path'
 import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nowTimestamp } from '../../../shared/format'
+import { timestampSchema } from '../../../shared/types'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
 import { NotFoundError, RefusalError, ValidationError } from './errors'
-import { countOpenTasks, createTask, deleteTask, getTask, listTasks, setNextStep, updateTask } from './tasks'
+import {
+  countOpenTasks,
+  createTask,
+  deleteTask,
+  getTask,
+  listTasks,
+  type OpenTasksFilter,
+  setNextStep,
+  updateTask
+} from './tasks'
 
 /**
  * Every test here runs `createTask`/`getTask`/`updateTask`/`deleteTask`/
@@ -203,6 +213,11 @@ describe('status transitions own waiting_since / done_at', () => {
       expect(waiting.status).toBe('waiting')
       expect(rawColumn(db, created.id, 'waiting_since')).not.toBeNull()
       expect(waiting.waitingSince).not.toBeNull()
+      // Review fix (item 6): the Scope names `waitingSince`/`doneAt` as
+      // `timestampSchema`-shaped, not just "not null" — assert the raw
+      // column actually parses as one, the same schema CONVENTIONS.md and
+      // `shared/types.ts` define for every other timestamp column.
+      expect(() => timestampSchema.parse(rawColumn(db, created.id, 'waiting_since'))).not.toThrow()
 
       const backToTodo = updateTask(db, created.id, { status: 'todo' })
       expect(backToTodo.status).toBe('todo')
@@ -324,6 +339,24 @@ describe('countOpenTasks: one definition of open, excluding waiting and done', (
       expect(countOpenTasks(db, { companyId: companyB })).toBe(2)
     })
   })
+
+  it('ignores a status key on an unvalidated filter object rather than returning a self-contradicting 0 (item 5)', () => {
+    withDatabase((db) => {
+      createTask(db, { title: 'Open task', status: 'todo' })
+      createTask(db, { title: 'Waiting task', status: 'waiting' })
+      createTask(db, { title: 'Done task', status: 'done' })
+
+      // `OpenTasksFilter` (`Omit<TaskFilter, 'status'>`) only stops a typed
+      // caller from passing `status` — this simulates the unvalidated object
+      // an IPC boundary could actually hand the repository: `{ status:
+      // 'done' }` with no type to omit anything from. Before the fix this
+      // combined with the open-status clause into `status = 'done' AND
+      // (status NOT IN ('waiting', 'done'))`, which silently evaluated to 0
+      // instead of surfacing the caller's mistake.
+      const unvalidated = { status: 'done' } as unknown as OpenTasksFilter
+      expect(countOpenTasks(db, unvalidated)).toBe(1)
+    })
+  })
 })
 
 describe('listTasks: filters', () => {
@@ -363,6 +396,30 @@ describe('listTasks: filters', () => {
 
       const inWindow = listTasks(db, { dueFrom: '2026-09-01', dueTo: '2026-09-30' })
       expect(inWindow.map((t) => t.title).sort()).toEqual(['In window end', 'In window start'])
+    })
+  })
+
+  it('filters by open, excluding waiting and done (item 4)', () => {
+    withDatabase((db) => {
+      const openTask = createTask(db, { title: 'Open task', status: 'todo' })
+      createTask(db, { title: 'Waiting task', status: 'waiting' })
+      createTask(db, { title: 'Done task', status: 'done' })
+
+      const open = listTasks(db, { open: true })
+      expect(open.map((t) => t.id)).toEqual([openTask.id])
+    })
+  })
+
+  it('combines the open filter with companyId', () => {
+    withDatabase((db) => {
+      const companyA = insertCompany(db, 'A Co')
+      const companyB = insertCompany(db, 'B Co')
+      const openInA = createTask(db, { title: 'Open in A', companyId: companyA, status: 'todo' })
+      createTask(db, { title: 'Done in A', companyId: companyA, status: 'done' })
+      createTask(db, { title: 'Open in B', companyId: companyB, status: 'todo' })
+
+      const result = listTasks(db, { companyId: companyA, open: true })
+      expect(result.map((t) => t.id)).toEqual([openInA.id])
     })
   })
 })
@@ -437,6 +494,134 @@ describe('setNextStep: exactly one open task per company', () => {
       expect(() => setNextStep(db, randomUUID())).toThrow(NotFoundError)
     })
   })
+
+  it(
+    'reopening a flagged task moved to waiting does not leave two open next steps for the company (review fix item 1, path A)',
+    () => {
+      withDatabase((db) => {
+        const companyId = insertCompany(db, 'Acme')
+        const a = createTask(db, { title: 'A', companyId })
+        const b = createTask(db, { title: 'B', companyId })
+
+        setNextStep(db, a.id)
+        updateTask(db, a.id, { status: 'waiting' })
+        setNextStep(db, b.id)
+        const reopened = updateTask(db, a.id, { status: 'todo' })
+
+        expect(reopened.isNextStep).toBe(false)
+        expect(getTask(db, b.id)?.isNextStep).toBe(true)
+
+        const nextStepCount = db
+          .prepare('SELECT COUNT(*) AS count FROM tasks WHERE company_id = ? AND is_next_step = 1')
+          .get(companyId) as { count: number }
+        expect(nextStepCount.count).toBe(1)
+      })
+    }
+  )
+
+  it(
+    'reopening a flagged task moved to done does not resurrect a stale next step (review fix item 1, path A2)',
+    () => {
+      withDatabase((db) => {
+        const companyId = insertCompany(db, 'Acme')
+        const a = createTask(db, { title: 'A', companyId })
+        const b = createTask(db, { title: 'B', companyId })
+
+        setNextStep(db, a.id)
+        updateTask(db, a.id, { status: 'done' })
+        setNextStep(db, b.id)
+        const reopened = updateTask(db, a.id, { status: 'todo' })
+
+        expect(reopened.isNextStep).toBe(false)
+        expect(getTask(db, b.id)?.isNextStep).toBe(true)
+
+        const nextStepCount = db
+          .prepare('SELECT COUNT(*) AS count FROM tasks WHERE company_id = ? AND is_next_step = 1')
+          .get(companyId) as { count: number }
+        expect(nextStepCount.count).toBe(1)
+      })
+    }
+  )
+
+  it(
+    "moving a flagged task to another company clears its flag instead of colliding with that company's next step (review fix item 1, path B)",
+    () => {
+      withDatabase((db) => {
+        const companyA = insertCompany(db, 'A Co')
+        const companyB = insertCompany(db, 'B Co')
+
+        const a = setNextStep(db, createTask(db, { title: 'A next step', companyId: companyA }).id)
+        expect(a.isNextStep).toBe(true)
+
+        const bExisting = setNextStep(db, createTask(db, { title: 'B existing next step', companyId: companyB }).id)
+        expect(bExisting.isNextStep).toBe(true)
+
+        const moved = updateTask(db, a.id, { companyId: companyB })
+
+        expect(moved.isNextStep).toBe(false)
+        expect(getTask(db, bExisting.id)?.isNextStep).toBe(true)
+
+        const nextStepCountB = db
+          .prepare('SELECT COUNT(*) AS count FROM tasks WHERE company_id = ? AND is_next_step = 1')
+          .get(companyB) as { count: number }
+        expect(nextStepCountB.count).toBe(1)
+      })
+    }
+  )
+
+  it(
+    'rolls back the clear when the set fails partway through the transaction (review fix item 2 — mutation-proof)',
+    () => {
+      withDatabase((db) => {
+        // Reproduces the mutation the reviewer found: replacing
+        // `db.transaction(` with `((fn) => fn)(` at setNextStep's definition
+        // left all existing tests green, because the existing "refuses a
+        // task with no company" test throws before any UPDATE runs at all —
+        // it can't exercise the atomicity of the two writes setNextStep
+        // actually makes. This test forces a real failure BETWEEN those two
+        // writes (after the clear-the-others UPDATE has run, before the
+        // set-the-target UPDATE runs) by making the second `db.prepare`d
+        // statement's `.run()` throw. Only `db.transaction()` wrapping both
+        // statements can make the clear roll back along with the failed set;
+        // a non-transactional version would already have committed the
+        // clear, leaving the company with no next step at all — silently,
+        // the exact failure mode this task's Risks describes.
+        const companyId = insertCompany(db, 'Acme')
+        const first = createTask(db, { title: 'First', companyId })
+        const second = createTask(db, { title: 'Second', companyId })
+        setNextStep(db, first.id)
+        expect(getTask(db, first.id)?.isNextStep).toBe(true)
+
+        const originalPrepare = db.prepare.bind(db)
+        const fakePrepare = (sql: string) => {
+          if (sql.startsWith('UPDATE tasks SET is_next_step = 1,')) {
+            return {
+              run: () => {
+                throw new Error('simulated failure between the clear and the set')
+              }
+            }
+          }
+          return originalPrepare(sql)
+        }
+        const prepareSpy = vi.spyOn(db, 'prepare').mockImplementation(fakePrepare as unknown as typeof db.prepare)
+
+        try {
+          expect(() => setNextStep(db, second.id)).toThrow('simulated failure between the clear and the set')
+        } finally {
+          prepareSpy.mockRestore()
+        }
+
+        // Transactional: the clear that already ran is rolled back along
+        // with the failed set, so `first` is still the (only) next step.
+        // Under the mutation (no db.transaction wrapper), the clear would
+        // have already committed and this assertion would fail: `first`
+        // would read `false` and `second` would also read `false` — no task
+        // in the company would be the next step.
+        expect(getTask(db, first.id)?.isNextStep).toBe(true)
+        expect(getTask(db, second.id)?.isNextStep).toBe(false)
+      })
+    }
+  )
 })
 
 describe('deleteTask', () => {
