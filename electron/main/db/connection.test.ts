@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 import electronPath from 'electron'
 import { afterEach, describe, expect, it } from 'vitest'
 import { closeDatabase, getDatabase, openDatabase, resolveDatabasePath } from './connection'
+import { DATA_ROOT_POINTER_FILENAME } from './data-root'
 import { getSchemaVersion } from './migrate'
 import { MIGRATIONS, type MigrationDefinition } from './migrations'
 import { SYNC_FOLDER_GUARD_OVERRIDE_ENV, SyncFolderGuardError } from './sync-folder-guard'
@@ -283,6 +284,144 @@ describe('openDatabase and the sync-folder guard (T-260828-06)', () => {
     } finally {
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('openDatabase and the data-root pointer file (T-260828-17)', () => {
+  function writePointer(userDataDir: string, dataRoot: unknown): void {
+    writeFileSync(join(userDataDir, DATA_ROOT_POINTER_FILENAME), JSON.stringify({ dataRoot }), 'utf-8')
+  }
+
+  it('with no pointer file, resolves solocrm.db under userDataDir — identical to today', () => {
+    const tmpDir = makeTmpDir('solo-crm-connection-dataroot-default-')
+    try {
+      const expectedPath = resolveDatabasePath({ userDataDir: tmpDir })
+      expect(expectedPath).toBe(join(tmpDir, 'solocrm.db'))
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('a pointer at a temp directory creates solocrm.db there, and no solocrm.db/-wal/-shm appears under userDataDir', () => {
+    const userDataDir = makeTmpDir('solo-crm-connection-dataroot-userdata-')
+    const dataRoot = makeTmpDir('solo-crm-connection-dataroot-target-')
+    try {
+      writePointer(userDataDir, dataRoot)
+
+      openDatabase({ userDataDir })
+      const db = getDatabase()
+      db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY)')
+
+      const pointedDbPath = join(dataRoot, 'solocrm.db')
+      expect(existsSync(pointedDbPath)).toBe(true)
+
+      const userDataEntries = readdirSync(userDataDir)
+      expect(userDataEntries).not.toContain('solocrm.db')
+      expect(userDataEntries).not.toContain('solocrm.db-wal')
+      expect(userDataEntries).not.toContain('solocrm.db-shm')
+    } finally {
+      closeDatabase()
+      rmSync(userDataDir, { recursive: true, force: true })
+      rmSync(dataRoot, { recursive: true, force: true })
+    }
+  })
+
+  const corruptPointerCases: readonly [label: string, write: (userDataDir: string) => void][] = [
+    ['malformed JSON', (userDataDir) => writeFileSync(join(userDataDir, DATA_ROOT_POINTER_FILENAME), '{ not json', 'utf-8')],
+    ['a missing dataRoot key', (userDataDir) => writeFileSync(join(userDataDir, DATA_ROOT_POINTER_FILENAME), JSON.stringify({}), 'utf-8')],
+    ['an empty-string dataRoot', (userDataDir) => writePointer(userDataDir, '')],
+    ['a relative-path dataRoot', (userDataDir) => writePointer(userDataDir, `relative${sep}path`)]
+  ]
+
+  it.each(corruptPointerCases)(
+    '%s fails startup naming data-location.json, with no database file created anywhere',
+    (_label, writeCorruptPointer) => {
+      const userDataDir = makeTmpDir('solo-crm-connection-dataroot-bad-')
+      try {
+        writeCorruptPointer(userDataDir)
+
+        expect(() => openDatabase({ userDataDir })).toThrow(
+          new RegExp(DATA_ROOT_POINTER_FILENAME.replace('.', '\\.'))
+        )
+
+        expect(existsSync(join(userDataDir, 'solocrm.db'))).toBe(false)
+        expect(() => getDatabase()).toThrow(/before openDatabase/)
+      } finally {
+        closeDatabase()
+        rmSync(userDataDir, { recursive: true, force: true })
+      }
+    }
+  )
+
+  it('a pointer into a synced folder is refused by the existing sync-folder guard, naming the pointed-at path, not userDataDir', () => {
+    const userDataDir = makeTmpDir('solo-crm-connection-dataroot-userdata-')
+    const parent = makeTmpDir('solo-crm-connection-dataroot-sync-parent-')
+    const dataRoot = join(parent, 'Dropbox', 'crm-data')
+    mkdirSync(dataRoot, { recursive: true })
+    try {
+      writePointer(userDataDir, dataRoot)
+
+      let thrown: unknown
+      try {
+        openDatabase({ userDataDir })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(SyncFolderGuardError)
+      const message = (thrown as SyncFolderGuardError).message
+      expect(message).toContain(join(dataRoot, 'solocrm.db'))
+      expect(message).not.toContain(userDataDir)
+
+      expect(existsSync(join(dataRoot, 'solocrm.db'))).toBe(false)
+      expect(existsSync(join(userDataDir, 'solocrm.db'))).toBe(false)
+    } finally {
+      closeDatabase()
+      rmSync(userDataDir, { recursive: true, force: true })
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('a pointer at <existing parent>/newfolder creates newfolder and opens the database there', () => {
+    const userDataDir = makeTmpDir('solo-crm-connection-dataroot-userdata-')
+    const parent = makeTmpDir('solo-crm-connection-dataroot-parent-')
+    const dataRoot = join(parent, 'newfolder')
+    try {
+      writePointer(userDataDir, dataRoot)
+
+      expect(existsSync(dataRoot)).toBe(false)
+      openDatabase({ userDataDir })
+      expect(existsSync(join(dataRoot, 'solocrm.db'))).toBe(true)
+    } finally {
+      closeDatabase()
+      rmSync(userDataDir, { recursive: true, force: true })
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('a pointer at <missing parent>/newfolder fails, distinguishing the missing-parent case, and creates nothing', () => {
+    const userDataDir = makeTmpDir('solo-crm-connection-dataroot-userdata-')
+    const parent = makeTmpDir('solo-crm-connection-dataroot-parent-')
+    rmSync(parent, { recursive: true, force: true }) // parent itself now missing
+    const dataRoot = join(parent, 'newfolder')
+    try {
+      writePointer(userDataDir, dataRoot)
+
+      let thrown: unknown
+      try {
+        openDatabase({ userDataDir })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toContain(parent)
+      expect(existsSync(dataRoot)).toBe(false)
+      expect(existsSync(parent)).toBe(false)
+    } finally {
+      closeDatabase()
+      rmSync(userDataDir, { recursive: true, force: true })
     }
   })
 })
