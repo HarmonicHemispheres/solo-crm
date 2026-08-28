@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app } from 'electron'
 import Database from 'better-sqlite3'
+import { findSyncFolderMatch, isSyncFolderGuardOverridden, SyncFolderGuardError } from './sync-folder-guard'
 
 /**
  * The single owner of the SQLite connection. AGENTS.md: "the renderer never
@@ -63,11 +64,26 @@ export function openDatabase(options: OpenDatabaseOptions = {}): Database.Databa
 
   const dbPath = resolveDatabasePath(options)
 
-  // T-260828-06 lands its sync-folder check here, between resolving the path
-  // above and opening the file below: it must run — and be able to refuse,
-  // with no file created — before this line, never after. Kept as two
-  // separate statements rather than one expression so that guard has a
-  // single, unambiguous line to insert itself before.
+  // T-260828-06's sync-folder guard: runs here, between resolving the path
+  // above and opening the file below, so a refusal happens before
+  // better-sqlite3 has any chance to create solocrm.db/-wal/-shm.
+  // `isSyncFolderGuardOverridden` reads the one documented env-var escape
+  // hatch (off by default); the match check itself
+  // (`findSyncFolderMatch`) stays a pure function of the path alone — no
+  // settings, no database — matching this module's own discipline for
+  // `resolveDatabasePath` above. A match throws rather than returning, so a
+  // caller cannot accidentally proceed to `new Database(dbPath)` on the next
+  // line by forgetting to check a return value; electron/main/index.ts's
+  // existing startup-failure handler (dialog.showErrorBox + app.exit(1))
+  // catches it and shows this error's own message, which names the refused
+  // path, the reason, and the override.
+  if (!isSyncFolderGuardOverridden()) {
+    const match = findSyncFolderMatch(dbPath)
+    if (match) {
+      throw new SyncFolderGuardError(match)
+    }
+  }
+
   const db = new Database(dbPath)
 
   applyPragmas(db)

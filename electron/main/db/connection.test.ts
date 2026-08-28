@@ -1,5 +1,14 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +19,7 @@ import electronPath from 'electron'
 import ts from 'typescript'
 import { afterEach, describe, expect, it } from 'vitest'
 import { closeDatabase, getDatabase, openDatabase, resolveDatabasePath } from './connection'
+import { SYNC_FOLDER_GUARD_OVERRIDE_ENV, SyncFolderGuardError } from './sync-folder-guard'
 
 /**
  * Runtime choice for this file (T-260828-05's Risks note: "decide which
@@ -203,6 +213,78 @@ describe('openDatabase with an explicit userDataDir override', () => {
   })
 })
 
+describe('openDatabase and the sync-folder guard (T-260828-06)', () => {
+  // Proves the acceptance criterion "no solocrm.db, -wal or -shm file exists
+  // after a refusal": better-sqlite3 creates the file at construction time,
+  // so the only way to prove this is to call the real openDatabase() against
+  // a path that trips the guard and then assert the filesystem, not to unit
+  // test the guard module in isolation (sync-folder-guard.test.ts already
+  // does that without needing openDatabase at all).
+  it('refuses to open, creates no file, and names the path and reason in the thrown error', () => {
+    const tmpDir = makeTmpDir('solo-crm-connection-guard-')
+    const syncedUserDataDir = join(tmpDir, 'Dropbox', 'userData')
+    mkdirSync(syncedUserDataDir, { recursive: true })
+    try {
+      const dbPath = resolveDatabasePath({ userDataDir: syncedUserDataDir })
+
+      let thrown: unknown
+      try {
+        openDatabase({ userDataDir: syncedUserDataDir })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(SyncFolderGuardError)
+      expect((thrown as SyncFolderGuardError).message).toContain('Dropbox')
+      expect((thrown as SyncFolderGuardError).message).toContain(dbPath)
+
+      expect(existsSync(dbPath)).toBe(false)
+      expect(existsSync(`${dbPath}-wal`)).toBe(false)
+      expect(existsSync(`${dbPath}-shm`)).toBe(false)
+
+      // The refusal must not leave a dangling module-level handle either —
+      // a later, legitimate openDatabase() call has to still work.
+      expect(() => getDatabase()).toThrow(/before openDatabase/)
+    } finally {
+      closeDatabase()
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it(`opens normally under a synced path when ${SYNC_FOLDER_GUARD_OVERRIDE_ENV}=1 is set`, () => {
+    const tmpDir = makeTmpDir('solo-crm-connection-guard-override-')
+    const syncedUserDataDir = join(tmpDir, 'OneDrive', 'userData')
+    mkdirSync(syncedUserDataDir, { recursive: true })
+    const previous = process.env[SYNC_FOLDER_GUARD_OVERRIDE_ENV]
+    process.env[SYNC_FOLDER_GUARD_OVERRIDE_ENV] = '1'
+    try {
+      const dbPath = resolveDatabasePath({ userDataDir: syncedUserDataDir })
+
+      expect(() => openDatabase({ userDataDir: syncedUserDataDir })).not.toThrow()
+
+      expect(existsSync(dbPath)).toBe(true)
+    } finally {
+      if (previous === undefined) {
+        delete process.env[SYNC_FOLDER_GUARD_OVERRIDE_ENV]
+      } else {
+        process.env[SYNC_FOLDER_GUARD_OVERRIDE_ENV] = previous
+      }
+      closeDatabase()
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not refuse an ordinary, non-synced path', () => {
+    const tmpDir = makeTmpDir('solo-crm-connection-guard-clean-')
+    try {
+      expect(() => openDatabase({ userDataDir: tmpDir })).not.toThrow()
+    } finally {
+      closeDatabase()
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('single owner of the SQLite connection', () => {
   it('no module under electron/ other than db/connection.ts constructs a Database directly', () => {
     // Assembled from parts rather than written as one contiguous literal so
@@ -234,29 +316,66 @@ describe('single owner of the SQLite connection', () => {
   })
 })
 
-/**
- * Transpiles connection.ts to CommonJS and writes the result beside the
- * source file (not the OS tmpdir the other harness files below use) so that
- * a spawned child process's `require('better-sqlite3')` / `require('electron')`
- * resolve through the ordinary node_modules walk from this directory, and so
- * the spawned processes below run the real module under test rather than a
- * hand-reimplementation of its logic. `typescript` is already a project
- * devDependency and this same transpile API (`ts.transpileModule`) is
- * already used by toolchain.test.ts for a different purpose.
- */
-function compileConnectionModule(): string {
-  const source = readFileSync(join(here, 'connection.ts'), 'utf-8')
+function transpileToCommonJs(sourceFileName: string): string {
+  const source = readFileSync(join(here, sourceFileName), 'utf-8')
   const { outputText } = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
       esModuleInterop: true
     },
-    fileName: 'connection.ts'
+    fileName: sourceFileName
   })
-  const outPath = join(here, `.connection.compiled.${process.pid}.${Date.now()}.cjs`)
-  writeFileSync(outPath, outputText, 'utf-8')
-  return outPath
+  return outputText
+}
+
+const GUARD_REQUIRE_SPECIFIER = /require\((['"])\.\/sync-folder-guard\1\)/
+
+/**
+ * Transpiles connection.ts — and, since T-260828-06, its one local
+ * dependency sync-folder-guard.ts — to CommonJS and writes the results
+ * beside the source files (not the OS tmpdir the other harness files below
+ * use) so that a spawned child process's `require('better-sqlite3')` /
+ * `require('electron')` resolve through the ordinary node_modules walk from
+ * this directory, and so the spawned processes below run the real modules
+ * under test rather than a hand-reimplementation of their logic. `typescript`
+ * is already a project devDependency and this same transpile API
+ * (`ts.transpileModule`) is already used by toolchain.test.ts for a
+ * different purpose.
+ *
+ * connection.ts's compiled output still contains a bare
+ * `require("./sync-folder-guard")` (transpileModule rewrites the `import`
+ * keyword but not the module specifier). Two problems with resolving that
+ * literally: Node's default extensionless `require` resolution tries
+ * `.js`/`.json`/`.node`, never `.cjs`; and this project's package.json sets
+ * `"type": "module"`, so a same-named `.js` file would be loaded as an ES
+ * module and crash on the transpiled output's `exports.x = ...` (verified by
+ * hand while building this). So the guard is written out as `.cjs` — always
+ * unambiguous CommonJS to Node regardless of `"type"` — and the specifier in
+ * connection's own compiled output is rewritten to name that `.cjs` path
+ * explicitly, sidestepping extension-guessing altogether. `.gitignore`
+ * backstops both generated file names in case a run is interrupted before
+ * its `finally` block's cleanup runs.
+ */
+function compileConnectionModule(): { connectionPath: string; guardPath: string } {
+  const guardPath = join(here, 'sync-folder-guard.cjs')
+  writeFileSync(guardPath, transpileToCommonJs('sync-folder-guard.ts'), 'utf-8')
+
+  const rawConnectionOutput = transpileToCommonJs('connection.ts')
+  if (!GUARD_REQUIRE_SPECIFIER.test(rawConnectionOutput)) {
+    throw new Error(
+      "expected connection.ts's compiled output to require('./sync-folder-guard') — " +
+        'the source or the transpiler output shape must have changed; update this harness to match.'
+    )
+  }
+  const connectionOutput = rawConnectionOutput.replace(
+    GUARD_REQUIRE_SPECIFIER,
+    `require(${JSON.stringify('./sync-folder-guard.cjs')})`
+  )
+  const connectionPath = join(here, `.connection.compiled.${process.pid}.${Date.now()}.cjs`)
+  writeFileSync(connectionPath, connectionOutput, 'utf-8')
+
+  return { connectionPath, guardPath }
 }
 
 describe('a process killed mid-transaction', () => {
@@ -264,7 +383,7 @@ describe('a process killed mid-transaction', () => {
     'leaves a database that reopens cleanly, passes integrity_check, and has the uncommitted write rolled back',
     async () => {
       const tmpDir = makeTmpDir('solo-crm-connection-kill-')
-      const compiledPath = compileConnectionModule()
+      const { connectionPath, guardPath } = compileConnectionModule()
       const writerScript = join(tmpDir, 'writer.cjs')
 
       // Inserts one committed sentinel row, then opens an explicit
@@ -274,7 +393,7 @@ describe('a process killed mid-transaction', () => {
       writeFileSync(
         writerScript,
         [
-          `const { openDatabase, getDatabase } = require(${JSON.stringify(compiledPath)})`,
+          `const { openDatabase, getDatabase } = require(${JSON.stringify(connectionPath)})`,
           `openDatabase({ userDataDir: ${JSON.stringify(tmpDir)} })`,
           `const db = getDatabase()`,
           `db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY)')`,
@@ -318,7 +437,8 @@ describe('a process killed mid-transaction', () => {
         // reopened connection has to close before the directory can be
         // removed.
         closeDatabase()
-        rmSync(compiledPath, { force: true })
+        rmSync(connectionPath, { force: true })
+        rmSync(guardPath, { force: true })
         rmSync(tmpDir, { recursive: true, force: true })
       }
     },
@@ -332,7 +452,7 @@ describe("the default path, resolved against Electron's real app.getPath('userDa
     () => {
       const electronBinary = electronPath as unknown as string
       const tmpUserData = makeTmpDir('solo-crm-connection-userdata-')
-      const compiledPath = compileConnectionModule()
+      const { connectionPath, guardPath } = compileConnectionModule()
       const resultPath = join(tmpUserData, 'result.json')
       const harnessPath = join(tmpUserData, 'harness.cjs')
 
@@ -349,7 +469,7 @@ describe("the default path, resolved against Electron's real app.getPath('userDa
           // calls them) without touching a real user profile.
           `app.setPath('userData', ${JSON.stringify(tmpUserData)})`,
           `app.whenReady().then(() => {`,
-          `  const { openDatabase, resolveDatabasePath, closeDatabase } = require(${JSON.stringify(compiledPath)})`,
+          `  const { openDatabase, resolveDatabasePath, closeDatabase } = require(${JSON.stringify(connectionPath)})`,
           `  const expected = join(app.getPath('userData'), 'solocrm.db')`,
           `  const resolved = resolveDatabasePath()`,
           `  openDatabase()`,
@@ -382,7 +502,8 @@ describe("the default path, resolved against Electron's real app.getPath('userDa
             `stdout:\n${run.stdout}\nstderr:\n${run.stderr}`
         )
       } finally {
-        rmSync(compiledPath, { force: true })
+        rmSync(connectionPath, { force: true })
+        rmSync(guardPath, { force: true })
         rmSync(tmpUserData, { recursive: true, force: true })
       }
 
