@@ -1,0 +1,89 @@
+---
+name: run-tasks
+description: Orchestrate approved tasks from .dev/tasks/ — plan the dependency order, fan out to subagents in isolated git worktrees, verify and review each change, merge them one at a time, then write the run summary. Use when the user has picked which scoped tasks to build ("run T-260828-01 and 02", "build these", "execute the plan"). Invoking this skill is the user's opt-in to multi-agent orchestration.
+---
+
+# Run approved tasks
+
+You are the orchestrator. You do not write feature code — you plan, dispatch,
+judge what comes back, and own the merge. The value you add is the decisions the
+subagents cannot make: what order, what merges, what gets rejected.
+
+## 1. Plan before dispatching
+
+Read every named task file in full. Then decide:
+
+- **Order.** What must land before what. Say why in the plan — a wrong
+  dependency guess is the most expensive mistake available here.
+- **Parallelism.** Tasks touching disjoint files run concurrently. Tasks
+  touching the same file run in sequence, whatever their scopes claim.
+- **Rejection.** A scope you cannot build from goes back to the user now, not
+  after a subagent has burned a worktree failing to interpret it.
+
+Show the plan and get agreement before spawning anything.
+
+## 2. Fan out
+
+Each task gets its own subagent in its own worktree. The subagent's prompt is
+the task file's path plus the standing rules — do not paraphrase the scope into
+the prompt, point at it, so there is one copy.
+
+Every subagent, in order: implement → `verify` → `code-review` → commit on a
+branch named for the task ID. It reports back what it changed, what verify said,
+and what review found. **A subagent that cannot make verify pass reports the
+failure; it does not weaken the test.** That rule is worth stating in the prompt
+every time.
+
+The task's `category` decides the review gate beyond `code-review` — the table
+in [.dev/README.md](../../../.dev/README.md) is authoritative. Add a gate when
+the diff turns out to reach past its category; never drop one to save a turn.
+
+### Model and effort
+
+| Role | Model | Effort | Why |
+|---|---|---|---|
+| Orchestrator | `opus` | `xhigh` | Planning and merge judgement, 1M context for many task files |
+| Implementation | `sonnet` | `high` | Strong at coding at a fraction of Opus cost |
+| Review, architecture | `opus` | `xhigh` | A missed defect costs more than the tokens |
+| Index and summary edits | `haiku` | `low` | Mechanical |
+
+Escalate the orchestrator to `fable` for a run of many interdependent tasks or
+one where the architecture is still moving — it is the strongest model for
+long-horizon agentic work, at roughly twice Opus's cost. Do not escalate a
+three-task run of independent changes.
+
+The skeleton in [workflow.js](workflow.js) is the default shape: a pipeline, so
+a fast task reaches review while a slow one is still building. Adapt it; it is a
+starting point, not a fixed harness.
+
+## 3. Merge, one at a time
+
+Merges are sequential and yours alone. Per task, in the planned order:
+
+1. Re-read the review findings. Anything unresolved and real blocks the merge.
+2. Merge the branch into the working branch.
+3. Run `verify` **on the merged result.** Two changes that each passed alone can
+   fail together, and this is the only place that gets caught.
+4. Append the `Outcome` section to the task file, set `status: done` and
+   `closed:`, and move the row to the month `INDEX.md`'s closed table as `● done`.
+
+Set `status` to the bare word in frontmatter and the icon-plus-word form in the
+index — the vocabulary is in [.dev/README.md](../../../.dev/README.md). Move a
+task to `◐ in-progress` when its subagent starts, not when the run does, so the
+index is true mid-run rather than only at the end.
+
+If a merge breaks the build, stop the run. Do not merge further tasks onto a
+broken tree hoping a later one fixes it.
+
+A task whose review found something real but out of scope closes as `done` with
+a follow-up task written — not with the finding recorded nowhere.
+
+## 4. Summarise
+
+Write one run summary from
+[.dev/templates/summary.md](../../../.dev/templates/summary.md) into
+`.dev/summaries/<YYYYMM>/`, add it to that month's `INDEX.md`, and link every
+task. Fill in `What went wrong` honestly — a summary that reports a clean run
+that was not clean is worse than no summary.
+
+Then report to the user: what merged, what did not, and what needs them.
