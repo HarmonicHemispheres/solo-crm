@@ -1,10 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Sheet } from '../primitives/Sheet'
 import { EmptyState } from '../primitives/EmptyState'
+import { Button } from '../primitives/Button'
 import { SearchIcon } from './icons'
 import { LayerManagerContext, type LayerKind, type LayerManagerContextValue } from './layer-manager-context'
 import './LayerManager.css'
-import './buttons.css'
 
 /** Layers that close `menu` and `popover` when they open — the mockup's own
  * `openForm`/`openLog` both clear `#newMenu`, and `toggleMenu` itself clears
@@ -154,12 +154,12 @@ export function LayerManager({ children }: { children: ReactNode }) {
           footerNote="saved locally"
           footer={
             <>
-              <button type="button" className="btn btn-ghost" onClick={() => closeLayer('sheet')}>
+              <Button variant="ghost" onClick={() => closeLayer('sheet')}>
                 Cancel
-              </button>
-              <button type="button" className="btn btn-prim" disabled>
+              </Button>
+              <Button variant="primary" disabled>
                 Create
-              </button>
+              </Button>
             </>
           }
         >
@@ -179,12 +179,12 @@ export function LayerManager({ children }: { children: ReactNode }) {
           footerNote="resets the cadence clock"
           footer={
             <>
-              <button type="button" className="btn btn-ghost" onClick={() => closeLayer('log')}>
+              <Button variant="ghost" onClick={() => closeLayer('log')}>
                 Cancel
-              </button>
-              <button type="button" className="btn btn-prim" disabled>
+              </Button>
+              <Button variant="primary" disabled>
                 Save
-              </button>
+              </Button>
             </>
           }
         >

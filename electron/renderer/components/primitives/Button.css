@@ -1,15 +1,11 @@
 /*
  * .btn / .btn-prim / .btn-ghost — planning/solo-crm-mockup.html.
  *
- * T-260828-11 deliberately shipped no Button primitive (it wasn't in that
- * task's closed list, and its own outcome flags this as a gap the first
- * consumer needs a scope for — see EmptyState.tsx's comment). The shell is
- * that first consumer: the topbar's "New" button and the placeholder sheet
- * footers this task adds both need `.btn`. Rather than inventing a
- * `Button.tsx` outside this task's Touches, these are the mockup's own
- * classes, imported by every shell file that needs a button
- * (Topbar.tsx, LayerManager.tsx) — a real Button primitive can absorb this
- * file wholesale later without changing any class name it renders.
+ * Moved here from shell/buttons.css (T-260828-14): T-260828-11 shipped no
+ * Button primitive, so the shell's first consumers (Topbar's "New" button,
+ * LayerManager's sheet footers) imported these classes directly. This file
+ * is unchanged from that one — same selectors, same rules — only its home
+ * and the primitive that owns it changed.
  */
 .btn {
   border-radius: var(--radius-9);
