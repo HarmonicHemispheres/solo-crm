@@ -1,0 +1,11 @@
+/* .empty — planning/solo-crm-mockup.html */
+.empty {
+  padding: 26px 15px;
+  text-align: center;
+  color: var(--slate);
+  font-size: 12.5px;
+}
+
+.empty-action {
+  margin-top: 11px;
+}

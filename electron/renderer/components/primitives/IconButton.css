@@ -1,0 +1,33 @@
+/* .iconbtn — planning/solo-crm-mockup.html */
+.iconbtn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-7);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  color: var(--slate);
+  padding: 0;
+  transition: var(--motion-hover);
+}
+
+.iconbtn:hover {
+  color: var(--verdigris);
+  border-color: var(--border-bright);
+}
+
+.iconbtn:disabled {
+  opacity: .5;
+  cursor: default;
+  pointer-events: none;
+}
+
+.iconbtn svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+}

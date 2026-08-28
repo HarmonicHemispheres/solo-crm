@@ -1,0 +1,22 @@
+/* .quickadd — planning/solo-crm-mockup.html */
+.quickadd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  border-top: 1px solid var(--border);
+}
+
+.quickadd input {
+  flex: 1;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.quickadd input::placeholder {
+  color: var(--faint);
+}

@@ -1,0 +1,28 @@
+/* .toast — planning/solo-crm-mockup.html */
+.toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%) translateY(18px);
+  opacity: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-10);
+  padding: 10px 16px;
+  font-size: 13px;
+  z-index: 80;
+  transition:
+    opacity var(--motion-toast),
+    transform var(--motion-toast);
+  pointer-events: none;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast b {
+  color: var(--verdigris);
+  font-weight: 600;
+}

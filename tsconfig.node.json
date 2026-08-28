@@ -19,6 +19,8 @@
     "electron.vite.config.ts",
     "electron/main/**/*",
     "electron/preload/**/*",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "electron/renderer/styles/tokens.test.ts",
+    "electron/renderer/styles/base.test.ts"
   ]
 }

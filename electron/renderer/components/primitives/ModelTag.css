@@ -1,0 +1,29 @@
+/* .modeltag, .m-* — planning/solo-crm-mockup.html */
+.modeltag {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--radius-4);
+  border: 1px solid var(--border);
+}
+
+.m-retainer {
+  color: var(--verdigris);
+  border-color: color-mix(in srgb, var(--verdigris) 35%, transparent);
+}
+
+.m-fixed {
+  color: var(--lapis);
+  border-color: color-mix(in srgb, var(--lapis) 35%, transparent);
+}
+
+.m-tm {
+  color: var(--mute);
+}
+
+.m-equity {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 35%, transparent);
+}

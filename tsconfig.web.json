@@ -16,5 +16,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["electron/renderer/**/*"]
+  "include": ["electron/renderer/**/*"],
+  "exclude": ["electron/renderer/styles/tokens.test.ts", "electron/renderer/styles/base.test.ts"]
 }

@@ -1,0 +1,56 @@
+/* .stat — planning/solo-crm-mockup.html */
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-13);
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat .k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.stat .v {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -1.1px;
+  margin-top: 8px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat .v.good {
+  color: var(--green);
+}
+
+.stat .v.bad {
+  color: var(--red);
+}
+
+.stat .meta {
+  margin-top: 7px;
+}
+
+.stat .spark {
+  margin-top: 9px;
+  height: 22px;
+  display: block;
+  width: 100%;
+}
+
+.stat.hero {
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+  background:
+    radial-gradient(130% 150% at 100% 0%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 62%),
+    var(--surface);
+}
+
+.stat.hero .v {
+  color: var(--gold);
+}

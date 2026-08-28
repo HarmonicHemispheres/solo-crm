@@ -21,7 +21,8 @@ export default defineConfig({
         test: {
           name: 'renderer',
           include: ['electron/renderer/**/*.test.ts', 'electron/renderer/**/*.test.tsx'],
-          environment: 'jsdom'
+          environment: 'jsdom',
+          setupFiles: ['electron/renderer/test-setup.ts']
         }
       }
     ]

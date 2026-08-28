@@ -1,0 +1,107 @@
+/* .vhead, .vicon, .info, .pop — planning/solo-crm-mockup.html */
+.vhead {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.vhead h1 {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -.9px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.vhead .t {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.vhead .acts {
+  margin-left: auto;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.vicon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: var(--radius-9);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 34%, transparent);
+}
+
+.vicon svg {
+  width: 16px;
+  height: 16px;
+  stroke: var(--c);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.info-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.info {
+  width: 19px;
+  height: 19px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-bright);
+  background: var(--surface-2);
+  color: var(--faint);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.info:hover {
+  color: var(--verdigris);
+  border-color: var(--verdigris);
+}
+
+.pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 70;
+  width: max-content;
+  max-width: 320px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-11);
+  padding: 13px 15px;
+  font-size: 12.5px;
+  color: var(--mute);
+  line-height: 1.6;
+  box-shadow: var(--shadow-popover);
+}
+
+.pop.open {
+  animation: pop-fade-up var(--motion-popover) var(--ease-out);
+}
+
+@keyframes pop-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
