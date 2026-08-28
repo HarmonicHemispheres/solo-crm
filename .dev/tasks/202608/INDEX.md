@@ -7,8 +7,7 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-01](T-260828-01-schema-gap-adrs.md) | Settle the schema gaps G1–G8 and record the binding ones as ADRs | 📄 docs | D-01 |
-| ○ open | [T-260828-02](T-260828-02-pipeline-view-decision.md) | Decide whether the Pipeline view ships, and record it | 📄 docs | D-02 |
+| ◐ in-progress | [T-260828-02](T-260828-02-pipeline-view-decision.md) | Decide whether the Pipeline view ships, and record it | 📄 docs | D-02 |
 | ◐ in-progress | [T-260828-03](T-260828-03-toolchain.md) | Stand up the electron-vite + React + TypeScript toolchain | 📦 build | P0-01 |
 | ○ open | [T-260828-04](T-260828-04-renderer-security-baseline.md) | Seal the renderer — contextIsolation, sandbox, CSP, navigation guards | 🔌 ipc | P0-02 |
 | ○ open | [T-260828-05](T-260828-05-database-boot.md) | Open the SQLite database in main with WAL, foreign keys and a busy timeout | 🗄 data | P0-03 |
@@ -25,4 +24,4 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
-| | — | *none yet* | | |
+| ● done | [T-260828-01](T-260828-01-schema-gap-adrs.md) | Settle the schema gaps G1–G8 and record the binding ones as ADRs | 📄 docs | R-260828-01 |

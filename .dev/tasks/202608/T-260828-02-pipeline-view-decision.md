@@ -1,7 +1,7 @@
 ---
 id: T-260828-02
 title: Decide whether the Pipeline view ships, and record it
-status: open
+status: in-progress
 category: docs
 plan_ref: D-02
 created: 2026-08-28

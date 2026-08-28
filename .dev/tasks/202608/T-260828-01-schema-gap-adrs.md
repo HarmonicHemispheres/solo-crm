@@ -1,11 +1,11 @@
 ---
 id: T-260828-01
 title: Settle the schema gaps G1–G8 and record the binding ones as ADRs
-status: in-progress
+status: done
 category: docs
 plan_ref: D-01
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -83,4 +83,38 @@ about real companies and need no code and no ADR.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in `7f005d3` (run R-260828-01). All eight gaps resolved — 7
+accepted, 1 amended (G2). ADR-001..004 written; §5, §4 and §7 of the
+requirements amended; AGENTS.md and the architecture-review skill's UUID rule
+qualified to match ADR-002.
+
+Decisions taken during the task, beyond the literal scope:
+
+- **UUID exemption is a class, not a singleton**: tables keyed by natural
+  identity (`settings` by key, `favicons` by host). Join tables get UUID PKs +
+  timestamps; `affiliations` deliberately has no unique pair constraint
+  (re-employment history). `activity` keeps `created_at`/`updated_at` despite
+  being append-only — uniform rule over a third exemption.
+- **Estimate/actual supersession is the generator's job** (ADR-003): writing
+  `tm_actual` deletes that month's `tm_estimate` in the same transaction, so
+  consumers stay one `SUM` with no per-kind filter.
+- **Phase 2 provisional allowance** (ADR-003): revenue figures may be computed
+  off engagement columns until P3-05 lands, only if visibly marked provisional;
+  P3-05's landing criteria include removing them.
+- **FTS5 ownership**: migration 0001 creates neither `search_fts` nor its
+  triggers — P1-06 owns both together.
+- **'gmail' activity source is reserved with no writer** (ADR-001); the Gmail
+  adapter writes touch columns only. NULL `last_touch_at` counts as maximally
+  stale so never-touched prospects surface in "going quiet".
+- **safeStorage guard** (ADR-004) requires backend ≠ `basic_text`, not just
+  `isEncryptionAvailable()` — Linux `basic_text` silently encrypts with a
+  hardcoded key.
+
+Review: code-review + architecture-review found 5 blocking / 10 should-fix / 5
+nit findings, all fixed before merge across commits `3e51ece`, `1770e0e`,
+`53413a9`. Verify: docs-only branch on a pre-toolchain tree — nothing to run,
+reported honestly; structural checks (table parse, link resolution, acceptance
+greps) all passed.
+
+Follow-up: none open. The requirements' §12 risk-table cell "UUID keys,
+`updated_at` everywhere" (line ~426) was left unqualified as non-normative.
