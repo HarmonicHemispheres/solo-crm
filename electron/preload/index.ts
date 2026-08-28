@@ -9,7 +9,15 @@ if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('crm', api)
   } catch (error) {
-    console.error(error)
+    // Write to stderr directly (console.error here only reaches the
+    // preload's own console, not the main-process terminal) and rethrow:
+    // window.crm never exists if this fails, and an uncaught preload error
+    // is what Electron itself logs where the app was launched (and fires
+    // app's 'preload-error'), so both together make the failure visible
+    // instead of surfacing later as an unexplained "window.crm is
+    // undefined" in the renderer.
+    process.stderr.write(`[preload] failed to expose window.crm: ${String(error)}\n`)
+    throw error
   }
 } else {
   // @ts-expect-error — contextIsolation is always on; this branch is

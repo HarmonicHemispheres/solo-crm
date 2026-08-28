@@ -7,6 +7,7 @@
     "moduleResolution": "Bundler",
     "types": ["node", "electron-vite/node"],
     "strict": true,
+    "isolatedModules": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "esModuleInterop": true,
@@ -17,6 +18,7 @@
   "include": [
     "electron.vite.config.ts",
     "electron/main/**/*",
-    "electron/preload/**/*"
+    "electron/preload/**/*",
+    "vitest.config.ts"
   ]
 }

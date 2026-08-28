@@ -35,7 +35,11 @@ export default tseslint.config(
     }
   },
   {
-    files: ['**/*.test.ts', '**/*.test.tsx'],
+    // Scoped to main/preload only — a renderer test file (electron/renderer
+    // /**/*.test.tsx) must keep browser globals only, not gain Node globals
+    // on top, or process/require/__dirname would lint clean across the same
+    // boundary tsconfig.web.json exists to enforce at typecheck time.
+    files: ['electron/main/**/*.test.ts', 'electron/preload/**/*.test.ts'],
     languageOptions: {
       globals: globals.node
     }

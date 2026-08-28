@@ -8,6 +8,7 @@
     "jsx": "react-jsx",
     "types": ["vite/client"],
     "strict": true,
+    "isolatedModules": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "esModuleInterop": true,
