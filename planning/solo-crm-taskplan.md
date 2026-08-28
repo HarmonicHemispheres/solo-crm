@@ -45,14 +45,14 @@ the requirements schema and what the mockup actually needs. Each carries a
 recommendation. **Nothing here should stop work for more than an hour**, but
 G1–G8 change the DDL, so they are settled and recorded before P0-05 writes it.
 
-- [ ] **D-01 · Settle the schema gaps and record them as ADRs** — 📄 docs · S · after —
+- [x] **D-01 · Settle the schema gaps and record them as ADRs** — 📄 docs · S · after —
   Work through G1–G8 below, then write the ones that constrain future changes
   into `.dev/decisions/` as ADRs. G1, G2, G5 and G7 each bind code that has not
   been written yet; an ADR is what stops the question being re-litigated in
-  November.
-  - [ ] Each of G1–G8 is marked accepted, amended or rejected, with a reason
-  - [ ] At least G1, G2, G5 and G7 exist as `ADR-NNN-*.md` files
-  - [ ] `planning/solo-crm-requirements.md` §5 is amended to match, so the DDL in
+  November. **Done 28 August 2026 by `T-260828-01`.**
+  - [x] Each of G1–G8 is marked accepted, amended or rejected, with a reason
+  - [x] At least G1, G2, G5 and G7 exist as `ADR-NNN-*.md` files
+  - [x] `planning/solo-crm-requirements.md` §5 is amended to match, so the DDL in
         the requirements and the DDL in P0-05 cannot disagree
 
 - [ ] **D-02 · Decide the Pipeline view** — 📄 docs · XS · after —
@@ -62,16 +62,22 @@ G1–G8 change the DDL, so they are settled and recorded before P0-05 writes it.
 
 ### A.1 Schema gaps — these change the DDL, so settle them first
 
-| # | Gap | Evidence | Recommendation |
-|---|---|---|---|
-| **G1** | `companies.last_touch` and `people.last_contact` are written by the Gmail adapter (§7) and read by the mockup's table registry, but neither column exists in the §5 DDL. | Mockup `TABLES.companies` selects `last_touch`; `decay()` and the whole Today view depend on it. | Add `companies.last_touch_at` and `people.last_contact_at`. Denormalised, maintained on `activity` insert. Not derived from `MAX(occurred_at)`: the Gmail adapter pulls a timestamp with no activity row to hang it on, so the column is needed regardless. |
-| **G2** | No `settings` table. §6.11 needs identity, per-kind default cadence, integration toggles, backup folder and appearance; §6.13 needs view mode remembered per view. | Mockup keeps all of it in module-level JS that dies on reload. | Add `settings(key text pk, value text /* json */, updated_at)`. One table, typed accessors in the repo layer. Secrets never go here (see G7). |
-| **G3** | `engagements.status` includes `lost` in the schema; the mockup's status list and create form omit it. | §5 DDL vs mockup `FORMS.engagement`. | Keep `lost` in the schema, add it to the form. Work that dies needs somewhere to go, or it stays `Proposed` forever and inflates the book. |
-| **G4** | `milestones` carries `amount_cents` and `expected_month` — both required to generate fixed-scope revenue lines — but the mockup's create form asks only "Milestones: 4". | Mockup `MODEL_FIELDS.fixed`. | UI gap, not a schema gap. The engagement form needs a real milestone editor before P3 revenue is anything but a guess. Tracked as **P3-09**. |
-| **G5** | `revenue_lines` is never exercised by the mockup. Its revenue chart is a hardcoded 15-element array and its metrics are computed live off engagement columns. | Mockup `revMonths`, `mrr()`, `backlog()`, `runRate()`. | **The highest-risk carry-over in the project.** §5 is explicit that revenue is materialised so every question is one `SUM … GROUP BY`. Porting the mockup's per-model branching would quietly undo that decision. Tracked as **P3-05**, and named in `architecture-review` as a standing thing to flag. |
-| **G6** | `search_fts` is one line in the schema with no sync mechanism. | §5. | FTS5 external-content table plus `AFTER INSERT/UPDATE/DELETE` triggers on all five source tables. Tracked as **P1-06**. |
-| **G7** | Nowhere to put Stripe and Google credentials. | §7 integrations vs §5 schema. | Electron `safeStorage`, encrypted, in `userData` — **not** in the database. Consequence: the nightly JSON backup can never leak a key, which is why this is a schema decision and not an implementation detail. |
-| **G8** | `activity` is described as append-only but nothing enforces it. | §6.8. | Enforce at the repository boundary: no update or delete channel is exposed for `activity`. Corrections are new rows. |
+**Settled 28 August 2026** by `T-260828-01`. Every gap below carries its
+resolution. G1, G2, G5 and G7 bind code that does not exist yet and are recorded
+as ADRs in [`.dev/decisions/`](../.dev/decisions/); the rest change no DDL and
+are carried by the task named in their resolution. Requirements §5 was amended
+the same day, so the DDL there and the DDL P0-05 writes cannot disagree.
+
+| # | Gap | Evidence | Recommendation | Resolution |
+|---|---|---|---|---|
+| **G1** | `companies.last_touch` and `people.last_contact` are written by the Gmail adapter (§7) and read by the mockup's table registry, but neither column exists in the §5 DDL. | Mockup `TABLES.companies` selects `last_touch`; `decay()` and the whole Today view depend on it. | Add `companies.last_touch_at` and `people.last_contact_at`. Denormalised, maintained on `activity` insert. Not derived from `MAX(occurred_at)`: the Gmail adapter pulls a timestamp with no activity row to hang it on, so the column is needed regardless. | **accepted** — both columns added to §5; deriving from `MAX(occurred_at)` would silently ignore email, the largest source of contact. [ADR-001](../.dev/decisions/ADR-001-denormalised-touch-timestamps.md), maintained by P1-05. |
+| **G2** | No `settings` table. §6.11 needs identity, per-kind default cadence, integration toggles, backup folder and appearance; §6.13 needs view mode remembered per view. | Mockup keeps all of it in module-level JS that dies on reload. | Add `settings(key text pk, value text /* json */, updated_at)`. One table, typed accessors in the repo layer. Secrets never go here (see G7). | **amended** — table accepted as recommended, plus the point the recommendation left open, settled as a class rather than a one-off: **tables keyed by natural identity are exempt** from the UUID primary key rule — `settings` by key, `favicons` by host — and `settings` carries `updated_at` but no `created_at`. Join tables are *not* exempt: `affiliations` and `taggings` gain UUID keys and timestamps, `taggings` with a unique index on its natural triple. The exemption clause is now carried in AGENTS.md, §4, `architecture-review` and P0-05. [ADR-002](../.dev/decisions/ADR-002-settings-key-value-table.md), built by P2-01. |
+| **G3** | `engagements.status` includes `lost` in the schema; the mockup's status list and create form omit it. | §5 DDL vs mockup `FORMS.engagement`. | Keep `lost` in the schema, add it to the form. Work that dies needs somewhere to go, or it stays `Proposed` forever and inflates the book. | **accepted** — no DDL change; §5 already spans all six statuses. The form is P1-08's job and no ADR is warranted for adding one chip. |
+| **G4** | `milestones` carries `amount_cents` and `expected_month` — both required to generate fixed-scope revenue lines — but the mockup's create form asks only "Milestones: 4". | Mockup `MODEL_FIELDS.fixed`. | UI gap, not a schema gap. The engagement form needs a real milestone editor before P3 revenue is anything but a guess. Tracked as **P3-09**. | **accepted** — reclassified as a UI gap, so §5 is untouched. The columns already exist; P3-09 must land before fixed-scope revenue lines mean anything. |
+| **G5** | `revenue_lines` is never exercised by the mockup. Its revenue chart is a hardcoded 15-element array and its metrics are computed live off engagement columns. | Mockup `revMonths`, `mrr()`, `backlog()`, `runRate()`. | **The highest-risk carry-over in the project.** §5 is explicit that revenue is materialised so every question is one `SUM … GROUP BY`. Porting the mockup's per-model branching would quietly undo that decision. Tracked as **P3-05**, and named in `architecture-review` as a standing thing to flag. | **accepted** — and sharpened: the shape is `SUM(amount_cents) … GROUP BY period_month, status`, and branching on `billing_model` anywhere outside the P3-05 generator is the defect. The ADR also settles what the rule does *not* cover (a single engagement's headline price and the catalogue price list stay legal reads of engagement columns), how actuals supersede estimates (the generator deletes the month's estimate rows in the same transaction), the `none` and `expense` cases, and a provisional allowance for Phase 2 that P3-05 must remove. [ADR-003](../.dev/decisions/ADR-003-materialised-revenue.md). |
+| **G6** | `search_fts` is one line in the schema with no sync mechanism. | §5. | FTS5 external-content table plus `AFTER INSERT/UPDATE/DELETE` triggers on all five source tables. Tracked as **P1-06**. | **accepted** — §5's one-line entry now names external-content plus triggers so P1-06 cannot read it as a standalone table. **P1-06 owns the whole thing: it creates `search_fts` *and* its triggers, in its own migration. Migration 0001 (P0-05) creates neither** — they are the one part of §5 it leaves out, so the two tasks cannot both issue the same `CREATE`. |
+| **G7** | Nowhere to put Stripe and Google credentials. | §7 integrations vs §5 schema. | Electron `safeStorage`, encrypted, in `userData` — **not** in the database. Consequence: the nightly JSON backup can never leak a key, which is why this is a schema decision and not an implementation detail. | **accepted** — stated as a rule about what the `settings` table may hold rather than a rule about Stripe, since that is the form it fails in. [ADR-004](../.dev/decisions/ADR-004-credentials-in-safestorage.md), enforced by P2-01 and P4-01. |
+| **G8** | `activity` is described as append-only but nothing enforces it. | §6.8. | Enforce at the repository boundary: no update or delete channel is exposed for `activity`. Corrections are new rows. | **accepted** — no DDL change. A SQLite trigger would also block the repository's own writes, so the boundary is the only place it can live. P1-05 owns it. |
 
 ### A.2 The Pipeline view — a genuine conflict
 
@@ -141,11 +147,16 @@ task.
   - [ ] The check is cased and separator-insensitive across platforms
 
 - [ ] **P0-05 · Drizzle schema + migrations** — 🗄 data · L · after P0-03, D-01 · +architecture-review
-  Full §5 schema including the A.1 additions. UUID primary keys, `created_at` /
-  `updated_at` on every table.
+  Full §5 schema including the A.1 additions, **except `search_fts` and its
+  triggers, which P1-06 creates (G6)**. UUID primary keys, `created_at` /
+  `updated_at` on every table except those keyed by natural identity.
   - [ ] A fresh database and one three migrations behind arrive at an identical
         schema — compared by dumping `sqlite_master`, not by eye
-  - [ ] Every table has a UUID primary key, `created_at` and `updated_at`
+  - [ ] Every table has a UUID primary key, `created_at` and `updated_at` —
+        except tables keyed by natural identity (`settings` by key, `favicons`
+        by host), see
+        [ADR-002](../.dev/decisions/ADR-002-settings-key-value-table.md)
+  - [ ] Migration 0001 creates no `search_fts` table and no FTS trigger
   - [ ] The schema version is readable over IPC and shows in the Data view
   - [ ] Migrations apply to a seeded copy, not only to an empty file
 
@@ -262,7 +273,11 @@ is not what makes it start.
 
 - [ ] **P1-06 · FTS5 index + triggers** — 🗄 data · M · after P1-01…P1-05 · +architecture-review
   External-content FTS5 over `companies.name`, `people.name`, `engagements.name`,
-  `tasks.title`, `activity.body`, with triggers on each source table (G6).
+  `tasks.title`, `activity.body`, with triggers on each source table (G6). **This
+  task creates the table and the triggers together**, in its own migration;
+  migration 0001 deliberately leaves both out.
+  - [ ] The migration creates `search_fts` and its five triggers, and applies
+        cleanly on a database migrated by 0001
   - [ ] Renaming a company changes its search result with no rebuild step
   - [ ] `INSERT … DELETE … INSERT` leaves no orphan rows — verified by comparing
         the FTS row count to the source count
@@ -415,9 +430,15 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
   cadence, each row showing the owed next step; Next up with inline completion
   and quick-add; the twelve-month revenue chart; the linked-systems strip.
   - [ ] Going quiet sorts by ratio, not by raw days
+  - [ ] A company never touched (`last_touch_at IS NULL`) sorts to the top of
+        Going quiet rather than dropping out of the filter (ADR-001 rule 5)
   - [ ] Every row links to the action, not to a number
   - [ ] The view renders under 100ms at 10× data volume (§8)
   - [ ] With nothing overdue it says so rather than rendering an empty card
+  - [ ] Revenue figures are visibly marked provisional until P3-05, and the
+        computation behind them lives in one module — `revenue_lines` is empty
+        until Phase 3, so this is the allowance ADR-003 grants, on the same
+        terms as P1-15's hours figures
 
 - [ ] **P2-05 · Next step surfacing** — 🎨 ui · S · after P2-04
   One `is_next_step` per relationship, on Today and company detail.
@@ -481,14 +502,26 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
   **The task that decides whether §5's central decision survives contact** (G5).
   Materialise, do not compute: retainers generate one row per month; fixed scopes
   one row per milestone at its expected month; T&M estimates that actuals
-  overwrite; equity nothing.
-  - [ ] Every revenue figure in the app comes from one
+  replace; equity and `none` nothing. [ADR-003](../.dev/decisions/ADR-003-materialised-revenue.md)
+  is binding on this task.
+  - [ ] Every revenue figure or rollup in the app comes from one
         `SUM … GROUP BY period_month, status` — grepping the revenue module for
         `billing_model` finds only the generator
+  - [ ] **Every provisional revenue computation added in Phase 2 is removed in
+        this change**, and its module is deleted — the allowance ADR-003 grants
+        ends here, and this task does not land while one survives
   - [ ] Regenerating after an engagement edit never touches a row already
         `invoiced` or `paid`
-  - [ ] An equity engagement generates zero rows
-  - [ ] A rolling retainer generates rows to a stated horizon and no further
+  - [ ] Writing `tm_actual` rows for a month deletes that month's `tm_estimate`
+        rows in the same transaction — a month never holds both, and a plain
+        `SUM` over a part-billed T&M engagement returns the actual, not the sum
+        of both
+  - [ ] An equity engagement generates zero rows, and so does one with
+        `billing_model = 'none'`
+  - [ ] A rolling retainer (`ends_on IS NULL`) generates rows to the stated
+        horizon and no further
+  - [ ] Operator-entered `kind = 'expense'` rows are negative and survive
+        regeneration untouched
   - [ ] Regeneration is idempotent — running it twice changes no row
 
 - [ ] **P3-06 · Revenue rollup queries** — 🗄 data · M · after P3-05

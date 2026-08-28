@@ -1,8 +1,27 @@
 # Solo CRM — Requirements & Scope
 
 **Owner:** Robby Boney, MagicPill Labs
-**Status:** Draft v1
+**Status:** Draft v1 — §5 amended 28 August 2026
 **Date:** 27 August 2026
+
+> §5 is amended as schema decisions are settled, so that the DDL here and the
+> DDL in the migrations cannot disagree. The reasoning for each amendment lives
+> in [`.dev/decisions/`](../.dev/decisions/), not in this file. Amendments so
+> far, all dated 28 August 2026:
+>
+> - `companies.last_touch_at` and `people.last_contact_at` (ADR-001)
+> - `activity.source` — `gmail` marked reserved, with no writer (ADR-001)
+> - the `settings` table; the primary-key status of `favicons`, `affiliations`
+>   and `taggings` made explicit; and `created_at` / `updated_at` written into
+>   nine tables that had been leaving them implicit —
+>   `service_categories`, `service_versions`, `milestones`, `revenue_lines`,
+>   `time_entries`, `links`, `external_refs`, `tags`, `activity` (ADR-002)
+> - the `revenue_lines` modelling note sharpened to `SUM(amount_cents)`, the
+>   estimate/actual replacement rule, and where `billing_model` may be branched
+>   on (ADR-003)
+> - the rule that `settings` may hold no secret (ADR-004)
+> - `search_fts` — external content plus triggers, and P1-06 named as the
+>   migration that creates them (G6)
 
 ---
 
@@ -67,7 +86,7 @@ electron/
 
 ### Future sync
 
-Every table uses UUID primary keys and carries `created_at` / `updated_at`. This costs nothing now and makes a later move to Turso/libSQL embedded replicas (for laptop ↔ desktop sync) a drop-in rather than a schema rewrite. Not in scope for v1.
+Every table uses UUID primary keys and carries `created_at` / `updated_at` — except tables keyed by natural identity (`settings` by key, `favicons` by host), see [ADR-002](../.dev/decisions/ADR-002-settings-key-value-table.md). This costs nothing now and makes a later move to Turso/libSQL embedded replicas (for laptop ↔ desktop sync) a drop-in rather than a schema rewrite. Not in scope for v1.
 
 ---
 
@@ -84,6 +103,9 @@ companies (
   billed_via_company_id uuid null references companies(id),
   introduced_by_company_id uuid null references companies(id),
   cadence_days  integer default 14,
+  last_touch_at timestamp null,  -- denormalised; maintained on activity insert
+                                 -- and written directly by the Gmail adapter.
+                                 -- Never derived from MAX(activity.occurred_at)
   budget_note   text,
   notes         text,
   since         date,
@@ -93,17 +115,22 @@ companies (
 -- People live independently of companies
 people (
   id uuid pk, name text not null, email text, phone text, notes text,
+  last_contact_at timestamp null,   -- as companies.last_touch_at
   created_at, updated_at
 )
 
+-- Keeps a UUID key rather than the (person_id, company_id) pair: a person can
+-- leave a company and come back, so the pair legitimately repeats. ADR-002
 affiliations (
+  id uuid pk,
   person_id uuid references people(id),
   company_id uuid references companies(id),
-  title text, is_primary boolean, started date, ended date
+  title text, is_primary boolean, started date, ended date,
+  created_at, updated_at
 )
 
 -- Catalogue: what you sell, and what it costs
-service_categories ( id uuid pk, name text, color text, sort integer )
+service_categories ( id uuid pk, name text, color text, sort integer, created_at, updated_at )
 
 services (
   id uuid pk, name text not null,
@@ -119,7 +146,8 @@ services (
 service_versions (
   id uuid pk, service_id uuid references services(id),
   version integer, rate_cents integer,
-  effective_from date, effective_to date null
+  effective_from date, effective_to date null,
+  created_at, updated_at
 )
 
 -- Engagements: the money-bearing unit
@@ -146,7 +174,8 @@ engagements (
 milestones (
   id uuid pk, engagement_id uuid references engagements(id),
   name text, sort integer, completed_at timestamp null,
-  amount_cents integer null, expected_month date
+  amount_cents integer null, expected_month date,
+  created_at, updated_at
 )
 
 -- Materialised revenue: one row per expected/actual amount per month
@@ -157,14 +186,17 @@ revenue_lines (
   kind    text,   -- retainer | milestone | tm_estimate | tm_actual | expense
   status  text,   -- projected | invoiced | paid
   invoiced_at timestamp null, paid_at timestamp null,
-  stripe_invoice_id text null
+  stripe_invoice_id text null,
+  created_at, updated_at
 )
 
 -- Time
 time_entries (
   id uuid pk, engagement_id uuid null references engagements(id),
   company_id uuid null references companies(id),
-  worked_on date, hours numeric, note text, source text  -- manual | timelog_csv
+  worked_on date, hours numeric, note text,
+  source text,   -- manual | timelog_csv
+  created_at, updated_at
 )
 
 -- Work
@@ -182,27 +214,63 @@ activity (
   kind text,                -- call | email | meeting | note
   title text, body text,
   company_id uuid null, person_id uuid null, engagement_id uuid null,
-  source text               -- manual | gcal | gmail
+  source text,              -- manual | gcal
+                            -- 'gmail' is reserved and has no writer: the Gmail
+                            -- adapter writes last_touch_at / last_contact_at
+                            -- columns, never activity rows. It becomes legal
+                            -- only if a later decision adds synthetic rows.
+                            -- ADR-001
+  created_at, updated_at    -- always equal: rows are append-only (G8), never
+                            -- updated. Kept anyway — uniform rule, sync-ready.
 )
 
 -- External references
 links (
   id uuid pk, entity_type text, entity_id uuid,
   url text, title text, kind text,   -- drive | notion | github | figma | stripe | pdf | slack | web
-  added_at timestamp
+  added_at timestamp,
+  created_at, updated_at
 )
 
+-- Keyed by host: a natural identity, so exempt from the UUID key rule along
+-- with settings. The host is what the fetch-once-and-cache path looks up.
+-- Carries fetched_at and no created_at / updated_at: the row is a cache entry
+-- with one timestamp that matters. ADR-002
 favicons ( host text pk, bytes blob, fetched_at timestamp )
 
 external_refs (
   id uuid pk, entity_type text, entity_id uuid,
-  source text, external_id text, url text, last_synced_at timestamp
+  source text, external_id text, url text, last_synced_at timestamp,
+  created_at, updated_at
 )
 
-tags ( id uuid pk, name text, color text )
-taggings ( tag_id uuid, entity_type text, entity_id uuid )
+tags ( id uuid pk, name text, color text, created_at, updated_at )
 
-search_fts  -- FTS5 over companies.name, people.name, engagements.name, tasks.title, activity.body
+-- Keeps a UUID key; the natural triple is enforced as a unique index, not as
+-- the primary key. ADR-002
+taggings (
+  id uuid pk, tag_id uuid references tags(id),
+  entity_type text, entity_id uuid,
+  created_at, updated_at,
+  unique (tag_id, entity_type, entity_id)
+)
+
+-- Workspace configuration. Key/value so a preference costs an accessor, not a
+-- migration. Keyed by `key` -- a natural identity -- so exempt from the UUID
+-- primary key rule, along with favicons (host). Those two are the whole
+-- exemption; every other table, join tables included, keeps a UUID. ADR-002
+-- NON-SECRET VALUES ONLY -- credentials live in Electron safeStorage, never here
+settings (
+  key        text pk,
+  value      text not null,   -- json
+  updated_at timestamp not null
+)
+
+search_fts  -- FTS5 external-content table over companies.name, people.name,
+            -- engagements.name, tasks.title, activity.body, kept in sync by
+            -- AFTER INSERT/UPDATE/DELETE triggers on all five source tables.
+            -- The table and its triggers are created together by P1-06's
+            -- migration. Migration 0001 (P0-05) does not create either. (G6)
 ```
 
 ### Modelling decisions to preserve
@@ -213,13 +281,15 @@ search_fts  -- FTS5 over companies.name, people.name, engagements.name, tasks.ti
 
 **`ends_on = NULL` means rolling.** Not a far-future sentinel date. Null is the honest representation of "no agreed finish" and is what distinguishes a retainer from a fixed scope in every query.
 
-**`revenue_lines` is materialised, not computed.** A retainer generates one row per month. A fixed scope generates one row per milestone at its expected month. T&M generates estimates that actuals overwrite. Every revenue question then becomes one `SUM ... GROUP BY period_month, status` with no branching on billing model.
+**`revenue_lines` is materialised, not computed.** A retainer generates one row per month, to a stated horizon where `ends_on` is NULL. A fixed scope generates one row per milestone at its expected month. T&M generates `tm_estimate` rows; when actuals arrive for a month the generator deletes that month's estimate rows and writes `tm_actual` rows in the same transaction, so a month never holds both and a consumer never needs a per-kind filter to avoid double counting. `equity` and `none` generate nothing at all. Every revenue question then becomes one `SUM(amount_cents) ... GROUP BY period_month, status` with no branching on billing model. Branching on `billing_model` is legal only inside the generator that writes the lines; anywhere else it is a defect. `kind = 'expense'` lines are operator-entered — the one other writer of this table — and carry a negative `amount_cents`. See ADR-003.
 
 **`affiliations` is its own table.** People change jobs. A `company_id` on `people` would erase a contact's history the day they move.
 
 **`waiting` is a first-class task status.** In a services business, half of all open loops are blocked on the client. Waiting items must not inflate the count of things the operator owes, but they must age visibly so they get chased.
 
 **Cadence is per company.** A retainer client at eight days silent is a problem; a referral channel at eight days is fine. Staleness is `days_since_last_touch / cadence_days`, not a global threshold.
+
+**`last_touch_at` is denormalised on purpose, not derived from activity.** The Gmail adapter pulls a last-contacted timestamp and no message body, so there is no activity row to derive it from; deriving would silently ignore the largest source of contact in the business. The column is the source of truth for cadence, `activity` is the source of truth for what happened, and neither is a cache of the other. See ADR-001.
 
 ---
 
@@ -267,7 +337,7 @@ search_fts  -- FTS5 over companies.name, people.name, engagements.name, tasks.ti
 - Stacked monthly chart, actuals and projections.
 
 ### 6.8 Activity
-- Append-only log across companies, people and engagements. Manual entries plus automatic entries from calendar and mail.
+- Append-only log across companies, people and engagements. Manual entries plus automatic entries from calendar. **Mail contributes no activity rows** — the Gmail adapter pulls a last-contacted timestamp and writes it to `companies.last_touch_at` / `people.last_contact_at` directly, because §7 forbids pulling message bodies and there would be nothing to show in the log (ADR-001).
 
 ### 6.9 Search and capture
 - `⌘K` command palette over FTS5: companies, people, engagements, catalogue items, todos, activity notes — plus create commands.
@@ -307,7 +377,7 @@ All adapters are **pull-only and one-way**. Solo CRM never writes back. That con
 |---|---|---|
 | Stripe | Invoices, payment status, customer ids | `revenue_lines.status`, `paid_at`, `stripe_invoice_id` |
 | Google Calendar | Events matching a known company domain or attendee | `activity` (source = gcal) |
-| Gmail | Last-contacted timestamp only — **no message bodies** | `companies.last_touch`, `people.last_contact` |
+| Gmail | Last-contacted timestamp only — **no message bodies** | `companies.last_touch_at`, `people.last_contact_at` |
 | Daily timelog CSV | Client-attributed hours | `time_entries` |
 | Notion / Drive | Nothing. Links only. | `links` |
 

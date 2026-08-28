@@ -28,9 +28,13 @@ mockup's shortcut, and porting it is the highest-risk regression available here
 Gmail. This is what stops the tool becoming a fourth thing to maintain, and it
 is a one-line change to break.
 
-**The sync-ready schema.** UUID keys, `created_at`, `updated_at` on every table.
-Cheap now, and the whole reason a later Turso/libSQL move is a drop-in. A table
-that skips them is a table that will have to be rewritten.
+**The sync-ready schema.** UUID keys, `created_at`, `updated_at` on every table
+— except tables keyed by natural identity (`settings` by key, `favicons` by
+host), see
+[ADR-002](../../../.dev/decisions/ADR-002-settings-key-value-table.md). Cheap
+now, and the whole reason a later Turso/libSQL move is a drop-in. A table
+outside that exemption that skips them is a table that will have to be
+rewritten.
 
 **Local-first.** No account, no server, no telemetry, no network call the user
 did not configure. Fully functional offline.
