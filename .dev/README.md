@@ -39,6 +39,11 @@ Steps 2 and 4 are the two places a human decides. Everything between them is
 mechanical, which is the point — `scope-task` produces something you can approve
 or cut before any code is written.
 
+`changelog` sits downstream of all of it and is not part of every run: summaries
+here record how the work went, [CHANGELOG.md](../CHANGELOG.md) records what the
+app can now do. Write it when a batch of work adds up to something a user would
+notice, not once per merge.
+
 `security-review` and `architecture-review` are not in the default path. Pull
 them in when the diff touches IPC, the preload bridge, integration credentials,
 the filesystem, or the data model.
