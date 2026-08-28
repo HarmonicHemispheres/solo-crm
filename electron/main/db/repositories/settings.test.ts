@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPANY_KINDS } from '../../../shared/companies'
-import { assertNoSecretKeys, SETTINGS_REGISTRY } from '../../../shared/settings'
+import { assertNoSecretKeys, INTEGRATION_SOURCES, SETTINGS_REGISTRY } from '../../../shared/settings'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
 import { ValidationError } from './errors'
 import { getAllSettings, getSetting, resetSetting, setSetting } from './settings'
@@ -15,6 +15,45 @@ import { getAllSettings, getSetting, resetSetting, setSetting } from './settings
  * in-memory stand-in — because this task's Acceptance specifically asks for
  * "a real file database, not in-memory" on the round-trip case.
  */
+
+// ---------------------------------------------------------------------------
+// Type-level guarantee (T-260828-44): `getSetting`'s `key` parameter must
+// stay narrowed to `SettingKey`, never widen to plain `string`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Type equality, not `extends`: `SettingKey extends string` is already
+ * `true` today (every string-literal union is assignable to `string`), so
+ * that relation can't detect a widening. This is the standard
+ * distributive-conditional identity check (the same shape `type-fest` and
+ * `ts-toolbelt` use) — `Equal<'a', 'a' | 'b'>` is `false` the same way
+ * `Equal<SettingKey, string>` must stay `false`.
+ */
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
+
+/** A constraint of literal `true` turns "this type isn't `true`" into a compile error at the declaration itself — not one that depends on a call site, a comment staying next to the right line, or a variable actually being read. */
+type AssertTrue<T extends true> = T
+
+/**
+ * Replaces acceptance criterion 3's original `as never` cast (T-260828-25),
+ * which typechecked trivially and proved nothing: `getSetting(db, 'not.a.real.key'
+ * as never)` compiles today and would still compile if `key` were ever
+ * widened to `string`, since the cast throws away the type either way. This
+ * checks the parameter's actual inferred type instead. If a later refactor
+ * widens `getSetting`'s `key` from `K extends SettingKey` to plain `string`
+ * (the T-260828-26 pressure `settings.ts`'s header already anticipates, where
+ * a key arrives as `unknown`), `GetSettingKeyParam` becomes `string` itself,
+ * `Equal<string, string>` becomes `true`, and this line fails to compile with
+ * "Type 'false' does not satisfy the constraint 'true'." Deliberately not a
+ * `@ts-expect-error` on a `getSetting(db, 'not.a.real.key')` call: that
+ * passes silently if the expected error moves to a different line or is
+ * masked by an unrelated one (this task's Risks) — this fails on the type
+ * itself, from any refactor, regardless of where a call site moves.
+ */
+type GetSettingKeyParam = Parameters<typeof getSetting>[1]
+// Exported only so this compile-time proof itself counts as "used" under
+// `noUnusedLocals` — nothing is meant to import it.
+export type _GetSettingKeyParamIsNotWidenedToString = AssertTrue<Equal<GetSettingKeyParam, string> extends false ? true : false>
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), 'solo-crm-settings-repo-'))
@@ -139,10 +178,13 @@ describe('setSetting / getSetting: writes actually persist, including falsy and 
 describe('a key not in the registry', () => {
   it('is rejected at runtime by getSetting, setSetting and resetSetting alike', () => {
     withDatabase((db) => {
-      // `as never` — TypeScript already refuses this at the call site (the
-      // type-level half of this task's Acceptance); these calls exercise
-      // the runtime check that guards a value smuggled past that, e.g. a
-      // key deserialised from JSON with no compile-time literal type.
+      // `as never` deliberately smuggles an invalid key past the compiler
+      // (TypeScript refuses `getSetting(db, 'not.a.real.key')` without the
+      // cast — see `_GetSettingKeyParamIsNotWidenedToString` above for the
+      // real, standalone proof of that, rather than trusting this cast to
+      // demonstrate it) so these calls can exercise the *runtime* guard that
+      // catches a value already widened to `string` by the time it arrives,
+      // e.g. a key deserialised from JSON with no compile-time literal type.
       expect(() => getSetting(db, 'not.a.real.key' as never)).toThrow(ValidationError)
       expect(() => setSetting(db, 'not.a.real.key' as never, 'x' as never)).toThrow(ValidationError)
       expect(() => resetSetting(db, 'not.a.real.key' as never)).toThrow(ValidationError)
@@ -269,24 +311,62 @@ describe('the credential guard (ADR-004, G7)', () => {
     expect(() => assertNoSecretKeys()).not.toThrow()
   })
 
-  it('no declared key contains a forbidden word — checked directly against every registry key', () => {
-    const forbidden = /\b(key|apikey|token|accesstoken|refreshtoken|clientsecret|secret|password|passphrase|credential|credentials|privatekey)\b/i
-    for (const key of Object.keys(SETTINGS_REGISTRY)) {
-      // Segment on '.' and camelCase boundaries the same way the guard
-      // does, so e.g. "cadence.defaultDays.client" is checked as
-      // ["cadence", "default", "days", "client"], not as one long string
-      // that would spuriously contain "days" ~ "day"-shaped false positives.
-      const words = key.split(/[._]/).flatMap((segment) => segment.split(/(?=[A-Z])/))
-      for (const word of words) {
-        expect(word).not.toMatch(forbidden)
-      }
-    }
+  it('every registered key passes through the guard — not a hand-picked subset', () => {
+    // `assertNoSecretKeys()` with no argument already defaults to
+    // `SETTINGS_KEYS` (`Object.keys(SETTINGS_REGISTRY)` — the same set the
+    // module-load call at the bottom of `settings.ts` checks), so the test
+    // above already covers this. Passed explicitly here so a future key
+    // literally cannot bypass the check without this line changing too —
+    // the guard is worthless if a key can reach `SETTINGS_REGISTRY` without
+    // ever reaching `assertNoSecretKeys` (this task's Scope).
+    expect(() => assertNoSecretKeys(Object.keys(SETTINGS_REGISTRY))).not.toThrow()
   })
 
-  it('actually detects a credential-shaped key — proving the check is not vacuously true', () => {
-    expect(() => assertNoSecretKeys(['stripe.apiKey'])).toThrow(/credential-shaped/)
-    expect(() => assertNoSecretKeys(['gmail.refreshToken'])).toThrow(/credential-shaped/)
+  it('a credential-shaped key added to the registry is caught alongside the real ones', () => {
+    // Simulates the mutation this task's Acceptance calls for directly —
+    // adding e.g. `stripe.apiSecret` to `SETTINGS_REGISTRY` — without
+    // actually editing the registry: proves the same array the previous
+    // test just accepted starts throwing the moment one bad key joins it.
+    expect(() => assertNoSecretKeys([...Object.keys(SETTINGS_REGISTRY), 'stripe.apiSecret'])).toThrow(/credential-shaped/)
+  })
+
+  it('does not flag a benign key', () => {
     expect(() => assertNoSecretKeys(['workspace.name'])).not.toThrow()
+  })
+
+  it('segments on "." and camelCase, so a benign word does not collide with a forbidden one', () => {
+    // "cadence.defaultDays.client" segments to ["cadence", "default", "days",
+    // "client"] — none of which is a forbidden word on its own, unlike a
+    // naive substring search that would spuriously match "days" against
+    // nothing in particular but is exactly the shape of false positive this
+    // guards against.
+    expect(() => assertNoSecretKeys(['cadence.defaultDays.client'])).not.toThrow()
+  })
+
+  // One case per word `electron/shared/settings.ts` currently declares in
+  // `FORBIDDEN_KEY_WORDS`, each run through the real `assertNoSecretKeys` —
+  // never a re-declared copy of the list. This is the fix for the defect
+  // this task exists to close: deleting any one of these words from
+  // `FORBIDDEN_KEY_WORDS` now fails exactly the case built from it, because
+  // that case calls the guard the runtime actually uses, rather than
+  // (as the previous version of this test did) checking registry keys
+  // against an independent regex literal that duplicated the word list and
+  // never called `assertNoSecretKeys` at all.
+  it.each([
+    'key',
+    'apikey',
+    'token',
+    'accesstoken',
+    'refreshtoken',
+    'clientsecret',
+    'secret',
+    'password',
+    'passphrase',
+    'credential',
+    'credentials',
+    'privatekey'
+  ])('flags a key whose name contains the forbidden word "%s"', (word) => {
+    expect(() => assertNoSecretKeys([`workspace.${word}`])).toThrow(/credential-shaped/)
   })
 })
 
@@ -304,10 +384,17 @@ describe('§6.11 and §6.13 coverage: every key those sections need has an entry
     expect(cadenceKeys.sort()).toEqual(expected)
   })
 
-  it('integration toggles: stripe, google calendar, gmail', () => {
-    expect('integrations.stripe.enabled' in SETTINGS_REGISTRY).toBe(true)
-    expect('integrations.googleCalendar.enabled' in SETTINGS_REGISTRY).toBe(true)
-    expect('integrations.gmail.enabled' in SETTINGS_REGISTRY).toBe(true)
+  it('integration toggles: one key per INTEGRATION_SOURCES member, none extra, none missing', () => {
+    // Mirrors the cadence-key guard above against `COMPANY_KINDS`: adding a
+    // fourth source to `INTEGRATION_SOURCES` with no matching
+    // `integrations.<source>.enabled` key now fails here instead of
+    // silently getting no key (this task's Scope — `INTEGRATION_SOURCES`
+    // was previously declared and used nowhere).
+    const integrationKeys = Object.keys(SETTINGS_REGISTRY).filter(
+      (key) => key.startsWith('integrations.') && key.endsWith('.enabled')
+    )
+    const expected = INTEGRATION_SOURCES.map((source) => `integrations.${source}.enabled`).sort()
+    expect(integrationKeys.sort()).toEqual(expected)
   })
 
   it('backup: nightly toggle and target folder', () => {

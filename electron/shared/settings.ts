@@ -132,6 +132,24 @@ export type SettingValue<K extends SettingKey> = z.infer<(typeof SETTINGS_REGIST
 /** Every declared key with its current (default, until overridden) value — `getAllSettings`'s return shape. */
 export type SettingsSnapshot = { readonly [K in SettingKey]: SettingValue<K> }
 
+/**
+ * Compile-time pin (T-260828-44), mirroring the runtime pin
+ * `settings.test.ts` gives the cadence keys against `COMPANY_KINDS`: every
+ * `IntegrationSource` must have a matching `integrations.<source>.enabled`
+ * entry above, or the line below fails to typecheck with "Type
+ * '\"integrations.<source>.enabled\"' does not satisfy the constraint
+ * 'never'" — a fourth source added to `INTEGRATION_SOURCES` with no
+ * matching key fails `npm run typecheck`, not only the test suite. Purely
+ * type-level: `IntegrationToggleKey` and `AssertNever` are erased at
+ * compile time, so this has no runtime effect (this task's Scope: "no
+ * behaviour change").
+ */
+type IntegrationToggleKey = `integrations.${IntegrationSource}.enabled`
+type AssertNever<T extends never> = T
+// Exported only so this compile-time proof itself counts as "used" under
+// `noUnusedLocals` — nothing is meant to import it.
+export type _IntegrationTogglesPinnedToSources = AssertNever<Exclude<IntegrationToggleKey, SettingKey>>
+
 // ---------------------------------------------------------------------------
 // ADR-004's credential guard
 // ---------------------------------------------------------------------------
