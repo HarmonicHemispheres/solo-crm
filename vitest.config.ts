@@ -23,6 +23,27 @@ export default defineConfig({
           include: ['electron/renderer/**/*.test.ts', 'electron/renderer/**/*.test.tsx'],
           environment: 'jsdom'
         }
+      },
+      // `projects` is opt-in per glob: a test file that lands outside all
+      // three trees above (a new top-level module, a renamed directory) is
+      // silently not run at all rather than failing loudly, since it never
+      // matches any project's `include`. This catches that gap by running
+      // anything the named projects didn't claim, under the same default
+      // 'node' environment the toolchain checks already use.
+      {
+        extends: true,
+        test: {
+          name: 'catch-all',
+          include: ['**/*.test.{ts,tsx}'],
+          exclude: [
+            '**/node_modules/**',
+            'electron/main/**/*.test.ts',
+            'electron/preload/**/*.test.ts',
+            'electron/renderer/**/*.test.ts',
+            'electron/renderer/**/*.test.tsx'
+          ],
+          environment: 'node'
+        }
       }
     ]
   }

@@ -9,14 +9,16 @@ if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('crm', api)
   } catch (error) {
-    // Write to stderr directly (console.error here only reaches the
-    // preload's own console, not the main-process terminal) and rethrow:
-    // window.crm never exists if this fails, and an uncaught preload error
-    // is what Electron itself logs where the app was launched (and fires
-    // app's 'preload-error'), so both together make the failure visible
-    // instead of surfacing later as an unexplained "window.crm is
-    // undefined" in the renderer.
-    process.stderr.write(`[preload] failed to expose window.crm: ${String(error)}\n`)
+    // console.error, not process.stderr.write: a sandboxed preload
+    // (sandbox: true, T-260828-04) has no Node process object — `process`
+    // here is Electron's own trimmed stand-in, and `process.stderr` on it is
+    // undefined, so writing to it would throw and mask the original error
+    // instead of reporting it. console.error reaches the renderer devtools
+    // console, and rethrowing is what Electron itself logs where the app was
+    // launched (and fires app's 'preload-error'), so both together make the
+    // failure visible instead of surfacing later as an unexplained
+    // "window.crm is undefined" in the renderer.
+    console.error('[preload] failed to expose window.crm:', error)
     throw error
   }
 } else {

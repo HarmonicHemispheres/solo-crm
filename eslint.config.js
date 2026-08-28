@@ -33,15 +33,13 @@ export default tseslint.config(
       ...reactHooks.configs.flat.recommended.rules,
       ...reactRefresh.configs.vite().rules
     }
-  },
-  {
-    // Scoped to main/preload only — a renderer test file (electron/renderer
-    // /**/*.test.tsx) must keep browser globals only, not gain Node globals
-    // on top, or process/require/__dirname would lint clean across the same
-    // boundary tsconfig.web.json exists to enforce at typecheck time.
-    files: ['electron/main/**/*.test.ts', 'electron/preload/**/*.test.ts'],
-    languageOptions: {
-      globals: globals.node
-    }
   }
+  // No separate override for electron/{main,preload}/**/*.test.ts: the
+  // main/preload block above already matches `**/*.ts` under those
+  // directories, test files included, so a second block repeating the same
+  // globals.node assignment was dead config (T-260828-03 review). The
+  // boundary this used to describe — a renderer test file must keep browser
+  // globals only, not gain Node globals on top — is still real; it's simply
+  // already true by construction, since the renderer block only matches
+  // electron/renderer/**/*.{ts,tsx} and this one never touches it.
 )
