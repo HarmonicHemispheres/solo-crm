@@ -9,7 +9,6 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 |---|---|---|---|---|
 | ○ open | [T-260828-14](T-260828-14-button-primitive.md) | Fold the shell's raw `.btn` classes into a Button primitive | 🎨 ui | P0-09 |
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
-| ◐ in-progress | [T-260828-16](T-260828-16-installer-branding.md) | Brand the Windows installer — app icon, assisted flow, welcome banner | 📦 build | X-09 |
 | ○ open | [T-260828-17](T-260828-17-data-root-pointer.md) | Resolve the data root from a pointer file so its location can be a choice | 🗄 data | P0-03 |
 | ○ open | [T-260828-18](T-260828-18-first-run-location-chooser.md) | Ask where the data goes on first run, and never ask again | 🗄 data | P0-03 |
 | ○ open | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | P0-03 |
@@ -25,8 +24,6 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ◐ in-progress | [T-260828-21](T-260828-21-people-affiliations-repository.md) | Build the people and affiliations repository — history-preserving company moves | 🗄 data | P1-02 |
 | ◐ in-progress | [T-260828-22](T-260828-22-engagements-repository.md) | Build the engagements repository — split billing, model-specific fields, six statuses | 🗄 data | P1-03 · P1-CUT |
 | ◐ in-progress | [T-260828-23](T-260828-23-tasks-repository.md) | Build the tasks repository — next-step exclusivity, waiting transitions, open counts | 🗄 data | P1-04 · P1-CUT |
-| ◐ in-progress | [T-260828-24](T-260828-24-activity-repository-last-touch.md) | Build the append-only activity repository and maintain the last-touch timestamps | 🗄 data | P1-05 · P1-CUT |
-| ◐ in-progress | [T-260828-25](T-260828-25-settings-repository.md) | Build the settings repository — typed accessors, declared defaults, no credentials | 🗄 data | P2-01 |
 | ○ open | [T-260828-26](T-260828-26-entity-ipc-channels.md) | Expose the repositories over IPC — entity channels for every record type | 🔌 ipc | P1-07 · P1-CUT |
 | ○ open | [T-260828-27](T-260828-27-create-sheets.md) | Build the create sheets — company, person, engagement, todo | 🎨 ui | P1-08 |
 | ○ open | [T-260828-28](T-260828-28-companies-view.md) | Build the Companies view — card and list presentations with a real record set | 🎨 ui | P1-11 |
@@ -48,6 +45,9 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 |---|---|---|---|---|
 | ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
 | ○ open | [T-260828-42](T-260828-42-billed-via-cycle-guard.md) | Refuse a billed-via cycle in the repository, as the seed loader already does | 🗄 data | *(review)* |
+| ○ open | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | *(review)* |
+| ○ open | [T-260828-44](T-260828-44-settings-guard-tests.md) | Make the settings credential guard test actually guard it | 🗄 data | *(review)* |
+| ○ open | [T-260828-45](T-260828-45-brand-asset-generator-hardening.md) | Pin the brand generator scale factor and put its test under a tsconfig | 📦 build | *(review)* |
 
 ### Workspace — the two blank pages
 
@@ -61,6 +61,9 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260828-16](T-260828-16-installer-branding.md) | Brand the Windows installer — app icon, assisted flow, welcome banner | 📦 build | R-260828-02 |
+| ● done | [T-260828-24](T-260828-24-activity-repository-last-touch.md) | Build the append-only activity repository and maintain the last-touch timestamps | 🗄 data | R-260828-02 |
+| ● done | [T-260828-25](T-260828-25-settings-repository.md) | Build the settings repository — typed accessors, declared defaults, no credentials | 🗄 data | R-260828-02 |
 | ● done | [T-260828-20](T-260828-20-companies-repository.md) | Build the companies repository — CRUD, billing links, referential refusals | 🗄 data | R-260828-02 |
 | ● done | [T-260828-01](T-260828-01-schema-gap-adrs.md) | Settle the schema gaps G1–G8 and record the binding ones as ADRs | 📄 docs | R-260828-01 |
 | ● done | [T-260828-02](T-260828-02-pipeline-view-decision.md) | Decide whether the Pipeline view ships, and record it | 📄 docs | R-260828-01 |

@@ -1,11 +1,11 @@
 ---
 id: T-260828-16
 title: Brand the Windows installer — app icon, assisted flow, welcome banner
-status: in-progress
+status: done
 category: build
 plan_ref: X-09
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -132,3 +132,53 @@ does not get double-clicked twice.
 **Review:** what `code-review` found and what was done about each finding.
 
 **Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+
+---
+
+## Outcome
+
+Merged as `7f708ed`. Verify on the merged tree: typecheck clean, 443/443 tests.
+
+**Changed:**
+
+- `build/icon.ico` — 16/24/32/48/64/128/256, PNG-compressed entries.
+- `build/installerSidebar.bmp` (164×314, 24bpp BMP3) and
+  `build/installerHeader.bmp` (150×57), plus `assets/solocrm-sidebar.svg`.
+- `scripts/brand-assets.mjs` — regenerates all three from the SVGs using
+  Electron's own bundled Chromium via one reused `BrowserWindow`. Reused
+  deliberately: `sharp` cannot write BMP, and this environment breaks after a
+  *second* BrowserWindow is created.
+- `scripts/brand-assets.test.ts` — parses the committed binaries' real headers.
+- `package.json` — `build.win.icon`, and `nsis.oneClick: false` with the
+  installer/uninstaller icon, sidebar and header entries.
+- `eslint.config.js` — `scripts/**/*.mjs` into the Node-globals block.
+
+**Review:** non-blocking. Manual acceptance was discharged by a **full
+install/uninstall cycle on the real machine**: the assisted installer's finish
+page renders the sidebar correctly with no black/magenta box; title-bar,
+taskbar, Start-menu, desktop and Apps-and-features icons all show the cadence
+ring; the installed app launches and creates `solocrm.db` under
+`%APPDATA%\solo-crm`; uninstall removes the install directory, shortcuts and
+registry entry and leaves `solocrm.db`/`-wal`/`-shm` untouched.
+
+**This also closes an open R-260828-01 follow-up** — better-sqlite3's win32-x64
+prebuild is confirmed packaged into `app.asar.unpacked`.
+
+**Deferred → T-260828-45:**
+
+- The generator never pins `deviceScaleFactor`, so regenerating on a HiDPI
+  display silently emits wrong pixels while the header test still passes —
+  proven empirically by the reviewer. The committed binaries are correct; the
+  hazard is the next regeneration on a different machine.
+- `scripts/brand-assets.test.ts` is in no tsconfig `include`, so
+  `npm run typecheck` never sees it — confirmed with `tsc --listFiles`.
+- `eslint.config.js` gained `scripts/**/*.mjs` but not `scripts/**/*.ts`.
+- The `build/…` paths in the nsis config work only via app-builder-lib's
+  second-chance fallback, since `directories.buildResources` already defaults to
+  `build`.
+- The header bitmap is full-bleed obsidian and MUI paints it at the right end of
+  a white header strip, so it reads as a dark slab on white.
+
+**Not built, correctly:** no data-location picker, no Linux/macOS targets, no
+auto-update, no EULA page. **The build is unsigned** — SmartScreen will warn on
+first download. Stated rather than papered over.

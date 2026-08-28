@@ -1,11 +1,11 @@
 ---
 id: T-260828-24
 title: Build the append-only activity repository and maintain the last-touch timestamps
-status: in-progress
+status: done
 category: data
 plan_ref: P1-05
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -88,3 +88,42 @@ Gmail adapter itself (P4-xx).
   would then walk every company's `last_touch_at` backwards in one run.
 - **An `upsert`-flavoured helper reintroducing mutation.** The append-only rule
   has no database enforcement behind it; this file is the enforcement.
+
+---
+
+## Outcome
+
+Merged as `419f550`. Verify on the merged tree: typecheck clean both projects,
+404/404 tests.
+
+**Changed:**
+
+- `electron/shared/activity.ts` — new. Write-input schemas as pure zod (ADR-007).
+- `electron/main/db/repositories/activity.ts` — new. `logActivity` as the only
+  writer; insert plus both touch-timestamp updates in one transaction, clamped
+  forward-only. `recordContact` for the Gmail adapter's future no-activity-row path.
+- `electron/main/db/repositories/activity.test.ts` — new.
+
+**Review:** non-blocking. Confirmed the things that mattered: no
+`MAX(occurred_at)` anywhere (ADR-001), the module exports nothing that updates or
+deletes an activity row (G8), and the atomicity holds — the reviewer probed the
+person path directly and a failing `UPDATE people` correctly rolls back both the
+activity row and the already-applied company touch.
+
+Deferred rather than fixed, none of which changes behaviour:
+
+- `ActivityFilters` is a bare TypeScript interface in main with no zod schema,
+  so the read filter did not follow the write inputs into shared. T-260828-26
+  needs it there → folded into that task's scope.
+- The person half of the atomicity test is unproven — the code is right (probed),
+  but only the company path is exercised.
+- `listActivity`'s `ORDER BY occurred_at DESC` has no tiebreaker, so rows sharing
+  a timestamp — every backfilled import stamps a batch with one — can reorder
+  between two identical queries → **T-260828-43**.
+- ~55 lines copied verbatim from `companies.ts` → **T-260828-43**.
+- No index on `activity(company_id)`, `(person_id)` or `(occurred_at)`, so every
+  filtered read is a full scan of the fastest-growing table → **T-260828-41**.
+- The module header's justification for the no-trigger decision is factually
+  wrong: `logActivity` only INSERTs into `activity`, so a `BEFORE UPDATE`/
+  `BEFORE DELETE` trigger would not fire against this repository's own writes.
+  The decision stands on G8; the reasoning in the comment needs correcting.

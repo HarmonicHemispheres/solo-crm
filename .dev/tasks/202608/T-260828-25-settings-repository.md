@@ -1,11 +1,11 @@
 ---
 id: T-260828-25
 title: Build the settings repository — typed accessors, declared defaults, no credentials
-status: in-progress
+status: done
 category: data
 plan_ref: P2-01
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -84,3 +84,53 @@ nightly backup (X-04). `safeStorage` credential handling (P4-01).
 - **AGENTS.md's UUID rule.** `settings` is one of the two exemptions (ADR-002);
   adding an `id` column here to satisfy a reviewer's habit would be the
   regression.
+
+---
+
+## Outcome
+
+Merged as `98ad262`. Verify on the merged tree: typecheck clean both projects,
+431/431 tests.
+
+**Changed:**
+
+- `electron/shared/settings.ts` — new. The declared key registry: every settable
+  key with its zod value schema and default, plus `assertNoSecretKeys`.
+- `electron/main/db/repositories/settings.ts` — new. `getSetting`,
+  `getAllSettings`, `setSetting`, `resetSetting`, typed by the registry.
+- `electron/main/db/repositories/settings.test.ts` — new, 27 tests.
+
+Pulled forward from Phase 2 (P2-01) because T-260828-38's Settings page has
+nothing to render without it.
+
+**Review:** non-blocking. Confirmed reading an unset key returns its declared
+default without creating a row, that there is no generic
+`set(key: string, value: unknown)` escape hatch, and that ADR-002's exemption
+holds — keyed by natural identity, `updated_at`, no `created_at`, no `id`.
+
+Deferred:
+
+- **The credential guard's test does not guard it.** Mutation-proven: deleting
+  `secret`, `password`, `passphrase`, `credential`, `credentials` and
+  `clientsecret` from `FORBIDDEN_KEY_WORDS` leaves all 27 tests green, because
+  the test re-declares the word list as its own regex literal instead of
+  asserting against the constant. The guard works; the test would not notice it
+  being weakened. ADR-004 deserves better than that → **T-260828-44**.
+- Acceptance criterion 3's type-level half uses `as never`, which typechecks
+  trivially — if a later refactor widens `key` to `string` (likely pressure from
+  T-260828-26, where the key arrives as `unknown`), runtime still throws but the
+  type guarantee is gone silently → **T-260828-44**.
+- `INTEGRATION_SOURCES` / `IntegrationSource` are declared and used nowhere; the
+  three integration toggle keys are hand-listed with nothing pinning them to the
+  constant. The cadence keys got exactly that guard against `COMPANY_KINDS`, so
+  the asymmetry is the defect → **T-260828-44**.
+- §6.11's "per-source status" half (last synced at, last error) has no declared
+  key. ADR-004 explicitly permits it as settings content; legitimately outside
+  this task's "integration enable toggles" scope, but the P4 adapters will need
+  the keys.
+- `formatIssues` duplicates the identical expression in `companies.ts` →
+  **T-260828-43**.
+- The repository header quotes ADR-002 rule 2 with the "unknown key" half
+  dropped, rather than noting that `requireKnownKey` deliberately throws where
+  the rule says "read as the default" — an unregistered key has no default to
+  read, so the divergence is correct but should be stated.
