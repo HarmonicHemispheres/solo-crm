@@ -22,7 +22,6 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-20](T-260828-20-companies-repository.md) | Build the companies repository — CRUD, billing links, referential refusals | 🗄 data | P1-01 · P1-CUT |
 | ○ open | [T-260828-21](T-260828-21-people-affiliations-repository.md) | Build the people and affiliations repository — history-preserving company moves | 🗄 data | P1-02 |
 | ○ open | [T-260828-22](T-260828-22-engagements-repository.md) | Build the engagements repository — split billing, model-specific fields, six statuses | 🗄 data | P1-03 · P1-CUT |
 | ○ open | [T-260828-23](T-260828-23-tasks-repository.md) | Build the tasks repository — next-step exclusivity, waiting transitions, open counts | 🗄 data | P1-04 · P1-CUT |
@@ -62,6 +61,7 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260828-20](T-260828-20-companies-repository.md) | Build the companies repository — CRUD, billing links, referential refusals | 🗄 data | R-260828-02 |
 | ● done | [T-260828-01](T-260828-01-schema-gap-adrs.md) | Settle the schema gaps G1–G8 and record the binding ones as ADRs | 📄 docs | R-260828-01 |
 | ● done | [T-260828-02](T-260828-02-pipeline-view-decision.md) | Decide whether the Pipeline view ships, and record it | 📄 docs | R-260828-01 |
 | ● done | [T-260828-03](T-260828-03-toolchain.md) | Stand up the electron-vite + React + TypeScript toolchain | 📦 build | R-260828-01 |

@@ -1,11 +1,11 @@
 ---
 id: T-260828-20
 title: Build the companies repository — CRUD, billing links, referential refusals
-status: in-progress
+status: done
 category: data
 plan_ref: P1-01
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -87,3 +87,79 @@ each is its own task. Decay/cadence computation (P2-03). Links (P1-18).
   like `getSubsidiaries()` would quietly make it one.
 - **`bills_directly` defaults to `true` in the schema.** An update patch that
   omits the field must not reset it; distinguish "absent" from "explicitly false".
+
+---
+
+## Outcome
+
+Merged as `45e738c` (branch `T-260828-20`, commits `212ebe0` + `c113048`).
+Verify on the merged tree: typecheck clean both projects, `eslint .` clean,
+380/380 tests across 47 files.
+
+**Changed:**
+
+- `electron/shared/companies.ts` — new. `Company`, `COMPANY_KINDS` and both
+  input schemas as pure zod, composing `dateOnlySchema` from `shared/types.ts`.
+- `electron/main/db/repositories/companies.ts` — new. CRUD, row mapping,
+  constraint translation. Imports its domain types from shared.
+- `electron/main/db/repositories/errors.ts` — new. `RefusalError` /
+  `ValidationError` with a `blocker` discriminator so callers never string-match.
+- `electron/main/db/repositories/referential-guard.ts` — new.
+  `refuseIfReferenced(db, id, blockers)`, declarative.
+- `electron/main/db/repositories/companies.test.ts` — new, 29 tests.
+- `.dev/decisions/ADR-007-entity-schemas-in-shared.md` — new.
+
+**Review:** two lenses, because this task sets the pattern five repositories
+copy. `code-review` returned **blocking**; `architecture-review` non-blocking
+but with the finding that mattered most.
+
+Fixed before merge:
+
+1. *(blocking)* `deleteCompany` checked 3 of the 8 foreign keys pointing at
+   `companies`. Deleting a company with an engagement — the most likely real
+   delete — threw a raw `FOREIGN KEY constraint failed`. Now all 8, via the new
+   declarative guard.
+2. *(blocking)* `spec.key in parsed` did not distinguish an absent key from one
+   explicitly `undefined`, so a renderer patch of the natural shape
+   `{ field: dirty ? value : undefined }` wiped the column to NULL. Electron's
+   structured clone preserves undefined-valued keys, so this was reachable over
+   IPC. Fixed once, in `parseInput`, which also fixed `createCompany` bypassing
+   its documented defaults.
+3. *(pattern)* Wire schemas lived in main-only code that `shared/ipc-types.ts`
+   cannot import (TS6307). T-260828-26 would have had to redefine all 14 fields,
+   giving every payload two schemas free to drift. Moved to
+   `electron/shared/companies.ts`; recorded as **ADR-007** because it binds the
+   next five repositories and the IPC task.
+4. *(pattern)* Readable refusal was a convention repeated three times, obliging
+   nothing. Now `refuseIfReferenced`. Note migration 0001 uses `ON DELETE no
+   action`, **not** `RESTRICT` as this task's own scope text assumed — so a
+   repository that skips the pre-check gets a bare FK error with no net.
+5. *(pattern)* `translateWriteError` forwarded raw better-sqlite3 messages into
+   user-facing text. Now dispatches on the `SQLITE_CONSTRAINT_*` subcode and the
+   constraint name. `blocker` is set on write-path refusals too, not just deletes.
+6. *(pattern)* Schemas were non-strict, so `{ nmae: 'typo' }` parsed to `{}`,
+   bumped `updated_at` and returned a `Company` that looked saved. Now `.strict()`.
+7. *(scope)* `lastTouchAt` had been added as a 14th writable field. ADR-001
+   assigns it to the activity repository and says it never retreats; a caller
+   could render a client touched yesterday as six years stale. Removed from the
+   writable set, kept on the read type.
+
+Review also caught that the test for risk #3 **could not have failed** — it
+passed a literally-absent key, the one case the broken code handled. Tests
+rewritten to exercise the integration: 15 → 29.
+
+**Deferred:**
+
+- FK columns are unindexed; `links` / `taggings` / `external_refs` orphan
+  silently on delete → **T-260828-41**
+- A billed-via cycle `A → B → A` is accepted, though `seed/index.ts` already
+  refuses it → **T-260828-42**
+- Nowhere, deliberately: whitespace-only names are not trimmed; `mapRow` reads
+  `bills_directly` as `=== 1` rather than `!== 0`; an empty patch still bumps
+  `updated_at`. Each is a one-line change with no current caller that can
+  trigger it, and folding them in would have widened a diff already carrying
+  seven fixes.
+- `schema.test.ts`'s drift check spawns `drizzle-kit` against a fixed 5s vitest
+  timeout and flakes on a cold run. Not touched — weakening a check to make it
+  pass is forbidden. It is a real hazard for parallel waves and needs its own
+  task if it recurs.
