@@ -25,7 +25,10 @@ written there, never into the working tree.
 
 - [planning/solo-crm-mockup.html](planning/solo-crm-mockup.html) — **the
   authoritative visual spec.** Open it rather than inferring the look from prose.
-  Its CSS variables become `tokens.css` verbatim.
+  Its CSS variables become `tokens.css` verbatim. One exception: the mockup's
+  **Pipeline** nav item is deliberately not ported — dropped by
+  [ADR-005](.dev/decisions/ADR-005-pipeline-view.md); its absence is a decision,
+  not an omission to fix.
 - [planning/solo-crm-requirements.md](planning/solo-crm-requirements.md) — scope,
   data model, integrations, non-functional requirements.
 - [.claude/rules/ui-design.md](.claude/rules/ui-design.md) — design principles,

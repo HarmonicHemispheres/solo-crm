@@ -55,10 +55,11 @@ G1–G8 change the DDL, so they are settled and recorded before P0-05 writes it.
   - [x] `planning/solo-crm-requirements.md` §5 is amended to match, so the DDL in
         the requirements and the DDL in P0-05 cannot disagree
 
-- [ ] **D-02 · Decide the Pipeline view** — 📄 docs · XS · after —
+- [x] **D-02 · Decide the Pipeline view** — 📄 docs · XS · after —
   A.2 below. The answer determines whether P1-15 ships a nav item.
-  - [ ] Recorded as an ADR, including which option was chosen and why
-  - [ ] P1-15's scope updated to match before it is scoped
+  **Decided 28 August 2026 by `T-260828-02`: dropped. See ADR-005.**
+  - [x] Recorded as an ADR, including which option was chosen and why
+  - [x] P1-15's scope updated to match before it is scoped
 
 ### A.1 Schema gaps — these change the DDL, so settle them first
 
@@ -98,6 +99,15 @@ this business.
    scope-creep risk.
 
 Take (1) unless the board earns itself back in the first month of real use.
+
+**Decided 28 August 2026 by `T-260828-02`: option 1, drop it.** Recorded as
+ADR-005. The Committed-column caveat checked out rather than being assumed:
+every Committed item in the mockup's own seed data maps to an engagement
+already carrying `status = 'Active'`, so the cards view reproduces it without
+a second column needing to exist. Option 2 turned out not to be free either —
+the mockup's own data puts two `status = 'Proposed'` engagements in two
+different pipeline columns, so no fixed status→column map reproduces the board
+as drawn.
 
 ### A.3 Open questions from §11 — none of these block, none need a task
 
@@ -356,7 +366,8 @@ is not what makes it start.
 
 - [ ] **P1-15 · Engagements cards view** — 🎨 ui · M · after P1-07, D-02
   Grouped by status, each card showing billing model, date range and
-  model-appropriate progress. D-02 decides whether a Pipeline nav item ships.
+  model-appropriate progress. No Pipeline nav item ships — D-02 decided this
+  is the only view of engagement state (ADR-005).
   - [ ] Retainers show hours against allowance, fixed scopes show milestones, T&M
         shows hours against estimate
   - [ ] No card renders a progress shape that does not apply to its model
