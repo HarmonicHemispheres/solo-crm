@@ -11,7 +11,17 @@ export default defineConfig({
       // decision rather than an omission.
       externalizeDeps: true,
       lib: {
-        entry: resolve(__dirname, 'electron/main/index.ts')
+        // Two entries, one bundle target: `index` is the real app;
+        // `seed` (T-260828-13) is `npm run seed`'s entry point
+        // (electron/main/db/seed/cli.ts), built alongside it so its own
+        // transitive `?raw` SQL import resolves at build time the same way
+        // — see that file's header comment for why it needs a genuine
+        // Electron process (and therefore a build step) rather than a
+        // bundler-free script.
+        entry: {
+          index: resolve(__dirname, 'electron/main/index.ts'),
+          seed: resolve(__dirname, 'electron/main/db/seed/cli.ts')
+        }
       },
       rollupOptions: {
         // Not used yet (T-260828-05), but declared now so bundling it never

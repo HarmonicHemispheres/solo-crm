@@ -11,7 +11,8 @@
     "build": "electron-vite build",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed": "electron-vite build && electron out/main/seed.js"
   },
   "build": {
     "appId": "com.magicpilllabs.solocrm",
