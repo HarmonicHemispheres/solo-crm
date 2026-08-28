@@ -1,0 +1,66 @@
+/*
+ * .pal — planning/solo-crm-mockup.html. The mockup declares `.pal,.sheet`
+ * together for their shared panel chrome (background/border/radius/shadow/
+ * animation) then gives each its own width; Sheet.css (T-260828-11) already
+ * carries that shared chrome for `.sheet`, so it's repeated here rather than
+ * imported — `.pal` and `.sheet` are separate classes with no inheritance
+ * between them, exactly as the mockup writes them.
+ */
+.pal {
+  background: var(--surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-14);
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+  animation: pal-fade-up var(--motion-panel) var(--ease-grow);
+  width: min(660px, 94vw);
+}
+
+.pal-in {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 17px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pal-in input {
+  flex: 1;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--papyrus);
+  font-size: 15px;
+  font-family: inherit;
+}
+
+.pal-in input::placeholder {
+  color: var(--faint);
+}
+
+.pal-list {
+  max-height: 46vh;
+  overflow: auto;
+  padding: 6px;
+}
+
+.pal-foot {
+  display: flex;
+  gap: 15px;
+  padding: 9px 17px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+@keyframes pal-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

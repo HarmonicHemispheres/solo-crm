@@ -1,0 +1,64 @@
+/* .menuwrap, .menu — planning/solo-crm-mockup.html */
+.menuwrap {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-11);
+  padding: 6px;
+  z-index: 50;
+  box-shadow: var(--shadow-popover);
+  animation: menu-fade-up var(--motion-fade) var(--ease-out);
+}
+
+.menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-7);
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.menu button:hover {
+  background: var(--surface-2);
+  color: var(--papyrus);
+}
+
+.menu button svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--verdigris);
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.menu button .k {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+@keyframes menu-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
