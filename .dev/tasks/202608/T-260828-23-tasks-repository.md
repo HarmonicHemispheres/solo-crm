@@ -1,11 +1,11 @@
 ---
 id: T-260828-23
 title: Build the tasks repository — next-step exclusivity, waiting transitions, open counts
-status: in-progress
+status: done
 category: data
 plan_ref: P1-04
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -78,3 +78,41 @@ nudges that *generate* tasks (P2-05).
 - **`is_next_step` defaults to `false` in the schema, not null** — an update
   patch that omits it must not reset it, the same absent-vs-false trap as
   `bills_directly` in T-260828-20.
+
+
+---
+
+## Outcome
+
+Merged as `f95696c`. Verify on the merged tree: typecheck clean,
+520/520 tests.
+
+**Changed:** `electron/shared/tasks.ts`, `electron/main/db/repositories/tasks.ts`,
+`tasks.test.ts` — 1354 insertions.
+
+**Review:** blocking. Fixed before merge.
+
+1. *(blocking)* The next-step invariant was enforced only inside `setNextStep`
+   and **silently broken by `updateTask`**, which never touched `is_next_step`.
+   Three paths reproduced with probe tests: promoting A, parking it as
+   `waiting`, promoting B, then returning A to `todo` left **two** open tasks
+   flagged for one company; the same with `done` resurrected a stale flag on
+   reopen; and moving a flagged task to another company carried the flag into a
+   company that may already have its own next step. `updateTask` now maintains
+   the invariant in the same transaction as its write.
+2. The test for this task's **own** headline risk could not fail —
+   mutation-proven: replacing `db.transaction(` with `((fn) => fn)(` left all 36
+   tests green, because the only covering test threw before any `UPDATE` ran.
+   Replaced with one that forces a mid-transaction failure.
+3. **"Open" had two definitions and the exported one was dead.** `isTaskOpen` was
+   called by nothing — not the repository, not its tests, not any sibling branch
+   — while every real filter went through a separately hand-written SQL string.
+   They agreed by hand. Now one derives from the other.
+4. `listTasks` could filter by exact status but **not by open**, so the one thing
+   every consumer needs was the one thing the repository would not return.
+   T-260828-33 and P2-04 would each have hand-rolled it in the renderer — the
+   "open defined twice" risk arriving through the read path.
+5. `countOpenTasks` typed `status` away but `buildFilterClause` still read it at
+   runtime, so `{status:'done'}` crossing IPC silently returned 0.
+
+**Deferred:** ~50 lines copied verbatim from `companies.ts` → **T-260828-43**.

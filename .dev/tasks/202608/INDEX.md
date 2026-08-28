@@ -21,10 +21,7 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-21](T-260828-21-people-affiliations-repository.md) | Build the people and affiliations repository — history-preserving company moves | 🗄 data | P1-02 |
-| ◐ in-progress | [T-260828-22](T-260828-22-engagements-repository.md) | Build the engagements repository — split billing, model-specific fields, six statuses | 🗄 data | P1-03 · P1-CUT |
-| ◐ in-progress | [T-260828-23](T-260828-23-tasks-repository.md) | Build the tasks repository — next-step exclusivity, waiting transitions, open counts | 🗄 data | P1-04 · P1-CUT |
-| ○ open | [T-260828-26](T-260828-26-entity-ipc-channels.md) | Expose the repositories over IPC — entity channels for every record type | 🔌 ipc | P1-07 · P1-CUT |
+| ◐ in-progress | [T-260828-26](T-260828-26-entity-ipc-channels.md) | Expose the repositories over IPC — entity channels for every record type | 🔌 ipc | P1-07 · P1-CUT |
 | ○ open | [T-260828-27](T-260828-27-create-sheets.md) | Build the create sheets — company, person, engagement, todo | 🎨 ui | P1-08 |
 | ○ open | [T-260828-28](T-260828-28-companies-view.md) | Build the Companies view — card and list presentations with a real record set | 🎨 ui | P1-11 |
 | ○ open | [T-260828-29](T-260828-29-company-detail-engagements.md) | Build company detail — engagements billed here, delivered here, end clients | 🎨 ui | P1-12 · P1-CUT |
@@ -48,6 +45,8 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 | ○ open | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | *(review)* |
 | ○ open | [T-260828-44](T-260828-44-settings-guard-tests.md) | Make the settings credential guard test actually guard it | 🗄 data | *(review)* |
 | ○ open | [T-260828-45](T-260828-45-brand-asset-generator-hardening.md) | Pin the brand generator scale factor and put its test under a tsconfig | 📦 build | *(review)* |
+| ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
+| ○ open | [T-260828-47](T-260828-47-stabilise-real-electron-tests.md) | Stop the real-Electron tests timing out under parallel load | 📦 build | *(review)* |
 
 ### Workspace — the two blank pages
 
@@ -61,6 +60,9 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260828-21](T-260828-21-people-affiliations-repository.md) | Build the people and affiliations repository — history-preserving company moves | 🗄 data | R-260828-02 |
+| ● done | [T-260828-22](T-260828-22-engagements-repository.md) | Build the engagements repository — split billing, model-specific fields, six statuses | 🗄 data | R-260828-02 |
+| ● done | [T-260828-23](T-260828-23-tasks-repository.md) | Build the tasks repository — next-step exclusivity, waiting transitions, open counts | 🗄 data | R-260828-02 |
 | ● done | [T-260828-16](T-260828-16-installer-branding.md) | Brand the Windows installer — app icon, assisted flow, welcome banner | 📦 build | R-260828-02 |
 | ● done | [T-260828-24](T-260828-24-activity-repository-last-touch.md) | Build the append-only activity repository and maintain the last-touch timestamps | 🗄 data | R-260828-02 |
 | ● done | [T-260828-25](T-260828-25-settings-repository.md) | Build the settings repository — typed accessors, declared defaults, no credentials | 🗄 data | R-260828-02 |

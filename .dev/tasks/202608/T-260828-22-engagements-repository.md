@@ -1,11 +1,11 @@
 ---
 id: T-260828-22
 title: Build the engagements repository — split billing, model-specific fields, six statuses
-status: in-progress
+status: done
 category: data
 plan_ref: P1-03
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -89,3 +89,49 @@ rollups, which need `time_entries` and the timelog import (P4-05).
   creation date.
 - **`equity` and `none` carry no model-specific columns.** They need explicit
   union members, or the union rejects them along with the bad input.
+
+
+---
+
+## Outcome
+
+Merged as `a02484e`. Verify on the merged tree: typecheck and lint
+clean, and the full suite run **three times consecutively green** at 575 tests.
+
+**Changed:** `electron/shared/engagements.ts`,
+`electron/main/db/repositories/engagements.ts`, `engagements.test.ts` — 1708 insertions.
+
+**Review:** returned **non-blocking**; the orchestrator overrode that and fixed
+four findings before merge, because two of them are reachable from
+T-260828-27's create/edit sheets being built in this same run.
+
+1. **Silent data loss.** `updateEngagement` rewrote all five model-specific
+   columns whenever the patch named `billingModel`, NULLing any it did not carry
+   — so `{ billingModel: 'tm', hourlyRateCents: 30000 }` on a T&M engagement wiped
+   `estimatedHours` and `notToExceedCents`. Confirmed by running it.
+2. `updateEngagement` **rejected the caller shape its own comment says it
+   normalises**: `stripUndefinedValues` ran after `safeParse`, so it could not
+   influence union routing and `{ billingModel: undefined, notes: 'x' }` threw.
+   That is precisely the shape a renderer form produces.
+3. Every update validation failure collapsed to `(root): Invalid input` — zod v4
+   nests union branch errors in `issue.errors`, which `parseInput` never read.
+4. Test gap on this task's **own** headline risk: nothing asserted that creating
+   with only `billingCompanyId` leaves `clientCompanyId` null. Mutation-proven —
+   adding the coalesce defect the Why section names left all 44 tests green.
+   Also added coverage for the constraint-translation block, which had none.
+5. `listMilestones` ordered by nullable `sort` ASC, so SQLite's NULLs-first put an
+   unsorted milestone at the head of the list.
+
+Confirmed clean: no `SUM`, no per-month projection, no per-model money branching
+anywhere in the file (ADR-003). `ends_on: null` round-trips with no sentinel.
+`agreed_rate_cents` is ignored on update.
+
+**Deferred:**
+
+- The ADR-003 guard test greps only `/\bSUM\s*\(/i`, so it catches an aggregate
+  but not a `monthlyValue(engagement)` helper branching on `billingModel` — which
+  is the thing the Risks section actually names. Review read the file and
+  confirmed none exists → **T-260828-46**.
+- `ALL_WRITABLE_COLUMNS` types `key` as bare `string`, losing the compile-time
+  link to the zod schemas → **T-260828-46**.
+- ~50 lines copied verbatim from `companies.ts` → **T-260828-43**.

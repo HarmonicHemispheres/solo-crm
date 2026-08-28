@@ -1,7 +1,7 @@
 ---
 id: T-260828-26
 title: Expose the repositories over IPC — entity channels for companies, people, engagements, tasks, activity, settings
-status: open
+status: in-progress
 category: ipc
 plan_ref: P1-07
 created: 2026-08-28

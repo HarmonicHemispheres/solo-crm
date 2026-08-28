@@ -1,11 +1,11 @@
 ---
 id: T-260828-21
 title: Build the people and affiliations repository — history-preserving company moves
-status: in-progress
+status: done
 category: data
 plan_ref: P1-02
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -80,3 +80,55 @@ settles that the pair legitimately repeats when someone leaves and returns.
 - **AGENTS.md: every table gets a UUID key and both timestamps.**
   `affiliations` is the table most likely to be mistaken for an exempt join
   table. ADR-002 says it is not.
+
+
+---
+
+## Outcome
+
+Merged as `69c422c`. Verify on the merged tree: typecheck clean,
+477/477 tests.
+
+**Changed:** `electron/shared/people.ts`, `electron/main/db/repositories/people.ts`,
+`people.test.ts` — 1278 insertions.
+
+**Review:** blocking, on two counts, both fixed before merge.
+
+1. *(blocking)* A **flaky test**. `expect(reloadedA?.updatedAt).not.toBe(...)`
+   raced on millisecond resolution — both `addAffiliation` calls landed in the
+   same millisecond, so `nowTimestamp()` returned an identical string.
+   Reproduced as 1 failure in 5 runs. Merging it would have put a ~20%-red suite
+   on main and poisoned the verify gate for every task after it. Made
+   deterministic with fake timers, the way the ADR-002 test in the same file
+   already did.
+2. `clearOtherPrimaries` **rewrote closed history** — scoped without
+   `ended IS NULL`, so naming a new primary contact silently flipped
+   `is_primary` to false on affiliations that ended years ago. Verified against a
+   real database. Who the primary contact was during a past stint is history,
+   exactly like which company someone used to be at, and this is the one
+   repository whose whole purpose is not losing that.
+3. The ordering half of acceptance criterion 4 could not fail — mutation-proven:
+   removing the `ORDER BY` left the test green, because the fixture inserted the
+   2020 stint before the 2024 one so rowid order already matched. Fixture
+   reordered.
+4. `createAffiliationInputSchema` forked the derive-from-one-base pattern;
+   now derived.
+
+Confirmed clean: `people` has no `company_id` column, `movePerson` is genuinely
+one transaction, and there is no unique constraint on `(person_id, company_id)`.
+
+**Deferred:**
+
+- `deletePerson` refuses with "Remove those affiliations before deleting this
+  person", but **no `deleteAffiliation` exists anywhere** — so any person who has
+  ever been at a company is permanently undeletable. `deleteCompany` carries the
+  identical dead end from T-260828-20 → **T-260828-46**.
+- `endAffiliation` on an already-ended affiliation silently overwrites `ended`,
+  and `updateAffiliation({ended: null})` reopens a closed stint. Both plausibly
+  intentional as typo corrections; neither stated nor tested → **T-260828-46**.
+- `is_primary`'s scope (per-company, not per-person) is a real modelling decision
+  currently made only in a code comment. T-260828-31 and T-260828-26 both need to
+  know which it is.
+- `movePerson` closing *every* open affiliation is documented and works (probed)
+  but only the single-open-row case is tested.
+- ~50 lines copied verbatim from `companies.ts` → **T-260828-43**.
