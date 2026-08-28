@@ -4,8 +4,8 @@ A local-first CRM for a one-person consultancy. Electron shell · React + Vite +
 TypeScript renderer · better-sqlite3 + Drizzle in main · TanStack Query over
 typed IPC · SQLite FTS5. See [README](README.md) for the why.
 
-**Status: planning. No application code yet.** Build order is
-[planning/solo-crm-taskplan.md](planning/solo-crm-taskplan.md).
+**Status: toolchain scaffolded (T-260828-03); no feature code yet.** Build
+order is [planning/solo-crm-taskplan.md](planning/solo-crm-taskplan.md).
 
 ## How work happens
 
