@@ -28,6 +28,7 @@
     "@eslint/js": "^10.0.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.3",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
@@ -48,6 +49,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "zod": "^4.4.3"
   }
 }

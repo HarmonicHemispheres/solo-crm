@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, session, shell } from 'electron'
+import { closeDatabase, openDatabase } from './db/connection'
 import { SECURE_WEB_PREFERENCES, installContentSecurityPolicy, registerNavigationGuards } from './security'
 
 /** The dev server's own origin in development, or `null` in a packaged build. */
@@ -63,6 +64,13 @@ app
     // an identical policy.
     installContentSecurityPolicy(session.defaultSession, devServerUrl())
 
+    // Opened once, here, before any window: `openDatabase()` (in
+    // electron/main/db/connection.ts) is the only place a Database
+    // connection is constructed anywhere in this app, and this is its one
+    // call site. T-260828-06's sync-folder guard and T-260828-07's migration
+    // runner both land inside `openDatabase`/immediately after it, not here.
+    openDatabase()
+
     createWindow()
 
     app.on('activate', () => {
@@ -70,11 +78,27 @@ app
     })
   })
   .catch((error: unknown) => {
-    console.error('[main] app failed to become ready:', error)
+    // Without the explicit exit this path leaves a zombie: no window was
+    // ever created, so `window-all-closed` never fires and the process
+    // lingers invisibly with a broken database or session.
+    console.error('[main] app failed to start:', error)
+    dialog.showErrorBox(
+      'Solo CRM could not start',
+      error instanceof Error ? error.message : String(error)
+    )
+    app.exit(1)
   })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// `before-quit`, not `window-all-closed`: on macOS the app can stay alive
+// with no windows open (the handler above only quits elsewhere), and the
+// connection still needs to close — checkpointing WAL back into
+// `solocrm.db` — whenever the app itself actually exits, on every platform.
+app.on('before-quit', () => {
+  closeDatabase()
 })

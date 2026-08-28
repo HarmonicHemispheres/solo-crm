@@ -4,4 +4,8 @@ dist/
 *.log
 *.tsbuildinfo
 .DS_Store
+# connection.test.ts's on-the-fly CJS transpile of connection.ts for spawned
+# test processes; each test run cleans its own copy up, this is only a
+# backstop against a copy surviving an interrupted run.
+electron/main/db/.connection.compiled.*.cjs
 .claude/worktrees/
