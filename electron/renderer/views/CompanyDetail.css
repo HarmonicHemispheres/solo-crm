@@ -1,0 +1,269 @@
+/*
+ * `/company/:id` (T-260828-29). `.back`, `.dbanner`, `.dhead`, `.dmeta`,
+ * `.cmark`, `.field`, `.eng`, `.eng-t`, `.via`, `.endrow`, `.chiprow` are
+ * transcribed from planning/solo-crm-mockup.html — the detail-page classes
+ * that view shares with the future person-detail route (T-260828-32),
+ * ported once here since neither primitive nor shared file for them exists
+ * yet. `.company-detail-grid` and everything under "inline edit" below has
+ * no mockup source: the mockup never shows an editable detail card, so this
+ * view's click-to-edit affordance is new UI, styled to match the mockup's
+ * existing `.inp`/`select`/`textarea` look (lines ~248-251) rather than
+ * lifted from a selector that isn't there.
+ */
+
+.company-detail-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  align-items: start;
+}
+
+/* ── detail header ───────────────────── */
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.back:hover,
+.back:focus-visible {
+  color: var(--verdigris);
+}
+
+.dbanner {
+  height: 76px;
+  border-radius: var(--radius-13);
+  margin-bottom: -40px;
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--c) 26%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--surface-2), transparent);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.dbanner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 120% at 88% 0%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
+}
+
+.dhead {
+  position: relative;
+  z-index: 1;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.dmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.cmark {
+  border-radius: var(--radius-9);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+.cmark span {
+  position: relative;
+  z-index: 1;
+}
+
+.cmark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+  background: currentColor;
+}
+
+/* ── details card ────────────────────── */
+
+.field {
+  display: flex;
+  gap: 12px;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  align-items: center;
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.field .k {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--faint);
+  width: 88px;
+  flex: 0 0 88px;
+}
+
+.field .v {
+  flex: 1;
+  min-width: 0;
+}
+
+.chiprow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── inline edit — this view's own affordance, no mockup source ── */
+
+.field-value-btn {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--radius-5);
+  color: var(--papyrus);
+  text-align: left;
+  font: inherit;
+  width: 100%;
+  transition: background var(--motion-hover);
+}
+
+.field-value-btn:hover,
+.field-value-btn:focus-visible {
+  background: var(--surface-2);
+}
+
+.field-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+  padding: 5px 8px;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--motion-hover);
+}
+
+.field-input:focus {
+  border-color: var(--verdigris);
+}
+
+textarea.field-input {
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
+  font-family: var(--font);
+}
+
+.field-error {
+  color: var(--red);
+  font-size: 11px;
+  margin-top: 4px;
+  display: block;
+}
+
+/* ── engagement rows ─────────────────── */
+
+.eng {
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.eng:last-child {
+  border-bottom: 0;
+}
+
+.eng-t {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.eng-t .nm {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.via {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: 6px;
+}
+
+/* ── end clients ─────────────────────── */
+
+.endrow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--border);
+  width: 100%;
+  text-align: left;
+  position: relative;
+  transition: background var(--motion-hover);
+}
+
+.endrow:last-child {
+  border-bottom: 0;
+}
+
+.endrow:hover,
+.endrow:focus-visible {
+  background: var(--surface-2);
+}
+
+.endrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--lapis);
+  opacity: 0.5;
+}
+
+.endclients-foot {
+  padding: 11px 15px;
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}

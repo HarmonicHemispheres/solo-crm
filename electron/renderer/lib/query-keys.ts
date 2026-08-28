@@ -61,7 +61,19 @@ export const queryKeys = {
     list: () => ['engagements', 'list'] as const,
     detail: (id: string) => ['engagements', 'detail', id] as const,
     /** `engagements:milestones` — scoped under its engagement's id, not a bare `[entity, 'list']`, so invalidating one engagement's milestones never touches another's. */
-    milestones: (engagementId: string) => ['engagements', 'milestones', engagementId] as const
+    milestones: (engagementId: string) => ['engagements', 'milestones', engagementId] as const,
+    /**
+     * `engagements:list({ billingCompanyId })` / `engagements:list({ clientCompanyId })`
+     * (T-260828-29's company detail page: "billed here" / "delivered here,
+     * billed elsewhere" are two independently-filtered queries, not one
+     * unfiltered list sliced two ways client-side — see that task's own
+     * Risks section on the direction bug that shortcut invites). Named
+     * after the filter field each one passes, not "billed"/"delivered",
+     * so a call site reads its own directionality straight off the key
+     * rather than one more name to keep pointed the right way.
+     */
+    byBillingCompany: (companyId: string) => ['engagements', 'byBillingCompany', companyId] as const,
+    byClientCompany: (companyId: string) => ['engagements', 'byClientCompany', companyId] as const
   },
   tasks: {
     all: () => ['tasks'] as const,

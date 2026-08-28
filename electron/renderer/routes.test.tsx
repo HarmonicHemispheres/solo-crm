@@ -1,17 +1,37 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { AppRoutes } from './routes'
 import { NAV_ITEMS, ROUTE_META } from './nav'
 import { LayerManager } from './components/shell/LayerManager'
+import { createQueryClient } from './lib/query-client'
+import { stubCrm } from './lib/test-support/stub-crm'
 
+afterEach(() => {
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assigns.
+  delete window.crm
+})
+
+/**
+ * T-260828-29's CompanyDetail is the first real view on this tree — every
+ * other route here is still a `ViewPlaceholder` that renders with no
+ * provider at all, but a real view reads `window.crm` through TanStack
+ * Query the same way `App.tsx` sets up for the real app (T-260828-10), so
+ * every render here needs both a `QueryClientProvider` (a fresh client per
+ * call — no cache bleeding between the loop's iterations) and a `window.crm`
+ * stub, exactly like `App.tsx` itself provides in production.
+ */
 function renderAt(path: string) {
+  window.crm = stubCrm()
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <LayerManager>
-        <AppRoutes />
-      </LayerManager>
-    </MemoryRouter>
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter initialEntries={[path]}>
+        <LayerManager>
+          <AppRoutes />
+        </LayerManager>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
@@ -25,12 +45,16 @@ describe('AppRoutes', () => {
     }
   })
 
-  it('resolves company/:id and highlights Companies, not itself', () => {
+  it('resolves company/:id and highlights Companies, not itself', async () => {
     renderAt('/company/co_1')
     const companies = screen.getByRole('link', { name: 'Companies' })
     expect(companies.getAttribute('aria-current')).toBe('page')
-    // Confirms the detail route actually rendered (not a silent fallback).
-    expect(screen.getByRole('heading', { name: 'Company' })).toBeTruthy()
+    // Confirms the detail route actually rendered CompanyDetail (T-260828-29),
+    // not a silent fallback — an id nothing seeded resolves to the "not
+    // found" state that task's acceptance requires, not a crash or an
+    // infinite spinner. CompanyDetail.test.tsx covers that view's real
+    // content in depth; this only proves routing wired it in.
+    expect(await screen.findByText(/not found/i)).toBeTruthy()
   })
 
   it('resolves person/:id and highlights People, not itself', () => {
