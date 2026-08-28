@@ -10,7 +10,7 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | ○ open | [T-260828-05](T-260828-05-database-boot.md) | Open the SQLite database in main with WAL, foreign keys and a busy timeout | 🗄 data | P0-03 |
 | ○ open | [T-260828-06](T-260828-06-sync-folder-guard.md) | Refuse to open a database inside a file-sync folder | 🗄 data | P0-04 |
 | ◐ in-progress | [T-260828-13](T-260828-13-dev-seed.md) | Port the mockup's seed data into a loadable dev fixture | 🗄 data | P0-11 |
-| ○ open | [T-260828-10](T-260828-10-tanstack-query-ipc.md) | Wire TanStack Query over IPC as the renderer's data layer | 🎨 ui | P0-08 |
+| ◐ in-progress | [T-260828-10](T-260828-10-tanstack-query-ipc.md) | Wire TanStack Query over IPC as the renderer's data layer | 🎨 ui | P0-08 |
 | ○ open | [T-260828-12](T-260828-12-app-shell.md) | Build the app shell — rail, topbar, router, layer dismissal | 🎨 ui | P0-10 |
 
 ## Closed this month

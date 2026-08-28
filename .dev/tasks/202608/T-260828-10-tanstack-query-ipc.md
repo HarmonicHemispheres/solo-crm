@@ -1,7 +1,7 @@
 ---
 id: T-260828-10
 title: Wire TanStack Query over IPC as the renderer's data layer
-status: open
+status: in-progress
 category: ui
 plan_ref: P0-08
 created: 2026-08-28
