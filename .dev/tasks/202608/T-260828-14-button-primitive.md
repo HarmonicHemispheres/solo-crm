@@ -1,7 +1,7 @@
 ---
 id: T-260828-14
 title: Fold the shell's raw `.btn` classes into a Button primitive
-status: open
+status: in-progress
 category: ui
 plan_ref: P0-09
 created: 2026-08-28

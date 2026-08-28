@@ -7,7 +7,7 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-14](T-260828-14-button-primitive.md) | Fold the shell's raw `.btn` classes into a Button primitive | 🎨 ui | P0-09 |
+| ◐ in-progress | [T-260828-14](T-260828-14-button-primitive.md) | Fold the shell's raw `.btn` classes into a Button primitive | 🎨 ui | P0-09 |
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
 | ○ open | [T-260828-17](T-260828-17-data-root-pointer.md) | Resolve the data root from a pointer file so its location can be a choice | 🗄 data | P0-03 |
 | ○ open | [T-260828-18](T-260828-18-first-run-location-chooser.md) | Ask where the data goes on first run, and never ask again | 🗄 data | P0-03 |
@@ -31,7 +31,7 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ○ open | [T-260828-33](T-260828-33-todos-view.md) | Build the Todos view — grouped by date or client, inline completion and quick-add | 🎨 ui | P1-16 |
 | ○ open | [T-260828-34](T-260828-34-activity-view.md) | Build the Activity view — the append-only log across every entity | 🎨 ui | P1-17 |
 | ○ open | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | P1-09 · P1-CUT |
-| ○ open | [T-260828-36](T-260828-36-fts5-index-triggers.md) | Create the FTS5 search index and its triggers in their own migration | 🗄 data | P1-06 |
+| ◐ in-progress | [T-260828-36](T-260828-36-fts5-index-triggers.md) | Create the FTS5 search index and its triggers in their own migration | 🗄 data | P1-06 |
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
 
 ### Follow-ups from review
@@ -46,7 +46,7 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 | ○ open | [T-260828-44](T-260828-44-settings-guard-tests.md) | Make the settings credential guard test actually guard it | 🗄 data | *(review)* |
 | ○ open | [T-260828-45](T-260828-45-brand-asset-generator-hardening.md) | Pin the brand generator scale factor and put its test under a tsconfig | 📦 build | *(review)* |
 | ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
-| ○ open | [T-260828-47](T-260828-47-stabilise-real-electron-tests.md) | Stop the real-Electron tests timing out under parallel load | 📦 build | *(review)* |
+| ◐ in-progress | [T-260828-47](T-260828-47-stabilise-real-electron-tests.md) | Stop the real-Electron tests timing out under parallel load | 📦 build | *(review)* |
 
 ### Workspace — the two blank pages
 

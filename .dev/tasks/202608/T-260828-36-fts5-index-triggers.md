@@ -1,7 +1,7 @@
 ---
 id: T-260828-36
 title: Create the FTS5 search index and its triggers in their own migration
-status: open
+status: in-progress
 category: data
 plan_ref: P1-06
 created: 2026-08-28
