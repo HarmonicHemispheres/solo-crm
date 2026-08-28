@@ -1,11 +1,11 @@
 ---
 id: T-260828-09
 title: Build the typed IPC bridge — channel registry, validation, error envelope
-status: in-progress
+status: done
 category: ipc
 plan_ref: P0-07
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -82,4 +82,41 @@ which has its own security gate. TanStack Query wiring (T-260828-10).
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in run R-260828-01 (merge + fixes through `e55180b`). The wire
+contract lives in `electron/shared/ipc-types.ts` (channel name + request/
+response zod schemas + `IpcResult` envelope + `CrmApi`); handlers in
+`electron/main/ipc/registry.ts`; a generic loop in `ipc/index.ts` validates
+request → handles → validates response → returns the envelope, never throwing
+across the bridge. `window.crm` exposes named, frozen methods for exactly the
+registry's channels — no generic invoke, no `ipcRenderer` leak, proven by an
+adversarial probe against real sandboxed Electron (bind/call/apply redirection
+all fail closed; a decoy non-registry channel is unreachable).
+
+**"One file" criterion is honestly two files** — the wire contract entry and
+the handler entry — because composite tsconfigs forbid `electron/shared/**`
+referencing main-only code even type-only (TS6307). The reviewer judged the
+intent (no four-file drift) satisfied: preload and binding loops never change,
+and after the merge fix the `satisfies` is a mapped type over the contract's
+own schema types, so a schema mismatch between the two files fails `tsc` (the
+reviewer proved the bare `Record` version let schemas drift silently).
+
+Security gate: PASS. Error envelope carries literal strings only — a forced
+handler error with filesystem paths in its message reached the renderer as
+`{code:'handler-error', message:'db:schemaVersion: something went wrong…'}`;
+the stack stayed in main. Response validation runs in production too,
+deliberately. Real production bug found and fixed by the builder: the preload
+build left zod external, and a sandboxed preload cannot resolve node_modules —
+the packaged app's bridge would have crashed. `out/preload/index.cjs` now
+contains exactly one `require("electron")` and nothing else.
+
+Applied at merge (review findings): mapped-type `satisfies`;
+`no-renderer-node-access` now also covers `electron/shared/**` (the indirect
+import path had zero lint coverage); the unreachable non-isolated preload
+branch now fails loudly instead of assigning `window.crm` to an unisolated
+world; stale comment + dependency ordering. Verify after fixes: 230/230, all
+gates green.
+
+Handoff for P1-07 (the twenty-channel task): copy this registry shape — one
+contract entry + one handler entry per channel; the mapped-type `satisfies`
+and `registry.test.ts` catch set and schema drift; never expose a generic
+invoke.
