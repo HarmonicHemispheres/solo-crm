@@ -1,7 +1,7 @@
 ---
 id: T-260828-25
 title: Build the settings repository — typed accessors, declared defaults, no credentials
-status: open
+status: in-progress
 category: data
 plan_ref: P2-01
 created: 2026-08-28

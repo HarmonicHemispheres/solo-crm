@@ -1,7 +1,7 @@
 ---
 id: T-260828-22
 title: Build the engagements repository — split billing, model-specific fields, six statuses
-status: open
+status: in-progress
 category: data
 plan_ref: P1-03
 created: 2026-08-28

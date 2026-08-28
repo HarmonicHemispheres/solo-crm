@@ -1,7 +1,7 @@
 ---
 id: T-260828-21
 title: Build the people and affiliations repository — history-preserving company moves
-status: open
+status: in-progress
 category: data
 plan_ref: P1-02
 created: 2026-08-28

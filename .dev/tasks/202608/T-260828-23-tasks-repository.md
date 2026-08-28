@@ -1,7 +1,7 @@
 ---
 id: T-260828-23
 title: Build the tasks repository — next-step exclusivity, waiting transitions, open counts
-status: open
+status: in-progress
 category: data
 plan_ref: P1-04
 created: 2026-08-28

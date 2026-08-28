@@ -22,11 +22,11 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-21](T-260828-21-people-affiliations-repository.md) | Build the people and affiliations repository — history-preserving company moves | 🗄 data | P1-02 |
-| ○ open | [T-260828-22](T-260828-22-engagements-repository.md) | Build the engagements repository — split billing, model-specific fields, six statuses | 🗄 data | P1-03 · P1-CUT |
-| ○ open | [T-260828-23](T-260828-23-tasks-repository.md) | Build the tasks repository — next-step exclusivity, waiting transitions, open counts | 🗄 data | P1-04 · P1-CUT |
-| ○ open | [T-260828-24](T-260828-24-activity-repository-last-touch.md) | Build the append-only activity repository and maintain the last-touch timestamps | 🗄 data | P1-05 · P1-CUT |
-| ○ open | [T-260828-25](T-260828-25-settings-repository.md) | Build the settings repository — typed accessors, declared defaults, no credentials | 🗄 data | P2-01 |
+| ◐ in-progress | [T-260828-21](T-260828-21-people-affiliations-repository.md) | Build the people and affiliations repository — history-preserving company moves | 🗄 data | P1-02 |
+| ◐ in-progress | [T-260828-22](T-260828-22-engagements-repository.md) | Build the engagements repository — split billing, model-specific fields, six statuses | 🗄 data | P1-03 · P1-CUT |
+| ◐ in-progress | [T-260828-23](T-260828-23-tasks-repository.md) | Build the tasks repository — next-step exclusivity, waiting transitions, open counts | 🗄 data | P1-04 · P1-CUT |
+| ◐ in-progress | [T-260828-24](T-260828-24-activity-repository-last-touch.md) | Build the append-only activity repository and maintain the last-touch timestamps | 🗄 data | P1-05 · P1-CUT |
+| ◐ in-progress | [T-260828-25](T-260828-25-settings-repository.md) | Build the settings repository — typed accessors, declared defaults, no credentials | 🗄 data | P2-01 |
 | ○ open | [T-260828-26](T-260828-26-entity-ipc-channels.md) | Expose the repositories over IPC — entity channels for every record type | 🔌 ipc | P1-07 · P1-CUT |
 | ○ open | [T-260828-27](T-260828-27-create-sheets.md) | Build the create sheets — company, person, engagement, todo | 🎨 ui | P1-08 |
 | ○ open | [T-260828-28](T-260828-28-companies-view.md) | Build the Companies view — card and list presentations with a real record set | 🎨 ui | P1-11 |

@@ -1,7 +1,7 @@
 ---
 id: T-260828-24
 title: Build the append-only activity repository and maintain the last-touch timestamps
-status: open
+status: in-progress
 category: data
 plan_ref: P1-05
 created: 2026-08-28
