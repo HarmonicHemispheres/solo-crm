@@ -1,5 +1,19 @@
 import { join } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, session, shell } from 'electron'
+import { SECURE_WEB_PREFERENCES, installContentSecurityPolicy, registerNavigationGuards } from './security'
+
+/** The dev server's own origin in development, or `null` in a packaged build. */
+function devServerUrl(): string | null {
+  return process.env.ELECTRON_RENDERER_URL ?? null
+}
+
+/** The origin `isInternalUrl` compares navigations against. */
+function appUrl(): string {
+  // In production the window loads a `file://` path; `isInternalUrl` treats
+  // any `file:` target as internal once the app itself is on `file:`, so the
+  // exact path here doesn't matter beyond carrying that protocol.
+  return devServerUrl() ?? 'file:///'
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -7,13 +21,20 @@ function createWindow(): void {
     height: 800,
     show: false,
     webPreferences: {
+      ...SECURE_WEB_PREFERENCES,
       // Forced to CJS output with a .cjs extension (electron.vite.config.ts):
       // package.json is "type": "module", and an ESM preload only loads when
       // sandbox:false — it throws "Cannot use import statement outside a
       // module" under Electron's default sandboxed renderer, and
-      // permanently once T-260828-04 turns the sandbox on.
+      // permanently now that sandbox is on above.
       preload: join(__dirname, '../preload/index.cjs')
     }
+  })
+
+  registerNavigationGuards(mainWindow.webContents, appUrl(), (url) => {
+    shell.openExternal(url).catch((error: unknown) => {
+      console.error('[main] failed to open external URL:', error)
+    })
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -22,8 +43,9 @@ function createWindow(): void {
 
   // electron-vite sets ELECTRON_RENDERER_URL in dev so the window loads the
   // Vite dev server (HMR); a packaged build loads the built renderer HTML.
-  const loadPromise = process.env.ELECTRON_RENDERER_URL
-    ? mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+  const rendererUrl = devServerUrl()
+  const loadPromise = rendererUrl
+    ? mainWindow.loadURL(rendererUrl)
     : mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
 
   loadPromise.catch((error: unknown) => {
@@ -34,6 +56,13 @@ function createWindow(): void {
 app
   .whenReady()
   .then(() => {
+    // Installed once, before any window is created: every BrowserWindow this
+    // app opens uses the default session unless it opts into a partition,
+    // and onHeadersReceived keeps only its most recent listener per session,
+    // so registering this again per-window would just overwrite itself with
+    // an identical policy.
+    installContentSecurityPolicy(session.defaultSession, devServerUrl())
+
     createWindow()
 
     app.on('activate', () => {

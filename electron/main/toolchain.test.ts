@@ -1,7 +1,24 @@
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+
+/**
+ * tsconfig files are JSONC (comments and trailing commas allowed), not
+ * strict JSON — `JSON.parse` throws the moment either appears. `tsc` itself
+ * tolerates both, so a config that typechecks cleanly could still make a
+ * plain `JSON.parse` here throw. `parseConfigFileTextToJson` is the same
+ * tolerant parser the compiler uses on tsconfig files.
+ */
+function readJsonc(path: string): unknown {
+  const text = readFileSync(path, 'utf-8')
+  const { config, error } = ts.parseConfigFileTextToJson(path, text)
+  if (error) {
+    throw new Error(ts.flattenDiagnosticMessageText(error.messageText, '\n'))
+  }
+  return config
+}
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '../..')
@@ -41,7 +58,7 @@ describe('renderer Node boundary', () => {
   // string contents above: tsconfig.web.json must declare no "node" types,
   // so a later edit that adds "node" to fix an unrelated error fails here
   // rather than only showing up the next time someone happens to `import fs`.
-  const tsconfigWeb = JSON.parse(readFileSync(resolve(root, 'tsconfig.web.json'), 'utf-8')) as {
+  const tsconfigWeb = readJsonc(resolve(root, 'tsconfig.web.json')) as {
     compilerOptions: { types?: string[]; lib?: string[] }
   }
 
