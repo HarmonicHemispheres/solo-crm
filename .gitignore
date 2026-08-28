@@ -4,10 +4,11 @@ dist/
 *.log
 *.tsbuildinfo
 .DS_Store
-# connection.test.ts's on-the-fly CJS transpile of connection.ts (and, since
-# T-260828-06, its sync-folder-guard.ts dependency) for spawned test
-# processes; each test run cleans its own copies up, this is only a backstop
-# against a copy surviving an interrupted run.
-electron/main/db/.connection.compiled.*.cjs
-electron/main/db/sync-folder-guard.cjs
+# connection.test.ts's on-the-fly CJS transpile of connection.ts and every
+# local module it transitively imports (sync-folder-guard.ts, migrate.ts,
+# migrations/index.ts, shared/format.ts, shared/types.ts, ...), written
+# beside each one's own source, for spawned test processes; each test run
+# cleans its own copies up, this is only a backstop against a copy
+# surviving an interrupted run.
+electron/**/*.compiled.*.cjs
 .claude/worktrees/
