@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { timestampSchema } from '../../../shared/types'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
-import { MOCKUP_TODAY } from './fixture'
-import { SeedGuardError, seedFixture } from './index'
+import type { CompanySeed } from './fixture'
+import { MOCKUP_TODAY, companies as companiesFixture } from './fixture'
+import { FixtureIntegrityError, SeedGuardError, orderCompaniesForInsert, seedFixture } from './index'
 
 /**
  * Covers T-260828-13's acceptance criteria directly against `seedFixture`,
@@ -59,16 +60,19 @@ describe('seedFixture: row counts', () => {
     })
   })
 
-  it('also seeds the affiliations (one per person with a company) and the links attached to each company', () => {
+  it('also seeds the affiliations (one per person with a company) and the 22 links attached across all 10 companies', () => {
     withFreshDb((db) => {
       seedFixture(db)
       // don, dave, ben — the only three people with a `co` in the mockup.
       expect(count(db, 'affiliations')).toBe(3)
-      expect(count(db, 'links')).toBeGreaterThan(0)
+      // Exact per Scope's link counts by company: rinvii 4, sandsage 4,
+      // ezdeploy 3, wk 3, programetrix 1, radial 2, naslund 2, theroute 1,
+      // northbank 1, thompson 1 = 22, spread across all 10 companies.
+      expect(count(db, 'links')).toBe(22)
       const distinctCompaniesWithLinks = db
         .prepare('SELECT COUNT(DISTINCT entity_id) AS c FROM links WHERE entity_type = ?')
         .get('company') as { c: number }
-      expect(distinctCompaniesWithLinks.c).toBeGreaterThan(0)
+      expect(distinctCompaniesWithLinks.c).toBe(10)
     })
   })
 })
@@ -180,8 +184,18 @@ describe('seedFixture: service catalogue versions', () => {
   })
 })
 
-describe('seedFixture: last_touch_at is derived from activity, not set independently', () => {
-  it("every company's last_touch_at equals MAX(activity.occurred_at) for that company", () => {
+describe("seedFixture: this fixture's last_touch_at values do not disagree with its own activity rows", () => {
+  // Not a standing app invariant — ADR-001 rule 6 is explicit that
+  // companies.last_touch_at and activity answer different questions
+  // (cadence vs. what happened) and are ALLOWED to differ; the real Gmail
+  // adapter writes last_touch_at with no activity row at all. What this
+  // test proves is narrower and specific to how THIS fixture happens to be
+  // built: index.ts computes last_touch_at from the fixture's own activity
+  // rows (see its header comment), so for this particular seed, the two
+  // never disagree by construction. A future fixture row seeded with a
+  // last_touch_at that has no matching activity (a simulated Gmail touch)
+  // would correctly fail this test and would need its own, separate one.
+  it("every company's last_touch_at equals MAX(activity.occurred_at) for that company, in this seed", () => {
     withFreshDb((db) => {
       seedFixture(db)
       const companies = db.prepare('SELECT id, last_touch_at FROM companies').all() as {
@@ -194,7 +208,7 @@ describe('seedFixture: last_touch_at is derived from activity, not set independe
           .get(company.id) as { max_occurred_at: string | null }
         expect(company.last_touch_at).toBe(maxRow.max_occurred_at)
         // In this fixture every company has exactly one activity row, so the
-        // derived value is never null.
+        // computed value is never null.
         expect(company.last_touch_at).not.toBeNull()
       }
     })
@@ -265,6 +279,68 @@ describe('seedFixture: the date-basis decision (offset from today, not absolute)
   })
 })
 
+describe('seedFixture: computeOffsetDays reads the operator\'s local calendar day, not UTC', () => {
+  const originalTz = process.env.TZ
+
+  afterEach(() => {
+    if (originalTz === undefined) {
+      delete process.env.TZ
+    } else {
+      process.env.TZ = originalTz
+    }
+  })
+
+  it('does not roll the seed a day ahead for a timezone behind UTC in the evening', () => {
+    process.env.TZ = 'Pacific/Niue' // UTC-11, no DST — same zone shared-conventions.test.ts uses.
+    withFreshDb((db) => {
+      // 2026-09-01T05:00:00Z is already 2026-09-01 in UTC, but still
+      // 2026-08-31 in Niue (05:00 minus 11h lands on the previous day's
+      // 18:00) — exactly the evening-rollover case a UTC read of "today"
+      // gets wrong by one day.
+      const referenceNow = new Date('2026-09-01T05:00:00.000Z')
+      seedFixture(db, { referenceNow })
+
+      // Niue's local calendar day is 2026-08-31 — 4 days after
+      // MOCKUP_TODAY (2026-08-27) — so Rinvii's since ('2026-03-01') must
+      // land on 2026-03-05. A UTC-based read of "today" (2026-09-01, 5
+      // days out) would have produced 2026-03-06 instead.
+      const rinvii = db.prepare("SELECT since FROM companies WHERE name = 'Rinvii'").get() as { since: string }
+      expect(rinvii.since).toBe('2026-03-05')
+    })
+  })
+})
+
+describe('orderCompaniesForInsert', () => {
+  it("does not change the real fixture's order (already dependency-respecting)", () => {
+    const ordered = orderCompaniesForInsert(companiesFixture)
+    expect(ordered.map((c) => c.key)).toEqual(companiesFixture.map((c) => c.key))
+  })
+
+  it('reorders a billing parent ahead of its dependents even when the input lists them first', () => {
+    // The real hazard the review flagged: EZDeploy happens to precede W+K
+    // and Programetrix in fixture.ts today, and insertion order used to
+    // depend on that silently. Feeding this a reversed copy proves the
+    // function itself is what makes order correct now, not the array.
+    const reversed = [...companiesFixture].reverse()
+    const ordered = orderCompaniesForInsert(reversed)
+    const indexOf = (key: string) => ordered.findIndex((c) => c.key === key)
+    expect(indexOf('ezdeploy')).toBeLessThan(indexOf('wk'))
+    expect(indexOf('ezdeploy')).toBeLessThan(indexOf('programetrix'))
+    expect(ordered).toHaveLength(companiesFixture.length)
+  })
+
+  it('throws FixtureIntegrityError on a billed-via cycle instead of leaving it to a raw FK failure at INSERT time', () => {
+    const a: CompanySeed = { ...companiesFixture[0], key: 'cycle-a', billedViaCompanyKey: 'cycle-b' }
+    const b: CompanySeed = { ...companiesFixture[0], key: 'cycle-b', billedViaCompanyKey: 'cycle-a' }
+    expect(() => orderCompaniesForInsert([a, b])).toThrow(FixtureIntegrityError)
+  })
+
+  it('throws FixtureIntegrityError when billedViaCompanyKey names a key that does not exist', () => {
+    const dangling: CompanySeed = { ...companiesFixture[0], key: 'dangling', billedViaCompanyKey: 'no-such-company' }
+    expect(() => orderCompaniesForInsert([dangling])).toThrow(FixtureIntegrityError)
+  })
+})
+
 describe('seedFixture: the non-empty-database guard', () => {
   it('refuses to seed a database that already has rows, without deleting anything', () => {
     withFreshDb((db) => {
@@ -275,11 +351,20 @@ describe('seedFixture: the non-empty-database guard', () => {
     })
   })
 
-  it('force bypasses the guard but still never deletes — it only adds the fixture again', () => {
+  it('the refusal message states the actual consequence of --force, not just the flag', () => {
+    withFreshDb((db) => {
+      seedFixture(db)
+      expect(() => seedFixture(db)).toThrow(/another copy of the fixture alongside/)
+    })
+  })
+
+  it('force bypasses the guard but still never deletes — it adds a second full copy of the fixture', () => {
     withFreshDb((db) => {
       seedFixture(db)
       expect(() => seedFixture(db, { force: true })).not.toThrow()
+      // Doubles every table's count — the guard message's claim, verified.
       expect(count(db, 'companies')).toBe(20)
+      expect(count(db, 'links')).toBe(44)
     })
   })
 

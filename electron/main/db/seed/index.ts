@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { formatDateOnly, formatTimestamp, nowTimestamp, parseDateOnly } from '../../../shared/format'
+import { dateOnlySchema } from '../../../shared/types'
 import type { DateOnly, Timestamp } from '../../../shared/types'
+import type { CompanySeed } from './fixture'
 import {
   MOCKUP_TODAY,
   activity as activityFixture,
@@ -45,6 +47,10 @@ import {
  * the one exception: those are genuinely "when this row was written," so
  * they use `nowTimestamp()` unshifted, the same as any other write.
  *
+ * `computeOffsetDays` deliberately reads the operator's *local* calendar
+ * date, not UTC — see that function's own comment for why that is the one
+ * correct exception to CONVENTIONS.md's usual UTC rule.
+ *
  * ---- Guard ---------------------------------------------------------------
  *
  * `seedFixture` refuses to insert into a database that already has rows in
@@ -75,12 +81,17 @@ function countRows(db: Database.Database, table: (typeof SEED_TABLES)[number]): 
 }
 
 function assertSeedableOrForced(db: Database.Database, force: boolean): void {
+  // Checked first, before any of the ten COUNT scans below: forcing makes
+  // the scan's answer irrelevant, so there is no reason to run it.
+  if (force) return
   const populated = SEED_TABLES.filter((table) => countRows(db, table) > 0)
   if (populated.length === 0) return
-  if (force) return
   throw new SeedGuardError(
     `Refusing to seed: the database already has rows in ${populated.join(', ')}. ` +
-      'Re-run with --force to seed anyway. Forcing never deletes existing rows — it only adds the fixture on top.'
+      'Re-run with --force to seed anyway — this adds another copy of the fixture ' +
+      'alongside the existing rows (verified: doubles every table\'s count). Forcing ' +
+      'never deletes anything first, so re-seeding a populated database on purpose still ' +
+      'means living with the duplicates afterward, not a clean slate.'
   )
 }
 
@@ -90,9 +101,32 @@ function assertSeedableOrForced(db: Database.Database, force: boolean): void {
 
 const DAY_MS = 86_400_000
 
+/**
+ * Today's calendar date in the *caller's local timezone*, not UTC — the one
+ * deliberate exception to CONVENTIONS.md's "always read/write dates with the
+ * UTC accessors" rule (`electron/shared/format.ts`'s own header comment).
+ * That rule exists to stop a *stored* date from silently shifting by a day
+ * depending on which machine reads it; this calculation answers a different
+ * question — "what calendar day is it for the person running `npm run
+ * seed`, right now" — which is inherently local. Reading it off UTC instead
+ * means anyone west of UTC (Pacific, say) gets tomorrow's date for roughly
+ * the back half of every day, because UTC has already rolled over while
+ * their local clock has not — the seed would land one day ahead of what the
+ * operator actually typed. The mockup's own frozen reference (`const TODAY
+ * = new Date('2026-08-27T09:00:00')`, no trailing `Z`) is itself a local
+ * time for the same reason: the mockup's cadence math was never meant to be
+ * timezone-aware, just "today" in whoever's browser rendered it.
+ */
+function localDateOnly(date: Date): DateOnly {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return dateOnlySchema.parse(`${year}-${month}-${day}`)
+}
+
 function computeOffsetDays(referenceNow: Date): number {
   const mockupTodayMs = parseDateOnly(MOCKUP_TODAY).getTime()
-  const todayMs = parseDateOnly(formatDateOnly(referenceNow)).getTime()
+  const todayMs = parseDateOnly(localDateOnly(referenceNow)).getTime()
   return Math.round((todayMs - mockupTodayMs) / DAY_MS)
 }
 
@@ -110,13 +144,27 @@ function shiftDateOnlyOrNull(value: string | null, offsetDays: number): DateOnly
  * mockup only gave a date for (activity.occurred_at, last_touch_at,
  * last_contact_at, done_at) get a plausible, varied time of day rather than
  * every row landing on midnight.
+ *
+ * The hour is written as a UTC hour (`shiftToTimestamp` builds the instant
+ * via `Date.UTC`), narrowed to 16:00-19:00 UTC — mid-morning to mid-
+ * afternoon across the continental US (this business's actual operating
+ * timezones) in both standard and daylight time. That is a deliberate
+ * shrink from a wider band: a UTC hour near either edge of the day risks
+ * displaying as the *previous* or *next* calendar day once rendered in a
+ * viewer's local time, which would silently detach an activity row's
+ * displayed date from the calendar day `computeOffsetDays`/`shiftDateOnly`
+ * intended. This narrows the risk for this fixture's realistic operator
+ * timezones; it is not a claim of safety for arbitrary timezones (a
+ * viewer far enough east — UTC+10 and beyond — can still roll to the next
+ * local day), which a cosmetic time-of-day on dev-only seed data does not
+ * warrant solving in general.
  */
 function timeOfDayFor(key: string): { hour: number; minute: number } {
   let hash = 0
   for (let i = 0; i < key.length; i += 1) {
     hash = (hash * 31 + key.charCodeAt(i)) >>> 0
   }
-  return { hour: 8 + (hash % 10), minute: (hash * 7) % 60 }
+  return { hour: 16 + (hash % 4), minute: (hash * 7) % 60 }
 }
 
 function shiftToTimestamp(dateValue: string, offsetDays: number, key: string): Timestamp {
@@ -124,6 +172,62 @@ function shiftToTimestamp(dateValue: string, offsetDays: number, key: string): T
   const [year, month, day] = shifted.split('-').map(Number)
   const { hour, minute } = timeOfDayFor(key)
   return formatTimestamp(new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0)))
+}
+
+// ---------------------------------------------------------------------------
+// Company insertion order
+// ---------------------------------------------------------------------------
+
+export class FixtureIntegrityError extends Error {}
+
+/**
+ * Returns `companies` reordered so that a company's `billedViaCompanyKey`
+ * target always comes before it. SQLite checks foreign keys **immediately**
+ * on every `INSERT` — nothing in migration 0001 is `DEFERRABLE` — so the
+ * order rows are actually written in matters; pre-assigning every company's
+ * id up front (in `seedFixture`, below) only resolves what *value* a FK
+ * column holds, it does not make the insertion order safe by itself.
+ * Without this function, correctness would depend on `fixture.ts` happening
+ * to list EZDeploy before W+K and Programetrix — true today, and silent and
+ * easy to break with an unrelated edit to that file. This makes insertion
+ * order correct regardless of how `companies` is ordered in the fixture;
+ * `index.test.ts` proves it against a deliberately reversed copy, and a
+ * genuine cycle (two companies billed via each other) fails loudly here,
+ * before any `INSERT` runs, rather than surfacing as an opaque SQLite
+ * FOREIGN KEY constraint failure.
+ */
+export function orderCompaniesForInsert(companies: readonly CompanySeed[]): readonly CompanySeed[] {
+  const byKey = new Map(companies.map((c) => [c.key, c]))
+  const ordered: CompanySeed[] = []
+  const visited = new Set<string>()
+  const visiting = new Set<string>()
+
+  function visit(company: CompanySeed): void {
+    if (visited.has(company.key)) return
+    if (visiting.has(company.key)) {
+      throw new FixtureIntegrityError(
+        `fixture.ts's companies form a billed-via cycle involving "${company.key}" — ` +
+          'a company cannot be billed via itself, even transitively.'
+      )
+    }
+    if (company.billedViaCompanyKey) {
+      const parent = byKey.get(company.billedViaCompanyKey)
+      if (!parent) {
+        throw new FixtureIntegrityError(
+          `company "${company.key}" has billedViaCompanyKey "${company.billedViaCompanyKey}", ` +
+            'which is not a key of any company in fixture.ts.'
+        )
+      }
+      visiting.add(company.key)
+      visit(parent)
+      visiting.delete(company.key)
+    }
+    visited.add(company.key)
+    ordered.push(company)
+  }
+
+  for (const company of companies) visit(company)
+  return ordered
 }
 
 // ---------------------------------------------------------------------------
@@ -144,9 +248,11 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
   const seededAt = nowTimestamp()
 
   const run = db.transaction(() => {
-    // ---- ids, assigned up front so any row can reference any other's,
-    // regardless of insertion order (companies' self-referencing
-    // billed_via_company_id in particular). ----
+    // ---- ids, assigned up front so any row's FK column can be resolved to
+    // a value regardless of *lookup* order. This does not by itself make
+    // *insertion* order safe (SQLite's foreign keys are checked
+    // immediately, not deferred) — see orderCompaniesForInsert above for
+    // the one table here that actually needs a specific insertion order. ----
     const companyIds = new Map(companiesFixture.map((c) => [c.key, randomUUID()]))
     const personIds = new Map(peopleFixture.map((p) => [p.key, randomUUID()]))
     const categoryIds = new Map(serviceCategoriesFixture.map((c) => [c.key, randomUUID()]))
@@ -210,10 +316,21 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
       }
     }
 
-    // ---- last_touch_at, derived from activity (never set independently —
-    // see the header comment and the task's Risks). One pass over the
-    // fixture's activity rows, grouped by company, before any company row
-    // is written. ----
+    // ---- last_touch_at is computed from this fixture's own activity rows,
+    // grouped by company, before any company row is written. This is a
+    // property of how THIS fixture happens to be constructed, not a rule
+    // the app enforces: ADR-001 rule 6 is explicit that the column and
+    // `activity` answer different questions (cadence vs. what happened) and
+    // are ALLOWED to differ — the real Gmail adapter writes last_touch_at
+    // directly with no matching activity row at all (ADR-001 rule 3). The
+    // mockup's own per-company `lastTouch` value happens to equal that
+    // company's one activity row's date for all ten companies here
+    // (checked against the source at port time), so computing it from
+    // activity reproduces the mockup's own number without stating it twice
+    // in fixture.ts — that is why `CompanySeed` carries no separate
+    // `lastTouch` field. Nothing here would stop a future seed from setting
+    // last_touch_at independently for a company with no matching activity
+    // row; this fixture simply never needs to. ----
     const lastTouchByCompany = new Map<string, { occurredAt: Timestamp; occurredAtMs: number }>()
     for (const entry of activityFixture) {
       const occurredAt = shiftToTimestamp(entry.occurredOn, offsetDays, entry.key)
@@ -230,7 +347,7 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
          (id, name, kind, website, bills_directly, billed_via_company_id, cadence_days, last_touch_at, budget_note, notes, since, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    for (const company of companiesFixture) {
+    for (const company of orderCompaniesForInsert(companiesFixture)) {
       insertCompany.run(
         companyIds.get(company.key),
         company.name,
@@ -302,7 +419,10 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
         engagement.name,
         companyIds.get(engagement.billingCompanyKey),
         companyIds.get(engagement.clientCompanyKey),
-        engagement.serviceKey && engagement.serviceVersion
+        // `!= null` on purpose, not `&&`/truthiness: a service version
+        // number of 0 is a legitimate value and must not be treated the
+        // same as "no service" the way a falsy check would.
+        engagement.serviceKey != null && engagement.serviceVersion != null
           ? serviceVersionIds.get(`${engagement.serviceKey}:${engagement.serviceVersion}`)
           : null,
         engagement.agreedRateCents,

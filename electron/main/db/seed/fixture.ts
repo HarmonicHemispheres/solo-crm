@@ -23,17 +23,26 @@
  *   first of that month, `YYYY-MM-01` (`dateOnlySchema` rejects a bare
  *   year-month).
  *
- * What is deliberately NOT here, because the loader derives it instead of
- * this file stating it independently (the task's Risks: "last_touch_at set
- * independently of activity is the inconsistency P1-05 exists to prevent"):
- * `companies.lastTouch` / `people.last` are not carried as fields on
- * `CompanySeed` — the loader computes `last_touch_at` from `ActivitySeed`
- * (MAX(occurred_at) per company). `people.last_contact_at` is the one
- * exception: the mockup's `activity` array is company-scoped only (no
- * `people` entries), so there is no activity row to derive a contact's
- * `last_contact_at` from — same reasoning ADR-001 gives for why the column
- * is denormalised rather than derived in the first place. `PersonSeed`
- * therefore does carry `lastContactDate` directly.
+ * `companies.lastTouch` is deliberately NOT a field on `CompanySeed` — the
+ * loader computes `last_touch_at` from `ActivitySeed` instead
+ * (MAX(occurred_at) per company). This is a fixture-authoring convenience,
+ * not an app-level rule: ADR-001 rule 6 is explicit that `last_touch_at`
+ * and `activity` answer different questions (cadence vs. what happened)
+ * and are ALLOWED to differ — the real Gmail adapter writes the column with
+ * no matching activity row at all (ADR-001 rule 3). Dropping the field here
+ * only works because, in this specific dataset, the mockup's per-company
+ * `lastTouch` value is identical to that company's one activity row's date
+ * for all ten companies (checked field-by-field against the source at port
+ * time) — computing it from activity reproduces the mockup's own number
+ * without stating it twice in this file. A seed that needed a company's
+ * last_touch_at to disagree with its activity log (a Gmail-sourced touch,
+ * say) would need to carry the field independently instead; nothing here
+ * forbids that, this fixture just never needs it.
+ *
+ * `people.last_contact_at` is not derived the same way: the mockup's
+ * `activity` array is company-scoped only (no `people` entries), so there
+ * is no activity row to compute a contact's `last_contact_at` from in the
+ * first place. `PersonSeed` therefore carries `lastContactDate` directly.
  *
  * Dates below are still in the mockup's own frame of reference (relative to
  * `const TODAY = new Date('2026-08-27T09:00:00')`, planning/solo-crm-mockup
