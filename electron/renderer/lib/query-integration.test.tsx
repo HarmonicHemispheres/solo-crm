@@ -4,7 +4,7 @@ import { QueryClientProvider, focusManager, useMutation, useQuery, useQueryClien
 import { createQueryClient } from './query-client'
 import { IpcCallError, ipcMutationFn, ipcQueryFn, optimisticUpdate } from './ipc'
 import { invalidate, queryKeys } from './query-keys'
-import type { CrmApi } from '../../shared/ipc-types'
+import { stubCrm } from './test-support/stub-crm'
 
 /**
  * Integration-flavored proof (T-260828-10's acceptance criteria) built
@@ -14,14 +14,6 @@ import type { CrmApi } from '../../shared/ipc-types'
  * boundary (QueryClientProvider, useQuery/useMutation, this file's helpers)
  * is exercised for real; only the IPC call itself is a stub.
  */
-
-function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
-  return {
-    'app:version': vi.fn(async () => ({ ok: true as const, data: { version: '0.1.0' } })),
-    'db:schemaVersion': vi.fn(async () => ({ ok: true as const, data: { version: 1, lastMigrationAt: null } })),
-    ...overrides
-  }
-}
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assigns.
@@ -124,6 +116,16 @@ describe('an envelope error reaches the component as a typed error, not [object 
   })
 })
 
+/**
+ * `data-testid="mutation-status"` mirrors `mutation.status` so tests can
+ * `waitFor` the real `'error'` transition before inspecting the cache.
+ * TanStack Query's mutation state machine only flips to `'error'` *after*
+ * `onError` and `onSettled` have both been awaited (query-core's
+ * mutation.js dispatches the `'error'` action last), so waiting for this
+ * text is a reliable signal the full rollback has already happened —
+ * unlike polling the cache directly, which can observe the pre-mutation
+ * state before the (async) `onMutate` has written anything at all.
+ */
 function BumpSchemaVersionButton() {
   const queryClient = useQueryClient()
   const mutation = useMutation({
@@ -131,7 +133,8 @@ function BumpSchemaVersionButton() {
     ...optimisticUpdate<{ version: number; lastMigrationAt: string | null }, undefined>(
       queryClient,
       queryKeys.db.schemaVersion(),
-      (current) => ({ version: (current?.version ?? 0) + 1, lastMigrationAt: current?.lastMigrationAt ?? null })
+      (current) => ({ version: (current?.version ?? 0) + 1, lastMigrationAt: current?.lastMigrationAt ?? null }),
+      invalidate.db
     )
   })
   return (
@@ -139,13 +142,14 @@ function BumpSchemaVersionButton() {
       <button type="button" onClick={() => mutation.mutate(undefined)}>
         bump schema
       </button>
+      <span data-testid="mutation-status">{mutation.status}</span>
       {mutation.error ? <span data-testid="mutation-error">{(mutation.error as IpcCallError).message}</span> : null}
     </>
   )
 }
 
 describe('the optimistic-update helper rolls back and surfaces the error on a deliberately failing channel', () => {
-  it('shows the optimistic value immediately, then rolls back to the exact prior value when the write fails', async () => {
+  it('shows the optimistic value immediately, then rolls back to the exact prior value once the mutation actually reaches error status', async () => {
     type SchemaVersionResult =
       | { ok: true; data: { version: number; lastMigrationAt: string | null } }
       | { ok: false; error: { code: 'handler-error'; message: string } }
@@ -196,13 +200,21 @@ describe('the optimistic-update helper rolls back and surfaces the error on a de
       resolveWrite?.({ ok: false, error: { code: 'handler-error', message: 'schema bump rejected' } })
     })
 
-    // Once the mutationFn rejects, onError rolls the cache back to exactly
-    // what it held before the optimistic write...
-    await waitFor(() => expect(screen.getByTestId('schema-version').textContent).toBe('1'))
+    // Wait for the mutation to actually reach 'error' — proof that
+    // onError (and onSettled) have both already run, per mutation.js's
+    // dispatch order — before asserting anything about the cache. Asserting
+    // the rendered text directly (without this gate) can observe a
+    // transient render that happens to already match, which is exactly how
+    // the previous version of this test passed against a broken rollback.
+    await waitFor(() => expect(screen.getByTestId('mutation-status').textContent).toBe('error'))
+
+    // Once the mutation is in error state, onError has already rolled the
+    // cache back to exactly what it held before the optimistic write...
+    expect(screen.getByTestId('schema-version').textContent).toBe('1')
     // ...and the mutation's own .error — what useMutation actually caught —
     // is the typed IpcCallError with a real message, surfaced by the
     // component, not a stringified envelope.
-    const errorNode = await screen.findByTestId('mutation-error')
+    const errorNode = screen.getByTestId('mutation-error')
     expect(errorNode.textContent).toBe('schema bump rejected')
     expect(errorNode.textContent).not.toContain('[object Object]')
   })
@@ -224,13 +236,17 @@ describe('the optimistic-update helper rolls back and surfaces the error on a de
         ...optimisticUpdate<{ version: number; lastMigrationAt: string | null }, undefined>(
           client,
           queryKeys.db.schemaVersion(),
-          (current) => ({ version: (current?.version ?? 0) + 1, lastMigrationAt: current?.lastMigrationAt ?? null })
+          (current) => ({ version: (current?.version ?? 0) + 1, lastMigrationAt: current?.lastMigrationAt ?? null }),
+          invalidate.db
         )
       })
       return (
-        <button type="button" onClick={() => mutation.mutate(undefined)}>
-          bump schema
-        </button>
+        <>
+          <button type="button" onClick={() => mutation.mutate(undefined)}>
+            bump schema
+          </button>
+          <span data-testid="mutation-status">{mutation.status}</span>
+        </>
       )
     }
 
@@ -242,16 +258,153 @@ describe('the optimistic-update helper rolls back and surfaces the error on a de
 
     fireEvent.click(screen.getByRole('button', { name: 'bump schema' }))
 
-    await waitFor(() => expect(queryClient.getQueryData(queryKeys.db.schemaVersion())).toBeUndefined())
+    // As above: wait for the real 'error' transition — which only happens
+    // after onError has run — before reading the cache. A direct
+    // `waitFor(() => expect(getQueryData()).toBeUndefined())` can resolve
+    // on its very first, synchronous check (before the async onMutate has
+    // written anything at all), which is exactly why the earlier version of
+    // this test passed even with a broken (no-op) rollback.
+    await waitFor(() => expect(screen.getByTestId('mutation-status').textContent).toBe('error'))
+
+    expect(queryClient.getQueryData(queryKeys.db.schemaVersion())).toBeUndefined()
+  })
+})
+
+/** Two independent buttons, each its own `useMutation`, both optimistically updating the same key — the exact shape of two inline toggles racing on one row (finding 4). */
+function DoubleBumpSchemaVersionButtons() {
+  const queryClient = useQueryClient()
+  const mutationA = useMutation({
+    mutationFn: ipcMutationFn('db:schemaVersion'),
+    ...optimisticUpdate<{ version: number }, undefined>(
+      queryClient,
+      queryKeys.db.schemaVersion(),
+      (current) => ({ version: (current?.version ?? 0) + 1 }),
+      invalidate.db
+    )
+  })
+  const mutationB = useMutation({
+    mutationFn: ipcMutationFn('db:schemaVersion'),
+    ...optimisticUpdate<{ version: number }, undefined>(
+      queryClient,
+      queryKeys.db.schemaVersion(),
+      (current) => ({ version: (current?.version ?? 0) + 1 }),
+      invalidate.db
+    )
+  })
+  return (
+    <>
+      <button type="button" onClick={() => mutationA.mutate(undefined)}>
+        bump A
+      </button>
+      <button type="button" onClick={() => mutationB.mutate(undefined)}>
+        bump B
+      </button>
+    </>
+  )
+}
+
+describe('concurrent mutations against the same key do not snapshot each other’s optimistic value', () => {
+  it('B does not start (does not run its own onMutate, does not double-apply on top of A’s optimistic write) until A’s cycle has fully settled', async () => {
+    let calls = 0
+    // Models a real backing store: reads report the current persisted
+    // version; writes bump it and then report the new value. Calls
+    // alternate read/write/read/write/... in this scenario (1: initial
+    // read, 2: A's write, 3: A's reconciliation read, 4: B's write, 5: B's
+    // reconciliation read) — an earlier version of this mock hardcoded
+    // `version: 2` for every call past the second, which made B's own
+    // reconciliation refetch silently overwrite B's optimistic `3` back
+    // down to the stale `2` and produced a false failure unrelated to the
+    // lock this test actually exists to prove.
+    let persistedVersion = 1
+    let resolveA: (() => void) | undefined
+    window.crm = stubCrm({
+      'db:schemaVersion': vi.fn(async () => {
+        calls += 1
+        if (calls === 1) {
+          // SchemaVersionReader's initial read.
+          return { ok: true as const, data: { version: persistedVersion, lastMigrationAt: null } }
+        }
+        if (calls === 2) {
+          // Mutation A's own write — held open until this test resolves it,
+          // so the window where a race *could* happen is under this test's
+          // control rather than a timing accident.
+          return new Promise<{ ok: true; data: { version: number; lastMigrationAt: null } }>((resolve) => {
+            resolveA = () => {
+              persistedVersion += 1
+              resolve({ ok: true, data: { version: persistedVersion, lastMigrationAt: null } })
+            }
+          })
+        }
+        const isWrite = calls % 2 === 0
+        if (isWrite) persistedVersion += 1
+        return { ok: true as const, data: { version: persistedVersion, lastMigrationAt: null } }
+      })
+    })
+
+    const queryClient = createQueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SchemaVersionReader />
+        <DoubleBumpSchemaVersionButtons />
+      </QueryClientProvider>
+    )
+
+    await waitFor(() => expect(screen.getByTestId('schema-version').textContent).toBe('1'))
+
+    // Fire both mutations back to back, before either has had a chance to
+    // settle — the exact "two clicks in quick succession" scenario finding
+    // 4 is about.
+    fireEvent.click(screen.getByRole('button', { name: 'bump A' }))
+    fireEvent.click(screen.getByRole('button', { name: 'bump B' }))
+
+    // A's optimistic write lands (1 -> 2).
+    await waitFor(() => expect(screen.getByTestId('schema-version').textContent).toBe('2'))
+    await waitFor(() => expect(resolveA).toBeDefined())
+
+    // While A is still pending (its write call is the one this test is
+    // holding open), B must not have touched the cache or run its own
+    // mutationFn at all yet — only calls 1 (read) and 2 (A's write) should
+    // have happened. ipc.ts's per-key lock is what guarantees this: without
+    // it, B's onMutate runs eagerly regardless of A's outcome (query-core
+    // only gates the network call on `scope`, not onMutate — see ipc.ts's
+    // comment on `optimisticUpdate` for how this was discovered), computing
+    // its optimistic value from A's *unsettled* 2 and writing 3 before A has
+    // even reached the network.
+    expect(calls).toBe(2)
+    expect(screen.getByTestId('schema-version').textContent).toBe('2')
+
+    // Let A finish. Only once A's full cycle (mutationFn -> onSuccess ->
+    // its onSettled reconciliation refetch, *and* releasing the lock) has
+    // completed does B's onMutate even run.
+    resolveA?.()
+
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(4))
+    // B's own optimistic write applied on top of A's *settled* value (2),
+    // not on top of A's optimistic pre-settle value — the property the lock
+    // serialization exists to guarantee.
+    await waitFor(() => expect(screen.getByTestId('schema-version').textContent).toBe('3'))
   })
 })
 
 describe('window focus does not trigger a refetch', () => {
-  it('regaining window focus after a query has data makes no additional channel call', async () => {
+  it('regaining window focus does not refetch even when data would immediately be stale — proves refetchOnWindowFocus: false, not staleTime, is what prevents it', async () => {
     const spy = vi.fn(async () => ({ ok: true as const, data: { version: '0.1.0' } }))
     window.crm = stubCrm({ 'app:version': spy })
 
     const queryClient = createQueryClient()
+    // Override staleTime to 0 for this test only. Production's staleTime:
+    // Infinity means a query is *never* stale, so a regression that flipped
+    // refetchOnWindowFocus to true would still pass this test — there'd be
+    // nothing to refetch for regardless of the flag. Zeroing staleTime
+    // while keeping every other production default (refetchOnWindowFocus:
+    // false among them) means only that flag stands between "focus
+    // regained" and a second channel call, so flipping it in
+    // query-client.ts actually fails this test.
+    queryClient.setDefaultOptions({
+      ...queryClient.getDefaultOptions(),
+      queries: { ...queryClient.getDefaultOptions().queries, staleTime: 0 }
+    })
+
     render(
       <QueryClientProvider client={queryClient}>
         <AppVersionReader testId="reader" />

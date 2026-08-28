@@ -1,20 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { callCrm, IpcCallError, ipcMutationFn, ipcQueryFn, optimisticUpdate } from './ipc'
-import type { CrmApi } from '../../shared/ipc-types'
-
-/**
- * A minimal but fully-typed `CrmApi` stub — every test below overrides just
- * the channel(s) it cares about, so a channel added later that this file
- * doesn't know about still leaves every existing test compiling and passing.
- */
-function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
-  return {
-    'app:version': vi.fn(async () => ({ ok: true as const, data: { version: '0.1.0' } })),
-    'db:schemaVersion': vi.fn(async () => ({ ok: true as const, data: { version: 1, lastMigrationAt: null } })),
-    ...overrides
-  }
-}
+import { stubCrm } from './test-support/stub-crm'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assigns.
@@ -65,6 +52,43 @@ describe('callCrm', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy).toHaveBeenCalledWith(undefined)
   })
+
+  it('throws IpcCallError coded "bridge-unavailable" — not a raw TypeError — when window.crm itself is missing', async () => {
+    // @ts-expect-error - simulating a preload that never ran.
+    delete window.crm
+
+    await expect(callCrm('app:version')).rejects.toThrow(IpcCallError)
+    try {
+      await callCrm('app:version')
+      expect.unreachable('callCrm should have thrown')
+    } catch (error) {
+      expect(error).toBeInstanceOf(IpcCallError)
+      const ipcError = error as IpcCallError
+      expect(ipcError.code).toBe('bridge-unavailable')
+      expect(typeof ipcError.message).toBe('string')
+      expect(ipcError.message).not.toContain('[object Object]')
+      // Never a bare TypeError ("Cannot read properties of undefined") —
+      // the one invariant this module guarantees is that every failure a
+      // query or mutation observes is an IpcCallError.
+      expect(ipcError).not.toBeInstanceOf(TypeError)
+    }
+  })
+
+  it('throws IpcCallError coded "bridge-unavailable" when window.crm exists but the specific channel does not', async () => {
+    // A stale renderer bundle calling a channel a rolled-back main process
+    // no longer registers — window.crm exists, this one method doesn't.
+    // @ts-expect-error - deliberately building an incomplete CrmApi.
+    window.crm = {}
+
+    await expect(callCrm('app:version')).rejects.toThrow(IpcCallError)
+    try {
+      await callCrm('app:version')
+      expect.unreachable('callCrm should have thrown')
+    } catch (error) {
+      const ipcError = error as IpcCallError
+      expect(ipcError.code).toBe('bridge-unavailable')
+    }
+  })
 })
 
 describe('ipcQueryFn', () => {
@@ -107,13 +131,23 @@ describe('ipcMutationFn', () => {
 describe('optimisticUpdate', () => {
   it('writes the optimistic value on onMutate and returns the previous value as context', async () => {
     const queryClient = new QueryClient()
-    const key = ['db', 'schemaVersion'] as const
+    // Each test that calls onMutate uses its own key: the per-key lock
+    // ipc.ts's optimisticUpdate now holds from onMutate through onSettled
+    // (finding 4) is module-level and keyed by hashKey(queryKey) — a shared
+    // literal key across independent unit tests that each call onMutate but
+    // never onSettled would leave a later test's onMutate awaiting a lock
+    // nobody ever releases. `query-integration.test.tsx`'s dedicated
+    // concurrent-mutations test is what proves the lock's actual behavior
+    // end to end through a real, fully-settling mutation lifecycle.
+    const key = ['db', 'schemaVersion', 'writes-optimistic-test'] as const
     queryClient.setQueryData(key, { version: 1, lastMigrationAt: null })
+    const reconcile = vi.fn(async () => undefined)
 
     const hooks = optimisticUpdate<{ version: number; lastMigrationAt: string | null }, void>(
       queryClient,
       key,
-      (current) => ({ version: (current?.version ?? 0) + 1, lastMigrationAt: current?.lastMigrationAt ?? null })
+      (current) => ({ version: (current?.version ?? 0) + 1, lastMigrationAt: current?.lastMigrationAt ?? null }),
+      reconcile
     )
 
     const context = await hooks.onMutate(undefined)
@@ -122,38 +156,116 @@ describe('optimisticUpdate', () => {
     expect(queryClient.getQueryData(key)).toEqual({ version: 2, lastMigrationAt: null })
   })
 
-  it('rolls back to the exact previous value on onError — the failure path this helper exists to prove', () => {
+  it('serializes concurrent mutations against the same key via a shared mutation scope', () => {
     const queryClient = new QueryClient()
     const key = ['db', 'schemaVersion'] as const
-    const hooks = optimisticUpdate<{ version: number }, void>(queryClient, key, (current) => ({
-      version: (current?.version ?? 0) + 1
-    }))
+    const reconcile = vi.fn(async () => undefined)
 
-    hooks.onError(new IpcCallError('handler-error', 'nope'), undefined, { previous: { version: 1 } })
+    const hooksA = optimisticUpdate<{ version: number }, void>(queryClient, key, (c) => ({
+      version: (c?.version ?? 0) + 1
+    }), reconcile)
+    const hooksB = optimisticUpdate<{ version: number }, void>(queryClient, key, (c) => ({
+      version: (c?.version ?? 0) + 1
+    }), reconcile)
+
+    // Same key -> same scope id, regardless of which call site built the
+    // hooks — this is what makes TanStack Query run them one at a time
+    // instead of letting a second mutation snapshot the first one's
+    // still-unsettled optimistic write as its own "previous".
+    expect(hooksA.scope).toEqual(hooksB.scope)
+    expect(hooksA.scope.id).toEqual(expect.any(String))
+  })
+
+  it('onError rolls back to the exact previous value — run through the real onMutate -> onError cycle, not a hand-built context', async () => {
+    const queryClient = new QueryClient()
+    // Own key — see the comment on the first onMutate-calling test above for why.
+    const key = ['db', 'schemaVersion', 'onerror-rollback-test'] as const
+    queryClient.setQueryData(key, { version: 1 })
+    const reconcile = vi.fn(async () => undefined)
+
+    const hooks = optimisticUpdate<{ version: number }, void>(
+      queryClient,
+      key,
+      (current) => ({ version: (current?.version ?? 0) + 1 }),
+      reconcile
+    )
+
+    const context = await hooks.onMutate(undefined)
+    // The optimistic write actually landed — otherwise the rollback below
+    // wouldn't be proving anything.
+    expect(queryClient.getQueryData(key)).toEqual({ version: 2 })
+
+    hooks.onError(new IpcCallError('handler-error', 'nope'), undefined, context)
 
     expect(queryClient.getQueryData(key)).toEqual({ version: 1 })
   })
 
-  it('rolls back to undefined when there was nothing cached before the optimistic write', () => {
+  it('onError removes the cache entry — not a silent no-op — when there was nothing cached before the optimistic write', async () => {
     const queryClient = new QueryClient()
-    const key = ['db', 'schemaVersion'] as const
-    const hooks = optimisticUpdate<{ version: number }, void>(queryClient, key, () => ({ version: 1 }))
+    // Own key — see the comment on the first onMutate-calling test above for why.
+    const key = ['db', 'schemaVersion', 'onerror-removes-test'] as const
+    // Nothing set beforehand: queryClient.getQueryData(key) starts undefined.
+    const reconcile = vi.fn(async () => undefined)
 
-    hooks.onError(new IpcCallError('handler-error', 'nope'), undefined, { previous: undefined })
+    const hooks = optimisticUpdate<{ version: number }, void>(
+      queryClient,
+      key,
+      (current) => ({ version: (current?.version ?? 0) + 1 }),
+      reconcile
+    )
 
+    const context = await hooks.onMutate(undefined)
+    expect(context).toEqual({ previous: undefined })
+    // The optimistic write actually landed.
+    expect(queryClient.getQueryData(key)).toEqual({ version: 1 })
+
+    hooks.onError(new IpcCallError('handler-error', 'nope'), undefined, context)
+
+    // The load-bearing assertion the previous version of this test couldn't
+    // actually make fail: TanStack's setQueryData(key, undefined) is a
+    // documented no-op (query-core's queryClient.js: `if (data === void 0)
+    // return`), so if onError ever regresses to calling setQueryData with
+    // the (undefined) snapshot instead of removeQueries, this stays
+    // { version: 1 } forever instead of going back to nothing.
     expect(queryClient.getQueryData(key)).toBeUndefined()
   })
 
-  it('invalidates the key onSettled so the cache reconciles with main', () => {
+  it('onError does nothing if onMutate never completed (no context) — there is nothing to roll back', () => {
     const queryClient = new QueryClient()
     const key = ['db', 'schemaVersion'] as const
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
-    const hooks = optimisticUpdate<{ version: number }, void>(queryClient, key, (current) => ({
-      version: (current?.version ?? 0) + 1
-    }))
+    queryClient.setQueryData(key, { version: 5 })
+    const reconcile = vi.fn(async () => undefined)
+    const hooks = optimisticUpdate<{ version: number }, void>(
+      queryClient,
+      key,
+      (current) => ({ version: (current?.version ?? 0) + 1 }),
+      reconcile
+    )
 
-    hooks.onSettled()
+    hooks.onError(new IpcCallError('handler-error', 'nope'), undefined, undefined)
 
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: key })
+    expect(queryClient.getQueryData(key)).toEqual({ version: 5 })
+  })
+
+  it('onSettled calls and returns the caller-supplied reconcile — not a hardcoded invalidation of the raw key', async () => {
+    const queryClient = new QueryClient()
+    const key = ['db', 'schemaVersion'] as const
+    const reconcile = vi.fn(async () => 'reconciled')
+
+    const hooks = optimisticUpdate<{ version: number }, void>(
+      queryClient,
+      key,
+      (current) => ({ version: (current?.version ?? 0) + 1 }),
+      reconcile
+    )
+
+    // TanStack always calls onSettled with all four positional arguments
+    // (data, error, variables, context) — matching that shape here, even
+    // though this test only cares about the reconcile call.
+    const result = await hooks.onSettled(undefined, null, undefined, undefined)
+
+    expect(reconcile).toHaveBeenCalledWith(queryClient)
+    // Returned (not void) so useMutation's isPending covers reconciliation.
+    expect(result).toBe('reconciled')
   })
 })

@@ -50,10 +50,22 @@ export const queryKeys = {
  * entity here is one place to widen later — an `app` mutation that starts
  * affecting a second `app`-scoped query invalidates both the moment it is
  * added to `queryKeys.app`, with no call site edited.
+ *
+ * `ipc.ts`'s `optimisticUpdate` takes one of these (e.g. `invalidate.todos`,
+ * once P1-07 adds it) as its required `reconcile` argument rather than
+ * invalidating its own single `queryKey` — an optimistic todo-completion
+ * mutation reconciling only `['todos', 'detail', id]` would leave
+ * `['todos', 'list']` showing the pre-completion state.
+ *
+ * Typed as `Record<keyof typeof queryKeys, ...>` rather than a bare object
+ * literal so adding an entity to `queryKeys` without adding its matching
+ * `invalidate` entry (or vice versa) fails `tsc`, the same drift guard
+ * `electron/shared/ipc-types.ts`'s `CHANNEL_NAMES` gives the channel
+ * registry.
  */
-export const invalidate = {
-  app: (queryClient: QueryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.app.all() }),
-  db: (queryClient: QueryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.db.all() })
+export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClient) => Promise<void>> = {
+  app: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.app.all() }),
+  db: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.db.all() })
 }
 
 /** Re-exported so call sites can type a key without importing `@tanstack/react-query` directly. */

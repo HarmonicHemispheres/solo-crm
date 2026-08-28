@@ -73,7 +73,12 @@ which this section explains.
   function per entity alongside the key factories, so a mutation's
   `onSuccess`/`onSettled` reads as "this touched the `app` entity" rather
   than reconstructing `['app']` (or worse, `['app', 'version']`, which would
-  miss a sibling key added later) by hand.
+  miss a sibling key added later) by hand. This applies to an optimistic
+  mutation too: `ipc.ts`'s `optimisticUpdate` takes the invalidate helper as
+  a required `reconcile` argument rather than invalidating its own single
+  `queryKey` internally, for exactly this reason — an optimistic
+  todo-completion that only reconciled `['todos', 'detail', id]` would leave
+  `['todos', 'list']` showing the pre-completion state.
 - **Build keys with the factory, never a literal array.** `queryKeys.app.version()`,
   not `['app', 'version']` typed out at the call site — the factory is the
   one place the shape can change.
@@ -103,11 +108,14 @@ produces is turned off or set deliberately instead of left implicit:
   window elapses. `Infinity` makes the tradeoff explicit instead of
   papering over a bug behind a duration nobody sized against evidence: if a
   view ever shows stale data, the fix is the mutation's missing
-  `invalidate.<entity>()` call, not a smaller number here. (A future
-  background writer — e.g. a pull-only sync job in `main/sync/` updating
-  rows the renderer didn't ask to change — is not this task's problem: it
-  would need to invalidate the affected keys itself, the same as any
-  mutation does, when that task is built.)
+  `invalidate.<entity>()` call, not a smaller number here. A future
+  background writer is not this task's problem but is a known gap this
+  `staleTime` choice opens: **P4-01** (the sync framework) and its adapters
+  write rows the renderer never asked to change — a pull-only sync landing
+  new Stripe or Calendar data with nobody calling `invalidate.<entity>()`
+  would sit in the cache unseen until the next unrelated invalidation. P4-01
+  needs to invalidate the entities it touches itself, the same as any
+  mutation does; see "What this file does not cover" below.
 - **`refetchOnWindowFocus: false`, `refetchOnReconnect: false`.** Alt-tabbing
   back into the app is not "the network might have changed since I looked
   away" — there is no network, and `navigator.onLine` flapping (real even
@@ -134,3 +142,10 @@ produces is turned off or set deliberately instead of left implicit:
 - **Locale-aware formatting** beyond the single configured currency.
 - **Timezone handling for calendar events** (P4-06) — that task should read
   this file, not the other way around.
+- **Cache invalidation for data a sync job writes, not a mutation** (P4-01
+  and its adapters, P4-02/06/07) — `staleTime: Infinity` in "Query cache"
+  above only stays correct because every writer to the cache currently is a
+  renderer mutation that calls `invalidate.<entity>()`. P4-01 adds a writer
+  that isn't a mutation at all; it owns deciding how the renderer finds out
+  (a push channel, a poll, invalidating on next focus) rather than this file
+  guessing ahead of that task.
