@@ -1,11 +1,11 @@
 ---
 id: T-260828-12
 title: Build the app shell — rail, topbar, router, layer dismissal
-status: in-progress
+status: done
 category: ui
 plan_ref: P0-10
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -84,4 +84,45 @@ item, which T-260828-02 decides.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in run R-260828-01 (build `0d0ec52` + review fixes at merge
+`391f884`, merge `dd177e5`). HashRouter (survives reload under packaged
+`file://`) → `routes.tsx` with all ten views — Pipeline deliberately absent
+per ADR-005, two tests assert its absence — plus `company/:id` / `person/:id`
+highlighting their parent nav items and `/workspace/{settings,data}` nested
+for X-01. The three-group rail with en-dash placeholder counts (`aria-hidden`,
+a test asserts no digit ever renders), the database chip, and the 900px
+off-canvas collapse; topbar with breadcrumb, ⌘K search button and New menu;
+`useGlobalShortcuts` registering ⌘K/⌘L once at the shell (fires from inside
+inputs; `preventDefault` before the open check); `LayerManager` owning the
+palette/sheet/log/menu/popover stack from one document-level Esc handler.
+Dropped the mockup's "synced 14m ago · 1.4 MB" chip deliberately — pull-only
+integrations make it fiction; the reviewer judged the call correct, likewise
+`--motion-rail: .2s` (mockup line 461 verbatim).
+
+Review (opus, combined gate) found the task's own named central risk realized
+despite green tests: `Sheet`'s standalone document-level Esc listener
+(T-260828-11 behaviour) fired alongside the manager's central handler, so a
+palette stacked over a sheet closed *both* on one press — the sheet/log
+mutual exclusion only covered the ordering the tests exercised, and the
+reverse was reachable in two keystrokes. The same cause painted the palette
+under the sheet's scrim (equal `.scrim` z-index, fixed JSX order) while
+focusing its now-invisible input. Fixed at merge: `Sheet` gained a
+`closeOnEscape` prop (default true — standalone behaviour unchanged) and the
+manager renders both sheets with it off, making the central handler the only
+thing Esc reaches; the sheet/log mutual exclusion dissolved, so the create
+form and quick-log stack independently as the mockup keeps them (⌘L no longer
+silently discards a half-filled form — the review's should-fix); overlays
+render DOM-ordered by stack position so the topmost paints above. Also fixed:
+`openLayer` no longer retargets the focus-return trigger on a re-open, and
+`Shell` ports the `scrollTo(0,0)` half of the mockup's `go()`. The vacuous
+double-fire test was replaced with a mocked-context pin of the `isOpen`
+guard, and reverse-ordering Esc, paint-order, sheet/log-independence and
+trigger-preservation tests added — the Esc tests proven by re-enabling the
+primitive's listener and watching them fail. 351/351 on the branch and on
+the merged tree.
+
+Recorded as follow-ups, not fixed here: the shell's raw `.btn` classes are
+the missing Button primitive (T-260828-14); the below-900px off-canvas rail
+lacking `visibility`/`inert` (Tab reaches an invisible menu) and the
+one-directional `ROUTE_META` ↔ `AppRoutes` agreement test both fold into the
+real-window QA pass (T-260828-15) that T-260828-11's outcome also feeds.

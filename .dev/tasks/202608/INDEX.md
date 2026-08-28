@@ -7,7 +7,8 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-12](T-260828-12-app-shell.md) | Build the app shell — rail, topbar, router, layer dismissal | 🎨 ui | P0-10 |
+| ○ open | [T-260828-14](T-260828-14-button-primitive.md) | Fold the shell's raw `.btn` classes into a Button primitive | 🎨 ui | P0-09 |
+| ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
 
 ## Closed this month
 
@@ -25,3 +26,4 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | ● done | [T-260828-13](T-260828-13-dev-seed.md) | Port the mockup's seed data into a loadable dev fixture | 🗄 data | R-260828-01 |
 | ● done | [T-260828-08](T-260828-08-date-money-conventions.md) | Fix the date and money representations and enforce them at the boundary | 📄 docs | R-260828-01 |
 | ● done | [T-260828-11](T-260828-11-design-tokens-primitives.md) | Lift `tokens.css` from the mockup and build the shared primitives | 🎨 ui | R-260828-01 |
+| ● done | [T-260828-12](T-260828-12-app-shell.md) | Build the app shell — rail, topbar, router, layer dismissal | 🎨 ui | R-260828-01 |
