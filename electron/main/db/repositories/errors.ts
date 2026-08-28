@@ -57,10 +57,15 @@ export class ValidationError extends RepositoryError {
 }
 
 export interface RefusalBlocker {
-  /** What kind of reference is blocking the operation. */
+  /** What kind of reference is blocking the operation, or what constraint refused it. */
   readonly reason: string
-  /** How many rows carry that reference. */
-  readonly count: number
+  /**
+   * How many rows carry that reference — set by a delete-path referential
+   * refusal (`referential-guard.ts`). A write-path refusal translated from a
+   * SQLite constraint (a `CHECK`, a `UNIQUE`, a `FOREIGN KEY` on insert or
+   * update) has no natural row count and omits this field.
+   */
+  readonly count?: number
 }
 
 export class RefusalError extends RepositoryError {

@@ -2,8 +2,17 @@ import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { z } from 'zod'
 import { nowTimestamp } from '../../../shared/format'
-import { dateOnlySchema, timestampSchema } from '../../../shared/types'
+import {
+  COMPANY_KINDS,
+  type Company,
+  type CompanyKind,
+  type CreateCompanyInput,
+  createCompanyInputSchema,
+  type UpdateCompanyInput,
+  updateCompanyInputSchema
+} from '../../../shared/companies'
 import { NotFoundError, RefusalError, ValidationError } from './errors'
+import { refuseIfReferenced } from './referential-guard'
 
 /**
  * The `companies` repository (T-260828-20) — the first module in this
@@ -24,78 +33,22 @@ import { NotFoundError, RefusalError, ValidationError } from './errors'
  * reader over that column is exactly the kind of thing that quietly turns a
  * flat pointer into an implied tree. A caller that needs "who bills through
  * this company" can query it directly.
+ *
+ * `Company`, `COMPANY_KINDS` and the create/update zod schemas live in
+ * `electron/shared/companies.ts` (ADR-007), not here — that module is pure
+ * zod with no Node imports so it can be typechecked under both
+ * `tsconfig.node.json` and `tsconfig.web.json`, and T-260828-26's IPC
+ * channels import it directly rather than redeclaring the wire shape. This
+ * file re-exports the pieces its own call sites already use so nothing
+ * downstream of *this* module (tests, eventually the IPC layer) needs to
+ * know the split happened.
  */
+export { COMPANY_KINDS, createCompanyInputSchema, updateCompanyInputSchema }
+export type { Company, CompanyKind, CreateCompanyInput, UpdateCompanyInput }
 
 // ---------------------------------------------------------------------------
-// Domain types
+// Input parsing
 // ---------------------------------------------------------------------------
-
-/** schema.ts's comment on `kind`: "client | prospect | end_client | advisory | channel". */
-export const COMPANY_KINDS = ['client', 'prospect', 'end_client', 'advisory', 'channel'] as const
-export type CompanyKind = (typeof COMPANY_KINDS)[number]
-
-/** A `companies` row, camelCased, as read back from the database. */
-export interface Company {
-  readonly id: string
-  readonly name: string
-  readonly kind: CompanyKind | null
-  readonly website: string | null
-  readonly billsDirectly: boolean | null
-  readonly billedViaCompanyId: string | null
-  readonly introducedByCompanyId: string | null
-  readonly cadenceDays: number | null
-  /** ADR-001: maintained by the activity repository (P1-05) and the Gmail adapter, not derived here. */
-  readonly lastTouchAt: string | null
-  readonly budgetNote: string | null
-  readonly notes: string | null
-  readonly since: string | null
-  readonly createdAt: string
-  readonly updatedAt: string
-}
-
-// ---------------------------------------------------------------------------
-// Zod input schemas
-// ---------------------------------------------------------------------------
-
-/**
- * Every writable column except `id`/`created_at`/`updated_at` (assigned by
- * this repository, never by a caller). `.partial()` below derives the
- * update schema from this one so the two can never drift on which fields
- * exist or how each is validated.
- */
-const companyWritableFieldsSchema = z.object({
-  name: z.string().min(1, 'name is required'),
-  kind: z.enum(COMPANY_KINDS).nullable(),
-  website: z.string().nullable(),
-  billsDirectly: z.boolean().nullable(),
-  billedViaCompanyId: z.string().min(1).nullable(),
-  introducedByCompanyId: z.string().min(1).nullable(),
-  cadenceDays: z.number().int().positive().nullable(),
-  // A timestamp, not `since`'s bare date — occurred_at-shaped, matching
-  // schema.ts's `lastTouchAt: text('last_touch_at')` alongside
-  // `activity.occurred_at`.
-  lastTouchAt: timestampSchema.nullable(),
-  budgetNote: z.string().nullable(),
-  notes: z.string().nullable(),
-  since: dateOnlySchema.nullable()
-})
-
-export const createCompanyInputSchema = companyWritableFieldsSchema.partial({
-  kind: true,
-  website: true,
-  billsDirectly: true,
-  billedViaCompanyId: true,
-  introducedByCompanyId: true,
-  cadenceDays: true,
-  lastTouchAt: true,
-  budgetNote: true,
-  notes: true,
-  since: true
-})
-export type CreateCompanyInput = z.infer<typeof createCompanyInputSchema>
-
-export const updateCompanyInputSchema = companyWritableFieldsSchema.partial()
-export type UpdateCompanyInput = z.infer<typeof updateCompanyInputSchema>
 
 function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
   const result = schema.safeParse(input)
@@ -103,7 +56,28 @@ function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z
     const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
     throw new ValidationError(message, result.error.issues)
   }
-  return result.data
+  // zod's `.partial()` marks a field optional, not absent: a patch that sets
+  // a key to the literal value `undefined` (the shape a renderer's
+  // `{ field: dirty ? value : undefined }` naturally produces, and the shape
+  // Electron's structured clone preserves across the IPC boundary) still
+  // parses with that key present, holding `undefined`. Every write path
+  // below distinguishes "key absent" from "key present" via `in`, so an
+  // undefined-valued key left in `result.data` would read as "the caller
+  // explicitly set this" and either wipe a column to NULL (updateCompany) or
+  // skip a documented CREATE_DEFAULTS default (createCompany). Stripping
+  // undefined-valued keys here, once, makes "absent" and "explicitly
+  // undefined" the same thing for every caller, which is what a JS object
+  // literal actually means.
+  return stripUndefinedValues(result.data)
+}
+
+function stripUndefinedValues<T>(value: T): T {
+  if (typeof value !== 'object' || value === null) return value
+  const cleaned = { ...(value as Record<string, unknown>) }
+  for (const key of Object.keys(cleaned)) {
+    if (cleaned[key] === undefined) delete cleaned[key]
+  }
+  return cleaned as T
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +103,6 @@ const FIELD_SPECS: readonly FieldSpec[] = [
   { key: 'billedViaCompanyId', column: 'billed_via_company_id' },
   { key: 'introducedByCompanyId', column: 'introduced_by_company_id' },
   { key: 'cadenceDays', column: 'cadence_days' },
-  { key: 'lastTouchAt', column: 'last_touch_at' },
   { key: 'budgetNote', column: 'budget_note' },
   { key: 'notes', column: 'notes' },
   { key: 'since', column: 'since' }
@@ -142,8 +115,9 @@ const FIELD_SPECS: readonly FieldSpec[] = [
  * explicitly in its `INSERT` (this task's Risks: an omitted column must not
  * silently fall through to something other than this exact default). An
  * explicit `null` from the caller is a different thing from an omitted key —
- * `key in parsed` below distinguishes the two — and is honoured as `null`,
- * not upgraded to the default.
+ * `key in parsed` below distinguishes the two, now that `parseInput` has
+ * already stripped explicitly-`undefined` keys down to genuinely absent
+ * ones — and is honoured as `null`, not upgraded to the default.
  */
 const CREATE_DEFAULTS: Partial<Record<WritableKey, unknown>> = {
   billsDirectly: true,
@@ -154,7 +128,12 @@ const CREATE_DEFAULTS: Partial<Record<WritableKey, unknown>> = {
 // SQLite constraint translation
 // ---------------------------------------------------------------------------
 
-function isSqliteConstraintError(error: unknown): error is { readonly code: string; readonly message: string } {
+interface SqliteConstraintError {
+  readonly code: string
+  readonly message: string
+}
+
+function isSqliteConstraintError(error: unknown): error is SqliteConstraintError {
   return (
     typeof error === 'object' &&
     error !== null &&
@@ -164,16 +143,56 @@ function isSqliteConstraintError(error: unknown): error is { readonly code: stri
   )
 }
 
+/** The one named `CHECK` constraint `companies` currently declares (migration 0001). */
+const SELF_REFERENCE_CHECK_NAME = 'companies_billed_via_company_not_self'
+
+type ConstraintHandler = (error: SqliteConstraintError) => RefusalError
+
+/**
+ * One entry per `SQLITE_CONSTRAINT_*` subcode this table can actually raise,
+ * dispatched on the code (and, for `CHECK`, on the constraint name) rather
+ * than by forwarding `error.message` into user-facing text. better-sqlite3's
+ * message is an implementation detail of the SQLite build it links — not
+ * something to show an operator or to string-match on later — so nothing
+ * here reads it except this one `includes()` check against a name this
+ * repository itself defined in the migration.
+ *
+ * Adding a second `CHECK` constraint to `companies` means adding a branch
+ * here, not editing the fallback: the previous version of this table mapped
+ * *every* `SQLITE_CONSTRAINT_CHECK` to the self-reference sentence, which
+ * was only ever correct because there was exactly one `CHECK` to confuse it
+ * with.
+ */
+const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
+  SQLITE_CONSTRAINT_CHECK: (error) => {
+    if (error.message.includes(SELF_REFERENCE_CHECK_NAME)) {
+      return new RefusalError(
+        'billedViaCompanyId cannot reference the company\'s own id — enforced by the database ' +
+          `(CHECK ${SELF_REFERENCE_CHECK_NAME}).`,
+        { reason: 'self-reference' }
+      )
+    }
+    return new RefusalError('This write violates a data rule enforced by the database.', { reason: 'check' })
+  },
+  SQLITE_CONSTRAINT_FOREIGNKEY: () =>
+    new RefusalError(
+      'This write references a company that does not exist — check billedViaCompanyId and introducedByCompanyId.',
+      { reason: 'foreign-key' }
+    ),
+  SQLITE_CONSTRAINT_NOTNULL: () => new RefusalError('A required field was left empty.', { reason: 'not-null' }),
+  SQLITE_CONSTRAINT_UNIQUE: () => new RefusalError('This value conflicts with an existing row.', { reason: 'unique' }),
+  SQLITE_CONSTRAINT_PRIMARYKEY: () => new RefusalError('This id is already in use.', { reason: 'primary-key' })
+}
+
 /** Turns a thrown `SqliteError` from an insert/update into a `RefusalError`. Anything else propagates unchanged. */
 function translateWriteError(error: unknown): never {
   if (isSqliteConstraintError(error)) {
-    if (error.code === 'SQLITE_CONSTRAINT_CHECK') {
-      throw new RefusalError(
-        'billedViaCompanyId cannot reference the company\'s own id — enforced by the database ' +
-          '(CHECK companies_billed_via_company_not_self).'
-      )
-    }
-    throw new RefusalError(`This write violates a database constraint: ${error.message}`)
+    const handler = CONSTRAINT_HANDLERS[error.code]
+    if (handler) throw handler(error)
+    // A `SQLITE_CONSTRAINT_*` subcode this table cannot currently raise
+    // (e.g. `SQLITE_CONSTRAINT_TRIGGER`, `_VTAB`). Still a refusal, not a
+    // crash — but still no raw driver text in the user-facing message.
+    throw new RefusalError('This write violates a database constraint.', { reason: 'constraint' })
   }
   throw error
 }
@@ -280,8 +299,10 @@ export function updateCompany(db: Database.Database, id: string, patch: unknown)
     // `in`, not a truthiness/undefined check: distinguishes "the caller
     // explicitly set this to null" (write NULL) from "the caller did not
     // mention this field" (leave the column untouched) — the exact
-    // distinction this task's Risks note calls out for `billsDirectly`, and
-    // applied uniformly to every column rather than special-cased for one.
+    // distinction this task's Risks note calls out for `billsDirectly`,
+    // applied uniformly to every column rather than special-cased for one,
+    // and correct now that `parseInput` has already stripped
+    // explicitly-`undefined` keys down to genuinely absent ones.
     if (!(spec.key in parsed)) continue
     const raw = parsed[spec.key]
     setClauses.push(`${spec.column} = ?`)
@@ -304,13 +325,20 @@ export function updateCompany(db: Database.Database, id: string, patch: unknown)
 
 /**
  * Refuses before deleting, in the same transaction as the delete (this
- * task's Risks: catching `SQLITE_CONSTRAINT_FOREIGNKEY` after the fact would
- * only cover the FK-backed cases — `billed_via_company_id` and
- * `introduced_by_company_id` — and produce a raw SQLite string for whichever
- * case fires, while `activity`'s block has to be checked explicitly either
- * way since its rows are never deleted or reassigned to make room). All
- * three checks run inside one `db.transaction()` so nothing can change
- * between the check and the delete.
+ * task's Risks: catching a constraint error after the fact only covers
+ * whichever single foreign key fired, produces a raw SQLite string for it,
+ * and — since migration 0001 declares every foreign key `ON DELETE no
+ * action`, not `RESTRICT` — is the *only* thing standing between a caller
+ * and a bare `SQLITE_CONSTRAINT_FOREIGNKEY` with no table, column or row
+ * count attached).
+ *
+ * Eight references can block a company delete: two self-referencing
+ * columns on `companies` itself, plus one column each on `activity`,
+ * `engagements` (twice), `tasks`, `affiliations` and `time_entries` —
+ * every foreign key migration 0001 points at `companies.id`.
+ * `refuseIfReferenced` (`referential-guard.ts`) runs them in order inside
+ * one `db.transaction()` so nothing can change between the check and the
+ * delete, and stops at the first one that blocks.
  */
 export function deleteCompany(db: Database.Database, id: string): void {
   const run = db.transaction(() => {
@@ -319,49 +347,82 @@ export function deleteCompany(db: Database.Database, id: string): void {
       throw new NotFoundError('Company', id)
     }
 
-    const billedViaCount = (
-      db.prepare('SELECT COUNT(*) AS count FROM companies WHERE billed_via_company_id = ?').get(id) as {
-        count: number
+    refuseIfReferenced(db, id, [
+      {
+        table: 'companies',
+        column: 'billed_via_company_id',
+        reason: 'billed-via',
+        exampleColumn: 'name',
+        describe: (count, example) =>
+          `Cannot delete "${company.name}": ${count} compan${count === 1 ? 'y bills' : 'ies bill'} through it` +
+          (example ? ` (e.g. "${example}")` : '') +
+          '. Reassign their billing before deleting this company.'
+      },
+      {
+        table: 'companies',
+        column: 'introduced_by_company_id',
+        reason: 'introduced-by',
+        exampleColumn: 'name',
+        describe: (count, example) =>
+          `Cannot delete "${company.name}": it introduced ${count} other compan${count === 1 ? 'y' : 'ies'}` +
+          (example ? ` (e.g. "${example}")` : '') +
+          '. Clear that reference before deleting this company.'
+      },
+      {
+        table: 'activity',
+        column: 'company_id',
+        reason: 'activity',
+        describe: (count) =>
+          `Cannot delete "${company.name}": it has ${count} activity record${count === 1 ? '' : 's'}. ` +
+          'Activity is append-only (G8) and cannot be reassigned or removed to make room.'
+      },
+      {
+        table: 'engagements',
+        column: 'billing_company_id',
+        reason: 'engagement-billing',
+        exampleColumn: 'name',
+        describe: (count, example) =>
+          `Cannot delete "${company.name}": ${count} engagement${count === 1 ? '' : 's'} bill${count === 1 ? 's' : ''} through it` +
+          (example ? ` (e.g. "${example}")` : '') +
+          '. Reassign billing before deleting this company.'
+      },
+      {
+        table: 'engagements',
+        column: 'client_company_id',
+        reason: 'engagement-client',
+        exampleColumn: 'name',
+        describe: (count, example) =>
+          `Cannot delete "${company.name}": it is the client on ${count} engagement${count === 1 ? '' : 's'}` +
+          (example ? ` (e.g. "${example}")` : '') +
+          '. Reassign or close those engagements before deleting this company.'
+      },
+      {
+        table: 'tasks',
+        column: 'company_id',
+        reason: 'tasks',
+        exampleColumn: 'title',
+        describe: (count, example) =>
+          `Cannot delete "${company.name}": ${count} task${count === 1 ? '' : 's'} reference it` +
+          (example ? ` (e.g. "${example}")` : '') +
+          '. Reassign or remove those tasks before deleting this company.'
+      },
+      {
+        table: 'affiliations',
+        column: 'company_id',
+        reason: 'affiliations',
+        describe: (count) =>
+          `Cannot delete "${company.name}": ${count} affiliation${count === 1 ? '' : 's'} reference it. ` +
+          'Reassign or remove those affiliations before deleting this company.'
+      },
+      {
+        table: 'time_entries',
+        column: 'company_id',
+        reason: 'time-entries',
+        describe: (count) =>
+          `Cannot delete "${company.name}": ${count} time entr${count === 1 ? 'y' : 'ies'} reference it. ` +
+          'Reassign or remove those time entries before deleting this company.'
       }
-    ).count
-    if (billedViaCount > 0) {
-      const example = db
-        .prepare('SELECT name FROM companies WHERE billed_via_company_id = ? LIMIT 1')
-        .get(id) as { name: string }
-      throw new RefusalError(
-        `Cannot delete "${company.name}": ${billedViaCount} compan${billedViaCount === 1 ? 'y bills' : 'ies bill'} ` +
-          `through it (e.g. "${example.name}"). Reassign their billing before deleting this company.`,
-        { reason: 'billed-via', count: billedViaCount }
-      )
-    }
-
-    const introducedByCount = (
-      db.prepare('SELECT COUNT(*) AS count FROM companies WHERE introduced_by_company_id = ?').get(id) as {
-        count: number
-      }
-    ).count
-    if (introducedByCount > 0) {
-      const example = db
-        .prepare('SELECT name FROM companies WHERE introduced_by_company_id = ? LIMIT 1')
-        .get(id) as { name: string }
-      throw new RefusalError(
-        `Cannot delete "${company.name}": it introduced ${introducedByCount} other ` +
-          `compan${introducedByCount === 1 ? 'y' : 'ies'} (e.g. "${example.name}"). ` +
-          'Clear that reference before deleting this company.',
-        { reason: 'introduced-by', count: introducedByCount }
-      )
-    }
-
-    const activityCount = (
-      db.prepare('SELECT COUNT(*) AS count FROM activity WHERE company_id = ?').get(id) as { count: number }
-    ).count
-    if (activityCount > 0) {
-      throw new RefusalError(
-        `Cannot delete "${company.name}": it has ${activityCount} activity record${activityCount === 1 ? '' : 's'}. ` +
-          'Activity is append-only (G8) and cannot be reassigned or removed to make room.',
-        { reason: 'activity', count: activityCount }
-      )
-    }
+    ])
 
     db.prepare('DELETE FROM companies WHERE id = ?').run(id)
   })

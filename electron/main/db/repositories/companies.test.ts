@@ -39,7 +39,14 @@ function withDatabase<T>(fn: (db: Database.Database) => T): T {
   }
 }
 
-/** Inserts a raw `activity` row directly — the activity repository is a separate task (out of this task's scope); this is the RESTRICT-blocker fixture, not a claim about that repository's future API. */
+/**
+ * Raw inserts into the other tables migration 0001 gives a foreign key at
+ * `companies.id` — every one of `deleteCompany`'s eight blockers needs a
+ * fixture row in the table it guards, and each of those repositories is a
+ * separate, not-yet-built task (T-260828-21..25), so these are the
+ * RESTRICT-blocker fixtures for *this* task's tests, not a claim about any
+ * of those repositories' future APIs.
+ */
 function insertActivity(db: Database.Database, companyId: string): void {
   const now = nowTimestamp()
   db.prepare(
@@ -48,8 +55,50 @@ function insertActivity(db: Database.Database, companyId: string): void {
   ).run(randomUUID(), now, 'note', 'Touch', null, companyId, null, null, 'manual', now, now)
 }
 
+function insertEngagement(
+  db: Database.Database,
+  fields: { readonly billingCompanyId?: string; readonly clientCompanyId?: string }
+): void {
+  const now = nowTimestamp()
+  db.prepare(
+    `INSERT INTO engagements (id, name, billing_company_id, client_company_id, started_on, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(randomUUID(), 'Engagement', fields.billingCompanyId ?? null, fields.clientCompanyId ?? null, '2026-01-01', now, now)
+}
+
+function insertTask(db: Database.Database, companyId: string): void {
+  const now = nowTimestamp()
+  db.prepare('INSERT INTO tasks (id, title, company_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(
+    randomUUID(),
+    'Follow up',
+    companyId,
+    now,
+    now
+  )
+}
+
+function insertAffiliation(db: Database.Database, companyId: string): void {
+  const now = nowTimestamp()
+  db.prepare('INSERT INTO affiliations (id, company_id, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
+    randomUUID(),
+    companyId,
+    now,
+    now
+  )
+}
+
+function insertTimeEntry(db: Database.Database, companyId: string): void {
+  const now = nowTimestamp()
+  db.prepare('INSERT INTO time_entries (id, company_id, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
+    randomUUID(),
+    companyId,
+    now,
+    now
+  )
+}
+
 describe('createCompany / getCompany: round-trip', () => {
-  it('round-trips all fourteen columns field-for-field', () => {
+  it('round-trips all fourteen columns field-for-field — ten writable, plus id/createdAt/updatedAt/lastTouchAt', () => {
     withDatabase((db) => {
       const billingParty = createCompany(db, { name: 'Billing Party Co' })
       const referrer = createCompany(db, { name: 'Referrer Co' })
@@ -62,7 +111,6 @@ describe('createCompany / getCompany: round-trip', () => {
         billedViaCompanyId: billingParty.id,
         introducedByCompanyId: referrer.id,
         cadenceDays: 21,
-        lastTouchAt: '2026-08-20T16:00:00.000Z',
         budgetNote: '$10,000 approved',
         notes: 'Some notes about Full Co.',
         since: '2026-01-15'
@@ -80,11 +128,13 @@ describe('createCompany / getCompany: round-trip', () => {
       expect(created.billedViaCompanyId).toBe(input.billedViaCompanyId)
       expect(created.introducedByCompanyId).toBe(input.introducedByCompanyId)
       expect(created.cadenceDays).toBe(input.cadenceDays)
-      expect(created.lastTouchAt).toBe(input.lastTouchAt)
       expect(created.budgetNote).toBe(input.budgetNote)
       expect(created.notes).toBe(input.notes)
       expect(created.since).toBe(input.since)
       expect(created.createdAt).toEqual(created.updatedAt)
+      // lastTouchAt is not writable here (ADR-001: owned by the activity
+      // repository) — a company with no touch history reads null.
+      expect(created.lastTouchAt).toBeNull()
     })
   })
 
@@ -95,6 +145,22 @@ describe('createCompany / getCompany: round-trip', () => {
       expect(created.cadenceDays).toBe(14)
       expect(created.kind).toBeNull()
       expect(created.lastTouchAt).toBeNull()
+    })
+  })
+
+  it('applies the documented defaults when the caller passes explicit undefined, not just when the key is absent', () => {
+    withDatabase((db) => {
+      // The renderer's natural patch shape is `{ field: dirty ? value :
+      // undefined }` — the key is present, its value is `undefined`.
+      // Electron's structured clone preserves that key across the IPC
+      // boundary. Without stripping undefined-valued keys after parsing,
+      // `'billsDirectly' in parsed` is true here, CREATE_DEFAULTS is
+      // bypassed, and better-sqlite3 binds `undefined` as NULL — a NULL
+      // `cadence_days` makes ADR-001's staleness predicate evaluate to NULL,
+      // so the client silently never reads stale.
+      const created = createCompany(db, { name: 'Explicit Undefined Co', billsDirectly: undefined, cadenceDays: undefined })
+      expect(created.billsDirectly).toBe(true)
+      expect(created.cadenceDays).toBe(14)
     })
   })
 
@@ -146,6 +212,31 @@ describe('createCompany / updateCompany: id and timestamps', () => {
     })
   })
 
+  it('a patch with an explicit undefined-valued key leaves the column untouched, same as an absent key', () => {
+    withDatabase((db) => {
+      const created = createCompany(db, { name: 'Undefined Patch Co', billsDirectly: false })
+      expect(created.billsDirectly).toBe(false)
+
+      // The key is present on the object — `'billsDirectly' in patch` is
+      // true — but its value is `undefined`. Before this fix that made
+      // updateCompany bind NULL for the column; the correct behaviour is
+      // identical to omitting the key.
+      const updated = updateCompany(db, created.id, { billsDirectly: undefined, notes: 'unrelated change' })
+      expect(updated.billsDirectly).toBe(false)
+      expect(updated.notes).toBe('unrelated change')
+    })
+  })
+
+  it('an explicit billsDirectly:false actually flips a company that was true', () => {
+    withDatabase((db) => {
+      const created = createCompany(db, { name: 'Flips Co' })
+      expect(created.billsDirectly).toBe(true)
+
+      const updated = updateCompany(db, created.id, { billsDirectly: false })
+      expect(updated.billsDirectly).toBe(false)
+    })
+  })
+
   it('updateCompany throws NotFoundError for an id that does not exist', () => {
     withDatabase((db) => {
       expect(() => updateCompany(db, randomUUID(), { notes: 'x' })).toThrow(NotFoundError)
@@ -167,6 +258,7 @@ describe('the billed_via_company_id self-reference CHECK', () => {
 
       expect(thrown).toBeInstanceOf(RefusalError)
       expect((thrown as RefusalError).message).not.toMatch(/SQLITE_CONSTRAINT_CHECK/)
+      expect((thrown as RefusalError).blocker?.reason).toBe('self-reference')
 
       const after = getCompany(db, company.id)
       expect(after?.billedViaCompanyId).toBeNull()
@@ -174,7 +266,7 @@ describe('the billed_via_company_id self-reference CHECK', () => {
   })
 })
 
-describe('deleteCompany: referential refusals', () => {
+describe('deleteCompany: referential refusals — all eight foreign keys migration 0001 points at companies.id', () => {
   it("refuses to delete a company that is another company's billing party, naming the blocker; the row survives", () => {
     withDatabase((db) => {
       const parent = createCompany(db, { name: 'Billing Party' })
@@ -241,6 +333,96 @@ describe('deleteCompany: referential refusals', () => {
     })
   })
 
+  it('refuses to delete a company that bills an engagement; the row survives', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Engagement Biller' })
+      insertEngagement(db, { billingCompanyId: company.id })
+
+      let thrown: unknown
+      try {
+        deleteCompany(db, company.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'engagement-billing', count: 1 })
+      expect(getCompany(db, company.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete a company that is the client on an engagement; the row survives', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Engagement Client' })
+      insertEngagement(db, { clientCompanyId: company.id })
+
+      let thrown: unknown
+      try {
+        deleteCompany(db, company.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'engagement-client', count: 1 })
+      expect(getCompany(db, company.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete a company referenced by a task; the row survives', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Tasked Co' })
+      insertTask(db, company.id)
+
+      let thrown: unknown
+      try {
+        deleteCompany(db, company.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'tasks', count: 1 })
+      expect(getCompany(db, company.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete a company referenced by an affiliation; the row survives', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Affiliated Co' })
+      insertAffiliation(db, company.id)
+
+      let thrown: unknown
+      try {
+        deleteCompany(db, company.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'affiliations', count: 1 })
+      expect(getCompany(db, company.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete a company referenced by a time entry; the row survives', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Timelogged Co' })
+      insertTimeEntry(db, company.id)
+
+      let thrown: unknown
+      try {
+        deleteCompany(db, company.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'time-entries', count: 1 })
+      expect(getCompany(db, company.id)).not.toBeNull()
+    })
+  })
+
   it('deletes cleanly when nothing blocks it', () => {
     withDatabase((db) => {
       const company = createCompany(db, { name: 'Deletable Co' })
@@ -290,10 +472,38 @@ describe('input validation', () => {
     })
   })
 
+  it('createCompany rejects an unknown field name', () => {
+    withDatabase((db) => {
+      expect(() => createCompany(db, { name: 'Typo Co', nmae: 'Typo Co' })).toThrow(ValidationError)
+    })
+  })
+
   it('updateCompany rejects a non-object patch', () => {
     withDatabase((db) => {
       const company = createCompany(db, { name: 'Patch Co' })
       expect(() => updateCompany(db, company.id, 'not an object')).toThrow(ValidationError)
+    })
+  })
+
+  it('updateCompany rejects an unknown field name instead of silently no-opping', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Rename Co' })
+
+      // Before .strict(), a renamed/misspelled field was stripped silently:
+      // the patch parsed to `{}`, updated_at still moved, and the caller got
+      // back what looked like a saved change that changed nothing.
+      expect(() => updateCompany(db, company.id, { nmae: 'typo' })).toThrow(ValidationError)
+
+      const after = getCompany(db, company.id)
+      expect(after?.name).toBe('Rename Co')
+      expect(after?.updatedAt).toBe(company.updatedAt)
+    })
+  })
+
+  it('updateCompany rejects an attempt to write lastTouchAt directly — ADR-001 reserves it for the activity repository', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Touch Co' })
+      expect(() => updateCompany(db, company.id, { lastTouchAt: '2026-08-28T10:00:00.000Z' })).toThrow(ValidationError)
     })
   })
 })
