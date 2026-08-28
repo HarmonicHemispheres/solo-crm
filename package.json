@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "eslint .",
     "check:index": "node scripts/check-task-index.mjs",
-    "test": "vitest run",
+    "test": "vitest run --project=\"!runtime-boot*\" && vitest run --project=\"runtime-boot*\"",
+    "test:unit": "vitest run --project=\"!runtime-boot*\"",
     "seed": "electron-vite build && electron out/main/seed.js",
     "dist": "electron-vite build && electron-builder --win --publish never"
   },

@@ -71,7 +71,9 @@ app.whenReady().then(async () => {
   const run = spawnSync(electronBinary, [harnessPath], {
     encoding: 'utf-8',
     env,
-    timeout: 30_000
+    // T-260828-47: raised alongside the outer testTimeout below — see that
+    // comment for the measurement.
+    timeout: 80_000
   })
 
   let parsed: RendererGlobals | { error: string }
@@ -103,6 +105,16 @@ describe("renderer global scope under the app's real webPreferences", () => {
         module: 'undefined'
       })
     },
-    30_000
+    // T-260828-47: this spawns a real, throwaway Electron process (the
+    // spawnSync `timeout` above bounds it at 80s). Measured wall time for
+    // this test alone under load — all 8 cores kept busy by a separate
+    // CPU-saturating process, alongside this machine's ordinary multi-agent
+    // contention (the condition the task's Acceptance criterion asks for)
+    // — ranged 9.0s-43.3s across repeated runs; 90_000ms leaves headroom
+    // above the worst of those without just chasing the number up. This
+    // test now also runs in the serial `runtime-boot-node` project
+    // (vitest.config.ts), so it no longer competes with the rest of the
+    // suite for that CPU either.
+    90_000
   )
 })

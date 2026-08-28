@@ -115,7 +115,12 @@ describe('the typed IPC bridge under a real, sandboxed Electron renderer', () =>
       const env = { ...process.env }
       delete env.ELECTRON_RUN_AS_NODE
 
-      const run = spawnSync(electronBinary, [harnessPath], { encoding: 'utf-8', env, timeout: 30_000 })
+      // T-260828-47: raised alongside the outer testTimeout below — see
+      // that comment for the measurement. This spawnSync only bounds the
+      // Electron boot itself; the compileToCommonJs/bundlePreloadForTest
+      // calls above it are unbounded and can themselves take the bulk of
+      // the time under load (see that comment).
+      const run = spawnSync(electronBinary, [harnessPath], { encoding: 'utf-8', env, timeout: 90_000 })
 
       let parsed: {
         hasWindowCrm: boolean
@@ -164,6 +169,18 @@ describe('the typed IPC bridge under a real, sandboxed Electron renderer', () =>
         error: { code: 'invalid-request', message: expect.any(String) }
       })
     },
-    30_000
+    // T-260828-47: the heaviest of the five runtime-boot files — it
+    // compiles the main-process module graph, esbuild-bundles the preload,
+    // *then* spawns a real, sandboxed Electron process (the spawnSync
+    // `timeout` above bounds that last part at 90s). Measured wall time for
+    // this test alone under load — all 8 cores kept busy by a separate
+    // CPU-saturating process, alongside this machine's ordinary multi-agent
+    // contention (the condition the task's Acceptance criterion asks for)
+    // — ranged 19.7s-80.5s across repeated runs, the compile+bundle phase
+    // accounting for most of the worst case. 150_000ms leaves real headroom
+    // above that without just chasing the number up. This test now also
+    // runs in the serial `runtime-boot-node` project (vitest.config.ts), so
+    // it no longer competes with the rest of the suite for that CPU either.
+    150_000
   )
 })
