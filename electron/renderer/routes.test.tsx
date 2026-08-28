@@ -1,17 +1,30 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { AppRoutes } from './routes'
 import { NAV_ITEMS, ROUTE_META } from './nav'
 import { LayerManager } from './components/shell/LayerManager'
+import { createQueryClient } from './lib/query-client'
+import { stubCrm } from './lib/test-support/stub-crm'
+
+// T-260828-28: the Companies route is query-backed now (the first of the
+// ten views to be) — see Shell.test.tsx's identical comment.
+afterEach(() => {
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
+  delete window.crm
+})
 
 function renderAt(path: string) {
+  window.crm = stubCrm()
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <LayerManager>
-        <AppRoutes />
-      </LayerManager>
-    </MemoryRouter>
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter initialEntries={[path]}>
+        <LayerManager>
+          <AppRoutes />
+        </LayerManager>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
