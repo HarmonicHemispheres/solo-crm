@@ -90,15 +90,15 @@ The rules that go with it:
      genuinely unique — a tag applies to a thing once — so it is enforced, as an
      index rather than as the key.
 
-   No table in §5 is now implicit about its primary key. Timestamps are mostly
-   settled the same way: eight tables that had been carrying the rule only by
+   No table in §5 is now implicit about its primary key. Timestamps are settled
+   the same way: nine tables that had been carrying the rule only by
    implication — `service_categories`, `service_versions`, `milestones`,
-   `revenue_lines`, `time_entries`, `links`, `external_refs`, `tags` — now
-   spell out `created_at` / `updated_at` in the DDL, and the two exempt tables
-   each say in place why they do not. **One is still open: `activity` declares
-   neither, and this ADR does not settle it** — the table is append-only by G8,
-   so whether `updated_at` means anything there is a question for whoever
-   settles it, and P0-05 should not invent an answer.
+   `revenue_lines`, `time_entries`, `links`, `external_refs`, `tags` and
+   `activity` — now spell out `created_at` / `updated_at` in the DDL, and the
+   two exempt tables each say in place why they do not. `activity` keeps both
+   even though it is append-only under G8 and its `updated_at` will always
+   equal `created_at`: a uniform rule costs nothing and a third special case
+   would need defending forever.
 6. **No secret may ever be stored in `settings`.** See ADR-004, which states
    that rule as a property of this table rather than as a note about Stripe.
 

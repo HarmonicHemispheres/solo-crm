@@ -13,9 +13,9 @@
 > - `activity.source` — `gmail` marked reserved, with no writer (ADR-001)
 > - the `settings` table; the primary-key status of `favicons`, `affiliations`
 >   and `taggings` made explicit; and `created_at` / `updated_at` written into
->   eight tables that had been leaving them implicit —
+>   nine tables that had been leaving them implicit —
 >   `service_categories`, `service_versions`, `milestones`, `revenue_lines`,
->   `time_entries`, `links`, `external_refs`, `tags` (ADR-002)
+>   `time_entries`, `links`, `external_refs`, `tags`, `activity` (ADR-002)
 > - the `revenue_lines` modelling note sharpened to `SUM(amount_cents)`, the
 >   estimate/actual replacement rule, and where `billing_model` may be branched
 >   on (ADR-003)
@@ -214,12 +214,14 @@ activity (
   kind text,                -- call | email | meeting | note
   title text, body text,
   company_id uuid null, person_id uuid null, engagement_id uuid null,
-  source text               -- manual | gcal
+  source text,              -- manual | gcal
                             -- 'gmail' is reserved and has no writer: the Gmail
                             -- adapter writes last_touch_at / last_contact_at
                             -- columns, never activity rows. It becomes legal
                             -- only if a later decision adds synthetic rows.
                             -- ADR-001
+  created_at, updated_at    -- always equal: rows are append-only (G8), never
+                            -- updated. Kept anyway — uniform rule, sync-ready.
 )
 
 -- External references
