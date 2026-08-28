@@ -36,9 +36,25 @@ write for the first metric and the cost only shows up at the fourth.
 
 ## Decision
 
-**`revenue_lines` is the only source of any revenue figure.** A number that does
-not come from a `SUM(amount_cents)` over `revenue_lines` is a defect, not an
-optimisation.
+**`revenue_lines` is the only source of any revenue figure or rollup.** A
+revenue figure that does not come from a `SUM(amount_cents)` over
+`revenue_lines` is a defect, not an optimisation.
+
+"Revenue figure or rollup" means a total, an aggregate, a chart series or a
+metric that answers *how much money*. It does not mean every number with a
+currency symbol. Two things stay legal reads of engagement and catalogue
+columns, and neither is a finding:
+
+- **A single engagement's own headline price** — §6.4's card rendering
+  "$6,500 / mo", "$18,000" or "$175 / hr" from `agreed_rate_cents`,
+  `contract_value_cents` or `hourly_rate_cents` (P1-15, mirroring the mockup's
+  `headline()`). It states the engagement's terms; it does not aggregate.
+- **The §6.5 catalogue price list**, which reads `service_versions.rate_cents`
+  and has no `revenue_lines` row by construction — nothing has been sold.
+
+The line is aggregation and attribution. The moment a number sums across
+engagements, or attributes to a month, a payer or a model, it comes from
+`revenue_lines`.
 
 The canonical shape, which every revenue question reduces to:
 
@@ -56,27 +72,81 @@ concentration, and the stacked projected-versus-actual chart are all this query
 with a different filter.
 
 **Branching on `billing_model` is legal in exactly one place: the generator that
-writes `revenue_lines` from an engagement (P3-05).** There:
+writes `revenue_lines` from an engagement (P3-05).** The enumeration is
+exhaustive over §5's `billing_model` enum, because an unlisted model does not
+fail loudly — it gets improvised at the call site:
 
-- a retainer generates one row per month of its term, `kind = 'retainer'`;
-- a fixed scope generates one row per milestone at that milestone's
-  `expected_month`, `kind = 'milestone'`;
-- T&M generates `tm_estimate` rows that `tm_actual` rows supersede;
-- equity generates **no rows at all**.
+- **`retainer`** — one row per month of its term, `kind = 'retainer'`. Where
+  `ends_on` is NULL the engagement is rolling (§5's modelling note), so there is
+  no term: it generates to a **stated rolling horizon** — twelve months from the
+  current month, regenerated as months pass — and no further. A horizon is a
+  parameter of the generator, not a judgement made per engagement.
+- **`fixed`** — one row per milestone at that milestone's `expected_month`,
+  `kind = 'milestone'`.
+- **`tm`** — `tm_estimate` rows, replaced by `tm_actual` rows as described
+  below.
+- **`equity`** — **no rows at all.**
+- **`none`** — **no rows at all**, for the same reason as equity: an engagement
+  with no billing model produces no money, and it is excluded by having nothing
+  in the table rather than by a filter someone has to remember. §5 declares
+  `none`; the generator must have the branch, even though the branch does
+  nothing.
 
 Everywhere else — a query, a repository, a hook, a component — an
-`if (billing_model === …)` reached for while producing a money figure is the
-defect this ADR names.
+`if (billing_model === …)` reached for while producing a revenue figure or
+rollup is the defect this ADR names.
 
-Two further rules the generator owes:
+**`kind = 'expense'` rows are operator-entered, and that is the one other legal
+writer of `revenue_lines`.** The generator does not produce them; no adapter
+does. They carry a **negative `amount_cents`**, so the canonical `SUM` returns
+net and needs no special case. A rollup that deliberately wants gross revenue
+filters `kind <> 'expense'` — a filter on the line's own kind, not a branch on
+the engagement's billing model, which is the thing this ADR forbids. The
+generator never deletes or rewrites an expense row while regenerating an
+engagement.
 
+Three further rules the generator owes:
+
+- **Actuals replace estimates; they do not sit beside them.** When `tm_actual`
+  rows are written for a month, the generator **deletes that month's
+  `tm_estimate` rows for that engagement in the same transaction**. A month
+  therefore holds estimates or actuals, never both, and a consumer stays one
+  `SUM` needing no `kind` filter to avoid counting a $7,000 estimate and the
+  $8,050 actual that replaced it as $15,050. Superseding is the generator's job
+  precisely so that
+  it is not every consumer's job. This is what §5's original "actuals overwrite"
+  meant, stated as a mechanism.
 - **Regeneration is idempotent and non-destructive.** Regenerating an
   engagement's lines must not disturb rows already `invoiced` or `paid`, or the
-  `stripe_invoice_id` on them. Only future projected rows are rewritten.
-- **Equity is excluded by having no rows**, not by a `WHERE billing_model <>
-  'equity'` repeated across every aggregate. This is what makes §11's "yes,
-  model equity positions here" a one-line answer instead of a clause that will
-  eventually be forgotten in one of the three rollups.
+  `stripe_invoice_id` on them. Rows still `projected` are rewritten, including
+  those of an in-progress month — the estimate replacement above is exactly that
+  case, and it is not restricted to future months.
+- **Equity and `none` are excluded by having no rows**, not by a
+  `WHERE billing_model NOT IN ('equity','none')` repeated across every
+  aggregate. This is what makes §11's "yes, model equity positions here" a
+  one-line answer instead of a clause that will eventually be forgotten in one
+  of the three rollups.
+
+### Until P3-05 lands
+
+P3-05 is the only writer of `revenue_lines` and it is a Phase 3 task, while
+P2-04 ships the Today hero metrics and the twelve-month chart in Phase 2. Built
+in plan order there is a stretch where the table is empty and the rule above
+cannot be satisfied. Stating it as an absolute anyway is how the rule gets
+quietly discarded rather than followed.
+
+So, as a **provisional allowance**, mirroring the pattern P1-15 already uses for
+hours: until P3-05 lands, a Phase 2 surface may compute a revenue figure off
+engagement columns **only if the figure is visibly marked provisional in the
+UI** — the same marking, in the same style, as an hours figure before P4-05.
+Provisional means the operator can see the number is not yet real; it is not a
+comment in the source.
+
+Two conditions bound it. Provisional computation lives in **one module**, not
+scattered per component, so removing it is a deletion rather than a hunt. And
+**P3-05 does not land until every provisional revenue computation is gone** —
+that is a criterion on P3-05, not a follow-up task. After P3-05, the permanent
+rule stands exactly as written above, with no provisional carve-out remaining.
 
 ## Consequences
 

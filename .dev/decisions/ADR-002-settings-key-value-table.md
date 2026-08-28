@@ -1,6 +1,6 @@
 ---
 id: ADR-002
-title: Workspace settings live in one key/value table, exempt from the UUID key rule
+title: Workspace settings live in one key/value table; tables keyed by natural identity are exempt from the UUID key rule
 status: accepted
 date: 2026-08-28
 ---
@@ -26,6 +26,14 @@ and `created_at` / `updated_at`**, bought deliberately so a later Turso/libSQL
 sync is a drop-in. A table keyed by name conflicts with the first half of it, so
 the exemption has to be stated rather than assumed.
 
+It also has to be stated as a *class* rather than as a one-off, because §5
+already contains a second table in the same position — `favicons (host text pk,
+…)` — and two tables whose primary-key status the original DDL simply left
+blank: `affiliations` and `taggings`. An exemption written as "settings is the
+one exception" is false on the day it lands and tells the author of migration
+0001 to put a surrogate UUID on `favicons`, destroying the natural lookup the
+favicon cache depends on. So this ADR settles all four.
+
 ## Decision
 
 One table:
@@ -48,16 +56,47 @@ The rules that go with it:
    default rather than throwing.
 3. **Keys are declared in one module.** A key composed at a call site is a
    defect, because it makes "what settings exist" unanswerable by grep.
-4. **`settings` is the one table exempt from the UUID primary key rule.** The key
-   *is* the identity. A surrogate UUID would permit two rows both claiming
-   `appearance.density`, with no answer to which one is live. It keeps
-   `updated_at`, because last-write-wins is exactly what a future replica needs,
-   and omits `created_at`, because a setting has no creation event worth
-   recording — its default was in force before the row existed.
-5. **No secret may ever be stored here.** See ADR-004, which states that rule as
-   a property of this table rather than as a note about Stripe.
+4. **Tables keyed by natural identity are exempt from the UUID primary key
+   rule.** Not `settings` alone — the exemption is a class, and §5 contains
+   exactly two members of it:
 
-Requirements §5 is amended as of 2026-08-28 to carry the table.
+   - **`settings`, keyed by `key`.** The key *is* the identity. A surrogate UUID
+     would permit two rows both claiming `appearance.density`, with no answer to
+     which one is live. It keeps `updated_at`, because last-write-wins is
+     exactly what a future replica needs, and omits `created_at`, because a
+     setting has no creation event worth recording — its default was in force
+     before the row existed.
+   - **`favicons`, keyed by `host`.** The host is what the fetch-once-and-cache
+     path (§6.10) looks up and upserts on. A surrogate UUID would add a second
+     way to hold two cached icons for one host and buy nothing.
+
+   The test for membership: the key is a value the outside world already
+   guarantees unique, and no other table holds a foreign key to the row. Both
+   are globally unique text by construction, which is what the UUID rule was
+   buying, so the sync path is unaffected.
+5. **Join tables are not in the exemption; they keep UUID keys.** The DDL left
+   `affiliations` and `taggings` with no declared primary key at all, which is
+   what let the question stay open. Settled:
+
+   - **`affiliations` gets `id uuid pk` plus `created_at` / `updated_at`**, and
+     deliberately *no* unique constraint on `(person_id, company_id)`: §5's own
+     modelling note exists because people change jobs, and a person can leave a
+     company and return, so the pair legitimately repeats. The row has its own
+     attributes and its own lifespan; it is an entity, not a junction.
+   - **`taggings` gets `id uuid pk` plus `created_at` / `updated_at`, with
+     `unique (tag_id, entity_type, entity_id)`.** The natural triple is
+     genuinely unique — a tag applies to a thing once — so it is enforced, as an
+     index rather than as the key.
+
+   No table in §5 is now implicit about its primary key.
+6. **No secret may ever be stored in `settings`.** See ADR-004, which states
+   that rule as a property of this table rather than as a note about Stripe.
+
+Requirements §5 is amended as of 2026-08-28 to carry the `settings` table and to
+make the primary keys of `favicons`, `affiliations` and `taggings` explicit.
+AGENTS.md, requirements §4, the `architecture-review` skill and P0-05's
+acceptance criteria each carry the exemption clause, because those are the four
+places a future agent reads the unqualified rule first.
 
 ## Consequences
 
@@ -81,6 +120,11 @@ a setting.
 
 **Cost — a magic-string key space.** Mitigated by rule 3, but it is a real cost:
 the compiler cannot tell you that `appearance.compact` was renamed.
+
+**Cost — four columns on the join tables.** `affiliations` and `taggings` each
+gain `id`, `created_at` and `updated_at` they had no local use for. Bought for
+the same reason as everywhere else: a replica needs to name a row, and adding a
+key to a populated table later is the expensive version of this decision.
 
 **Forecloses per-setting history.** Writing overwrites; the previous value is
 gone. Nothing in §6.11 asks for history, and `updated_at` answers the only
@@ -113,4 +157,16 @@ AGENTS.md rule uniform.** Lost because the rule buys sync-readiness, and a text
 primary key that is globally unique by construction is already sync-ready. No
 other table references a setting, so there is no foreign key wanting a stable
 surrogate — the UUID would add nothing except a second way for the table to hold
-two rows for the same key.
+two rows for the same key. The same argument decided `favicons`, which is why
+the exemption is stated as a class: applied to one table it is a special case
+someone will "fix", applied to a stated class it is a rule.
+
+**Exempt the join tables too, on composite natural keys —
+`affiliations (person_id, company_id)` and
+`taggings (tag_id, entity_type, entity_id)`.** Lost for `affiliations` on the
+facts: the pair is not unique, because a person can return to a company, so a
+composite key would forbid the history the table exists to record. Lost for
+`taggings` on the sync argument: a composite key of two foreign keys and a type
+discriminator is not an identity the outside world guarantees, and it gives a
+future replica nothing stable to name the row by when two machines tag the same
+thing. The unique index gets the constraint without spending the identity.

@@ -49,7 +49,10 @@ Things that are silently wrong rather than loudly broken:
   arrays and per-model branching computed live off engagement columns. Porting
   that would undo the decision that every revenue question is one
   `SUM … GROUP BY` (task plan G5, the highest-risk carry-over in the project).
-- **Every table gets a UUID primary key and `created_at` / `updated_at`.** Costs
+- **Every table gets a UUID primary key and `created_at` / `updated_at`** —
+  except tables keyed by natural identity (`settings` by key, `favicons` by
+  host), see
+  [ADR-002](.dev/decisions/ADR-002-settings-key-value-table.md). Costs
   nothing now; makes a later Turso/libSQL sync a drop-in rather than a rewrite.
 - **Hours are derived from `time_entries`.** Without the timelog import, every
   retainer hours-used and effective-rate figure is fiction within two weeks.

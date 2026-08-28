@@ -46,21 +46,38 @@ The rules that go with them:
    backdated entry logged after the fact does not make a relationship staler
    than it is.
 3. **The Gmail adapter writes the columns directly**, without creating an
-   activity row.
+   activity row. It follows that `activity.source = 'gmail'` has **no writer**:
+   §5 lists the value as reserved, and it becomes legal only if a later decision
+   adds synthetic rows and overturns this rule. §6.8 is amended to say that mail
+   contributes a timestamp and not a log entry, so the three places agree.
 4. **No query derives staleness from `MAX(activity.occurred_at)`.** Staleness is
    `now - last_touch_at` measured against that company's `cadence_days`.
-5. The column is the source of truth for *cadence*. `activity` is the source of
+5. **A NULL `last_touch_at` is maximally stale, not excluded.** A company nobody
+   has ever touched is the most overdue thing in the book, not an absence of
+   data, and §2 goal 3 exists to surface exactly that prospect. Every staleness
+   filter reads
+   `WHERE last_touch_at IS NULL OR julianday('now') - julianday(last_touch_at) > cadence_days`,
+   and every sort by ratio puts NULL first. Rendering follows the same rule:
+   P2-03's "determinate state, not `NaN`" for a never-touched company means the
+   late band, not a blank ring.
+6. The column is the source of truth for *cadence*. `activity` is the source of
    truth for *what happened*. Neither is a cache of the other, and they are
    allowed to differ.
 
-Requirements §5 is amended as of 2026-08-28 to carry both columns.
+Requirements §5 is amended as of 2026-08-28 to carry both columns and to mark
+`activity.source = 'gmail'` reserved; §6.8 is amended the same day to match
+rule 3.
 
 ## Consequences
 
-**Easier.** The Today "going quiet" query is one indexed scan over `companies`
-with no join and no per-company aggregate. §8 budgets any view at under 100ms at
-ten times current volume; a correlated `MAX` over `activity` for every company on
-the app's most-opened view is the first thing that would miss it.
+**Easier.** The Today "going quiet" query is a single scan of `companies` with no
+join and no per-company aggregate. It is a *full* scan, not an index seek: the
+predicate is a ratio against a per-row divisor (`cadence_days`), so no index on
+`last_touch_at` can serve it, and none should be created for this query. At
+§8's ten-times volume that is a scan of roughly a hundred narrow rows,
+comfortably inside the 100ms budget — whereas a correlated `MAX` over `activity`
+for every company on the app's most-opened view is the first thing that would
+miss it.
 
 **Easier.** Gmail integrates without inventing rows. The activity feed stays a
 list of things that actually happened, which is the only reason it is worth

@@ -50,21 +50,39 @@ it does not go in the database.*
 
 Three supporting rules:
 
-1. **No secret crosses IPC.** The renderer asks whether a source is connected and
-   receives a boolean. It never receives the value, never displays it, and never
-   submits it back for an update — a connect flow replaces, it does not edit.
-2. **`safeStorage.isEncryptionAvailable()` is checked before writing.** If it
-   returns false, the integration reports itself unavailable. There is no
-   plaintext fallback, because a fallback is how this decision gets undone
-   quietly on one platform.
+1. **No secret crosses IPC toward the renderer.** The direction matters: §6.11
+   has the operator typing a Stripe key into a settings surface, and the
+   renderer is the only place that key can arrive from, so renderer → main is a
+   supported path. What never happens is the reverse. The renderer asks whether
+   a source is connected and receives a boolean. It never receives the value and
+   never displays it, not even masked, and never reads one back in order to edit
+   it — a connect flow **replaces**, it does not edit. A submitted value is
+   written and forgotten; there is no channel that returns it.
+2. **Both `safeStorage` guards are checked before writing.**
+   `safeStorage.isEncryptionAvailable()` must return true **and**
+   `safeStorage.getSelectedStorageBackend() !== 'basic_text'`. The second is not
+   belt-and-braces: on Linux — a first-class target under §4 — with no libsecret
+   or kwallet provider, Electron falls back to the `basic_text` backend, which
+   "encrypts" with a hardcoded key while `isEncryptionAvailable()` still returns
+   true. That is the bare-Linux session this ADR worries about, and the
+   availability call alone waves it through. If either check fails, the
+   integration reports itself unavailable and nothing is written. There is no
+   plaintext fallback, and `basic_text` counts as plaintext, because a fallback
+   is how this decision gets undone quietly on one platform.
 3. **The nightly backup covers database tables only.** It therefore cannot leak a
    credential by construction, rather than by someone remembering to exclude one.
 
 ## Consequences
 
-**Easier.** The backup is safe to write anywhere, including the sync folders the
-database itself must avoid. It can be copied, diffed and mailed without thinking
-about it.
+**Easier.** The backup carries no credential, so it cannot leak one wherever it
+is written — including the sync folders the database file itself must avoid, for
+the unrelated corruption reason in §4. That is the whole of the claim.
+**It is not a claim that the export is safe to put anywhere.** The nightly JSON
+is the whole database (§8): every client name, contact email, agreed rate and
+private note, in plaintext, thirty generations deep. §8's privacy clause — client
+data never leaves the machine except through configured integrations — applies to
+it in full. Removing credentials makes the export free of keys, not free of the
+book of business.
 
 **Easier.** The §6.12 query console stays a genuine `SELECT *` over any table.
 No redaction layer, no table blocklist, no way for a saved snippet to become an

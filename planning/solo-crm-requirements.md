@@ -7,8 +7,18 @@
 > §5 is amended as schema decisions are settled, so that the DDL here and the
 > DDL in the migrations cannot disagree. The reasoning for each amendment lives
 > in [`.dev/decisions/`](../.dev/decisions/), not in this file. Amendments so
-> far: `companies.last_touch_at` and `people.last_contact_at` (ADR-001), the
-> `settings` table (ADR-002) and the rule that it may hold no secret (ADR-004).
+> far, all dated 28 August 2026:
+>
+> - `companies.last_touch_at` and `people.last_contact_at` (ADR-001)
+> - `activity.source` — `gmail` marked reserved, with no writer (ADR-001)
+> - the `settings` table, and the primary-key status of `favicons`,
+>   `affiliations` and `taggings` made explicit (ADR-002)
+> - the `revenue_lines` modelling note sharpened to `SUM(amount_cents)`, the
+>   estimate/actual replacement rule, and where `billing_model` may be branched
+>   on (ADR-003)
+> - the rule that `settings` may hold no secret (ADR-004)
+> - `search_fts` — external content plus triggers, and P1-06 named as the
+>   migration that creates them (G6)
 
 ---
 
@@ -73,7 +83,7 @@ electron/
 
 ### Future sync
 
-Every table uses UUID primary keys and carries `created_at` / `updated_at`. This costs nothing now and makes a later move to Turso/libSQL embedded replicas (for laptop ↔ desktop sync) a drop-in rather than a schema rewrite. Not in scope for v1.
+Every table uses UUID primary keys and carries `created_at` / `updated_at` — except tables keyed by natural identity (`settings` by key, `favicons` by host), see [ADR-002](../.dev/decisions/ADR-002-settings-key-value-table.md). This costs nothing now and makes a later move to Turso/libSQL embedded replicas (for laptop ↔ desktop sync) a drop-in rather than a schema rewrite. Not in scope for v1.
 
 ---
 
@@ -106,10 +116,14 @@ people (
   created_at, updated_at
 )
 
+-- Keeps a UUID key rather than the (person_id, company_id) pair: a person can
+-- leave a company and come back, so the pair legitimately repeats. ADR-002
 affiliations (
+  id uuid pk,
   person_id uuid references people(id),
   company_id uuid references companies(id),
-  title text, is_primary boolean, started date, ended date
+  title text, is_primary boolean, started date, ended date,
+  created_at, updated_at
 )
 
 -- Catalogue: what you sell, and what it costs
@@ -192,7 +206,12 @@ activity (
   kind text,                -- call | email | meeting | note
   title text, body text,
   company_id uuid null, person_id uuid null, engagement_id uuid null,
-  source text               -- manual | gcal | gmail
+  source text               -- manual | gcal
+                            -- 'gmail' is reserved and has no writer: the Gmail
+                            -- adapter writes last_touch_at / last_contact_at
+                            -- columns, never activity rows. It becomes legal
+                            -- only if a later decision adds synthetic rows.
+                            -- ADR-001
 )
 
 -- External references
@@ -202,6 +221,8 @@ links (
   added_at timestamp
 )
 
+-- Keyed by host: a natural identity, so exempt from the UUID key rule along
+-- with settings. The host is what the fetch-once-and-cache path looks up. ADR-002
 favicons ( host text pk, bytes blob, fetched_at timestamp )
 
 external_refs (
@@ -210,11 +231,20 @@ external_refs (
 )
 
 tags ( id uuid pk, name text, color text )
-taggings ( tag_id uuid, entity_type text, entity_id uuid )
+
+-- Keeps a UUID key; the natural triple is enforced as a unique index, not as
+-- the primary key. ADR-002
+taggings (
+  id uuid pk, tag_id uuid references tags(id),
+  entity_type text, entity_id uuid,
+  created_at, updated_at,
+  unique (tag_id, entity_type, entity_id)
+)
 
 -- Workspace configuration. Key/value so a preference costs an accessor, not a
--- migration. The one table exempt from the UUID primary key rule: the key is the
--- identity, so a surrogate would allow two rows to claim the same setting.
+-- migration. Keyed by `key` -- a natural identity -- so exempt from the UUID
+-- primary key rule, along with favicons (host). Those two are the whole
+-- exemption; every other table, join tables included, keeps a UUID. ADR-002
 -- NON-SECRET VALUES ONLY -- credentials live in Electron safeStorage, never here
 settings (
   key        text pk,
@@ -224,7 +254,9 @@ settings (
 
 search_fts  -- FTS5 external-content table over companies.name, people.name,
             -- engagements.name, tasks.title, activity.body, kept in sync by
-            -- AFTER INSERT/UPDATE/DELETE triggers on all five source tables
+            -- AFTER INSERT/UPDATE/DELETE triggers on all five source tables.
+            -- The table and its triggers are created together by P1-06's
+            -- migration. Migration 0001 (P0-05) does not create either. (G6)
 ```
 
 ### Modelling decisions to preserve
@@ -235,7 +267,7 @@ search_fts  -- FTS5 external-content table over companies.name, people.name,
 
 **`ends_on = NULL` means rolling.** Not a far-future sentinel date. Null is the honest representation of "no agreed finish" and is what distinguishes a retainer from a fixed scope in every query.
 
-**`revenue_lines` is materialised, not computed.** A retainer generates one row per month. A fixed scope generates one row per milestone at its expected month. T&M generates estimates that actuals overwrite. Every revenue question then becomes one `SUM(amount_cents) ... GROUP BY period_month, status` with no branching on billing model. Branching on `billing_model` is legal only inside the generator that writes the lines; anywhere else it is a defect. See ADR-003.
+**`revenue_lines` is materialised, not computed.** A retainer generates one row per month, to a stated horizon where `ends_on` is NULL. A fixed scope generates one row per milestone at its expected month. T&M generates `tm_estimate` rows; when actuals arrive for a month the generator deletes that month's estimate rows and writes `tm_actual` rows in the same transaction, so a month never holds both and a consumer never needs a per-kind filter to avoid double counting. `equity` and `none` generate nothing at all. Every revenue question then becomes one `SUM(amount_cents) ... GROUP BY period_month, status` with no branching on billing model. Branching on `billing_model` is legal only inside the generator that writes the lines; anywhere else it is a defect. `kind = 'expense'` lines are operator-entered — the one other writer of this table — and carry a negative `amount_cents`. See ADR-003.
 
 **`affiliations` is its own table.** People change jobs. A `company_id` on `people` would erase a contact's history the day they move.
 
@@ -291,7 +323,7 @@ search_fts  -- FTS5 external-content table over companies.name, people.name,
 - Stacked monthly chart, actuals and projections.
 
 ### 6.8 Activity
-- Append-only log across companies, people and engagements. Manual entries plus automatic entries from calendar and mail.
+- Append-only log across companies, people and engagements. Manual entries plus automatic entries from calendar. **Mail contributes no activity rows** — the Gmail adapter pulls a last-contacted timestamp and writes it to `companies.last_touch_at` / `people.last_contact_at` directly, because §7 forbids pulling message bodies and there would be nothing to show in the log (ADR-001).
 
 ### 6.9 Search and capture
 - `⌘K` command palette over FTS5: companies, people, engagements, catalogue items, todos, activity notes — plus create commands.
