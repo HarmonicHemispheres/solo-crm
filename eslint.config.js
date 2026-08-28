@@ -35,7 +35,15 @@ export default tseslint.config(
   ...tseslint.configs.recommended.map((config) => ({ files: JS_TS_FILES, ...config })),
   // Main + preload: Node globals, no browser globals.
   {
-    files: ['electron/main/**/*.ts', 'electron/preload/**/*.ts', 'electron.vite.config.ts'],
+    files: [
+      'electron/main/**/*.ts',
+      'electron/preload/**/*.ts',
+      'electron.vite.config.ts',
+      // scripts/brand-assets.mjs (T-260828-16) runs as an Electron main
+      // process (Buffer, console — same runtime as electron/main/**), not
+      // as browser/renderer code.
+      'scripts/**/*.mjs'
+    ],
     languageOptions: {
       globals: globals.node
     }
