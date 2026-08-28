@@ -10,6 +10,8 @@ import {
   ENGAGEMENT_STATUSES,
   type Engagement,
   type EngagementStatus,
+  type ListEngagementsFilter,
+  listEngagementsFilterSchema,
   type Milestone,
   type UpdateEngagementInput,
   updateEngagementInputSchema
@@ -35,8 +37,8 @@ import { refuseIfReferenced } from './referential-guard'
  * `billingModel` to produce a figure anywhere else is the defect this
  * task's Risks section names as the highest-risk carry-over in the project.
  */
-export { BILLING_MODELS, createEngagementInputSchema, ENGAGEMENT_STATUSES, updateEngagementInputSchema }
-export type { BillingModel, CreateEngagementInput, Engagement, EngagementStatus, Milestone, UpdateEngagementInput }
+export { BILLING_MODELS, createEngagementInputSchema, ENGAGEMENT_STATUSES, listEngagementsFilterSchema, updateEngagementInputSchema }
+export type { BillingModel, CreateEngagementInput, Engagement, EngagementStatus, ListEngagementsFilter, Milestone, UpdateEngagementInput }
 
 // ---------------------------------------------------------------------------
 // Input parsing
@@ -302,14 +304,6 @@ function mapMilestoneRow(row: MilestoneRow): Milestone {
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
-
-export interface ListEngagementsFilter {
-  readonly status?: EngagementStatus
-  /** Matches `billingCompanyId` — independent of `clientCompanyId` (this file's header, §5). */
-  readonly billingCompanyId?: string
-  /** Matches `clientCompanyId` — independent of `billingCompanyId` (this file's header, §5). */
-  readonly clientCompanyId?: string
-}
 
 /**
  * `filter.billingCompanyId` and `filter.clientCompanyId` are separate

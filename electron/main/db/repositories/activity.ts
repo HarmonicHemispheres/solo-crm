@@ -7,6 +7,8 @@ import {
   ACTIVITY_KINDS,
   ACTIVITY_SOURCES,
   type Activity,
+  activityFiltersSchema,
+  type ActivityFilters,
   type ActivityKind,
   type ActivitySource,
   type LogActivityInput,
@@ -49,8 +51,8 @@ import { NotFoundError, RefusalError, ValidationError } from './errors'
  * `electron/shared/activity.ts` (ADR-007), not here — see that module's
  * header, and `companies.ts`'s header for the fuller rationale this repeats.
  */
-export { ACTIVITY_KINDS, ACTIVITY_SOURCES, logActivityInputSchema, recordContactEntitySchema }
-export type { Activity, ActivityKind, ActivitySource, LogActivityInput, RecordContactEntity }
+export { ACTIVITY_KINDS, ACTIVITY_SOURCES, activityFiltersSchema, logActivityInputSchema, recordContactEntitySchema }
+export type { Activity, ActivityFilters, ActivityKind, ActivitySource, LogActivityInput, RecordContactEntity }
 
 // ---------------------------------------------------------------------------
 // Input parsing
@@ -223,16 +225,6 @@ function personExists(db: Database.Database, id: string): boolean {
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
-
-export interface ActivityFilters {
-  readonly companyId?: string
-  readonly personId?: string
-  readonly engagementId?: string
-  /** Inclusive lower bound on `occurredAt` (a `timestampSchema` value). */
-  readonly occurredFrom?: string
-  /** Inclusive upper bound on `occurredAt` (a `timestampSchema` value). */
-  readonly occurredTo?: string
-}
 
 /** Newest first (`occurred_at DESC`) — a read log, not an insert-order dump. */
 export function listActivity(db: Database.Database, filters: ActivityFilters = {}): readonly Activity[] {

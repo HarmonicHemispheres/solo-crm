@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { callCrm, IpcCallError, ipcMutationFn, ipcQueryFn, optimisticUpdate } from './ipc'
+import { callCrm, IpcCallError, ipcMutationFn, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from './ipc'
 import { stubCrm } from './test-support/stub-crm'
 
 afterEach(() => {
@@ -87,6 +87,27 @@ describe('callCrm', () => {
     } catch (error) {
       const ipcError = error as IpcCallError
       expect(ipcError.code).toBe('bridge-unavailable')
+    }
+  })
+})
+
+describe('unwrapMutationResult', () => {
+  it('returns .data on { ok: true }', () => {
+    expect(unwrapMutationResult({ ok: true, data: { id: 'company-1' } })).toEqual({ id: 'company-1' })
+  })
+
+  it('throws IpcCallError carrying the repository’s own code and message on { ok: false }', () => {
+    try {
+      unwrapMutationResult({
+        ok: false,
+        error: { code: 'refused', message: 'Cannot delete "Acme": 3 activity records reference it.' }
+      })
+      expect.unreachable('unwrapMutationResult should have thrown')
+    } catch (error) {
+      expect(error).toBeInstanceOf(IpcCallError)
+      const ipcError = error as IpcCallError
+      expect(ipcError.code).toBe('refused')
+      expect(ipcError.message).toBe('Cannot delete "Acme": 3 activity records reference it.')
     }
   })
 })

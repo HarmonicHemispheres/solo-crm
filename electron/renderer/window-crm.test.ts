@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { stubCrm } from './lib/test-support/stub-crm'
 
 /**
  * Proves window.d.ts's global `Window.crm` typing reaches renderer code
@@ -20,7 +21,7 @@ import { describe, expect, it } from 'vitest'
 describe('window.crm', () => {
   it('exposes typed, named methods for both proof channels, matching contextBridge’s calling convention', async () => {
     const calls: Array<{ channel: string; payload: unknown }> = []
-    window.crm = {
+    window.crm = stubCrm({
       'app:version': async (payload) => {
         calls.push({ channel: 'app:version', payload })
         return { ok: true, data: { version: '0.1.0' } }
@@ -29,7 +30,7 @@ describe('window.crm', () => {
         calls.push({ channel: 'db:schemaVersion', payload })
         return { ok: true, data: { version: 1, lastMigrationAt: '2026-08-28T00:00:00.000Z' } }
       }
-    }
+    })
 
     const appVersion = await window.crm['app:version']()
     const schemaVersion = await window.crm['db:schemaVersion']()
@@ -49,10 +50,9 @@ describe('window.crm', () => {
   })
 
   it('a { ok: false } envelope is a valid, typed resolution — not a rejection a caller must catch', async () => {
-    window.crm = {
-      'app:version': async () => ({ ok: false, error: { code: 'handler-error', message: 'something went wrong' } }),
-      'db:schemaVersion': async () => ({ ok: true, data: { version: 1, lastMigrationAt: null } })
-    }
+    window.crm = stubCrm({
+      'app:version': async () => ({ ok: false, error: { code: 'handler-error', message: 'something went wrong' } })
+    })
 
     const result = await window.crm['app:version']()
 

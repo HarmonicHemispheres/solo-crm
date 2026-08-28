@@ -39,6 +39,48 @@ export const queryKeys = {
     all: () => ['db'] as const,
     /** `db:schemaVersion` — same singleton shape as `app.version()`. */
     schemaVersion: () => ['db', 'schemaVersion'] as const
+  },
+
+  // -- T-260828-26's entity surface — each following the exact [entity,
+  // scope, id?] shape above; `detail(id)` is the one scope that carries an
+  // id, matching `companies:get`/`people:get`/etc.'s single-record shape. --
+
+  companies: {
+    all: () => ['companies'] as const,
+    list: () => ['companies', 'list'] as const,
+    detail: (id: string) => ['companies', 'detail', id] as const
+  },
+  people: {
+    all: () => ['people'] as const,
+    list: () => ['people', 'list'] as const,
+    /** Includes the person's affiliations (`people:get`'s own return shape) — there is no separate affiliations key to invalidate alongside it. */
+    detail: (id: string) => ['people', 'detail', id] as const
+  },
+  engagements: {
+    all: () => ['engagements'] as const,
+    list: () => ['engagements', 'list'] as const,
+    detail: (id: string) => ['engagements', 'detail', id] as const,
+    /** `engagements:milestones` — scoped under its engagement's id, not a bare `[entity, 'list']`, so invalidating one engagement's milestones never touches another's. */
+    milestones: (engagementId: string) => ['engagements', 'milestones', engagementId] as const
+  },
+  tasks: {
+    all: () => ['tasks'] as const,
+    list: () => ['tasks', 'list'] as const,
+    detail: (id: string) => ['tasks', 'detail', id] as const,
+    /** `tasks:countOpen` — a summary, not a single record, so no id (this file's header: "id is present only when scope addresses one record"). */
+    countOpen: () => ['tasks', 'countOpen'] as const
+  },
+  /** G8: no `activity` update or delete channel exists — no corresponding key here either, only what `activity:list`/`activity:get` need. */
+  activity: {
+    all: () => ['activity'] as const,
+    list: () => ['activity', 'list'] as const,
+    detail: (id: string) => ['activity', 'detail', id] as const
+  },
+  /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
+  settings: {
+    all: () => ['settings'] as const,
+    list: () => ['settings', 'list'] as const,
+    detail: (key: string) => ['settings', 'detail', key] as const
   }
 } as const
 
@@ -65,7 +107,13 @@ export const queryKeys = {
  */
 export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClient) => Promise<void>> = {
   app: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.app.all() }),
-  db: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.db.all() })
+  db: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.db.all() }),
+  companies: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.companies.all() }),
+  people: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.people.all() }),
+  engagements: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.engagements.all() }),
+  tasks: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all() }),
+  activity: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.activity.all() }),
+  settings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
 }
 
 /** Re-exported so call sites can type a key without importing `@tanstack/react-query` directly. */

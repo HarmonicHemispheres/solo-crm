@@ -1,18 +1,28 @@
 import { hashKey } from '@tanstack/react-query'
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
-import type { ChannelName, ChannelRequest, ChannelResponse, IpcErrorCode } from '../../shared/ipc-types'
+import type {
+  ChannelName,
+  ChannelRequest,
+  ChannelResponse,
+  IpcErrorCode,
+  MutationResult,
+  RepositoryErrorCode
+} from '../../shared/ipc-types'
 
 /**
- * `IpcCallError`'s `code`: either `IpcErrorCode` (T-260828-09's envelope,
- * for whatever main actually reported) or `'bridge-unavailable'` — a failure
- * one layer below that, where there was no envelope at all because
- * `window.crm` or `window.crm[channel]` never existed to call (a failed or
- * stale preload). Kept as a local union rather than added to
- * `electron/shared/ipc-types.ts`'s `IpcErrorCode`: that type is main's
- * vocabulary for codes *main* produces; this one is the renderer noticing
- * main was never reachable in the first place.
+ * `IpcCallError`'s `code`: `IpcErrorCode` (T-260828-09's envelope, for
+ * whatever main actually reported), `RepositoryErrorCode` (T-260828-26: a
+ * repository refusal `unwrapMutationResult` below unwrapped into a throw —
+ * see that function's comment for why the refusal arrives nested one layer
+ * inside the `{ ok: true }` envelope rather than as `IpcErrorCode`), or
+ * `'bridge-unavailable'` — a failure one layer below both, where there was
+ * no envelope at all because `window.crm` or `window.crm[channel]` never
+ * existed to call (a failed or stale preload). Kept as a local union rather
+ * than added to `electron/shared/ipc-types.ts`'s `IpcErrorCode`: that type
+ * is main's vocabulary for codes *main*'s own envelope produces; this one is
+ * every way a renderer call site can end up with a thrown `IpcCallError`.
  */
-export type IpcCallErrorCode = IpcErrorCode | 'bridge-unavailable'
+export type IpcCallErrorCode = IpcErrorCode | RepositoryErrorCode | 'bridge-unavailable'
 
 /**
  * Thrown by `callCrm` when a `window.crm.*` call resolves to `{ ok: false }`
@@ -92,6 +102,30 @@ type CallArgs<K extends ChannelName> = undefined extends ChannelRequest<K>
  */
 export async function callCrm<K extends ChannelName>(channel: K, ...args: CallArgs<K>): Promise<ChannelResponse<K>> {
   return callCrmImpl(channel, args[0]) as Promise<ChannelResponse<K>>
+}
+
+/**
+ * Unwraps a mutating channel's `MutationResult` envelope (T-260828-26,
+ * `electron/shared/ipc-types.ts`): resolves with `.data` on `{ ok: true }`,
+ * throws `IpcCallError` — carrying the repository's own `code`
+ * ('not-found' | 'validation' | 'refused') and its human-written `.message`
+ * — on `{ ok: false }`. Every mutating channel (`companies:create`,
+ * `tasks:delete`, …) wraps its result this way rather than throwing across
+ * the IPC boundary directly: `ipc-types.ts`'s header explains why — `index.ts`
+ * (main) discards a thrown error's message entirely, which would silently
+ * swallow a repository refusal's reason ("Cannot delete 'Acme': 3 activity
+ * records reference it..."). `callCrm(channel, payload).then(unwrapMutationResult)`
+ * (or the same composed through `ipcMutationFn`) is how a mutation's
+ * `mutationFn` gets a plain `Data` promise that rejects with a readable
+ * `.message` either way, matching the single "every failure is an
+ * `IpcCallError`" invariant `callCrmImpl` already guarantees for the outer
+ * envelope.
+ */
+export function unwrapMutationResult<Data>(result: MutationResult<Data>): Data {
+  if (!result.ok) {
+    throw new IpcCallError(result.error.code, result.error.message)
+  }
+  return result.data
 }
 
 /**

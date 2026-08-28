@@ -1,8 +1,11 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { z } from 'zod'
 import { CHANNEL_NAMES } from '../../shared/ipc-types'
+import type { ChannelName, ChannelRequest, ChannelResponse } from '../../shared/ipc-types'
+import type { ChannelDefinition } from './registry'
 
 // electron/main/db/connection.ts imports `app` from 'electron' at its own
 // top level (for the no-override resolveDatabasePath path, unused below
@@ -25,6 +28,35 @@ vi.mock('electron', () => ({
 const { closeDatabase, openDatabase } = await import('../db/connection')
 const { registry } = await import('./registry')
 
+/**
+ * Routes a test call through the same two validation steps
+ * `electron/main/ipc/index.ts` performs on a real IPC call — review fix,
+ * item 4. Calling `registry[name].handler(...)` directly (what every entity
+ * test below used to do) exercises neither: the request schema never parses
+ * `payload` and the response schema never parses the return value, so a
+ * schema/handler mismatch anywhere in `CHANNEL_CONTRACTS` — the exact shape
+ * of item 1's drift, and the reason it survived — is invisible to the whole
+ * suite. `callChannel` parses `payload` through `registry[name].request`
+ * first, runs the handler on the parsed result (exactly what `index.ts`
+ * does), then parses the handler's return value through
+ * `registry[name].response` before handing it back — every call below goes
+ * through both halves, for every channel, not a sample.
+ */
+async function callChannel<K extends ChannelName>(name: K, payload?: ChannelRequest<K>): Promise<ChannelResponse<K>> {
+  // Widened to a concrete (non-`K`-dependent) definition shape rather than
+  // `registry[name]` directly: indexing a mapped object type on a still-generic
+  // key distributes over every entry's own Req/Res, which makes `tsc` compute
+  // the handler's parameter as the intersection of 40 unrelated payload types
+  // (effectively `never`) instead of the one entry `name` actually names. The
+  // real per-channel precision is still enforced — by `registry.ts`'s own
+  // `satisfies` at the definition site, and by the two explicit `.parse()`
+  // calls below, which throw at runtime on exactly the mismatch this cast
+  // waives compile-time checking of.
+  const channel = registry[name] as unknown as ChannelDefinition<z.ZodTypeAny, z.ZodTypeAny>
+  const parsedRequest = channel.request.parse(payload)
+  const result = await channel.handler(parsedRequest)
+  return channel.response.parse(result) as ChannelResponse<K>
+}
 
 afterEach(() => {
   closeDatabase()
@@ -48,24 +80,264 @@ describe("'app:version'", () => {
     expect(registry['app:version'].request.safeParse({ extra: true }).success).toBe(false)
   })
 
-  it('handler returns the app version, and it passes the response schema', async () => {
-    const result = await registry['app:version'].handler(undefined)
+  it('handler returns the app version, through the request and response schemas', async () => {
+    const result = await callChannel('app:version')
     expect(result).toEqual({ version: '0.1.0-test' })
-    expect(registry['app:version'].response.safeParse(result).success).toBe(true)
   })
 })
 
 describe("'db:schemaVersion'", () => {
-  it('handler reads through getDatabase()/getSchemaVersion(), and the result passes the response schema', async () => {
+  it('handler reads through getDatabase()/getSchemaVersion(), through the request and response schemas', async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-'))
     try {
       openDatabase({ userDataDir: tmpDir })
-      const result = await registry['db:schemaVersion'].handler(undefined)
+      const result = await callChannel('db:schemaVersion')
       expect(result).toEqual({ version: 1, lastMigrationAt: expect.any(String) })
-      expect(registry['db:schemaVersion'].response.safeParse(result).success).toBe(true)
     } finally {
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })
     }
+  })
+})
+
+// -----------------------------------------------------------------------
+// T-260828-26: the entity surface — companies, people, engagements, tasks,
+// activity, settings.
+// -----------------------------------------------------------------------
+
+describe('G8: activity has no update or delete channel', () => {
+  it('CHANNEL_NAMES names exactly list/get/log for activity — nothing else', () => {
+    expect(CHANNEL_NAMES.filter((name) => name.startsWith('activity:')).sort()).toEqual([
+      'activity:get',
+      'activity:list',
+      'activity:log'
+    ])
+  })
+})
+
+/** Unwraps a mutation channel's `{ ok: true, data }` | `{ ok: false, error }` result, failing the test with the refusal's own message if it refused — every entity round-trip below expects success unless it is explicitly testing a refusal. */
+function expectOk<Data>(result: {
+  readonly ok: boolean
+  readonly data?: Data
+  readonly error?: { readonly message: string }
+}): Data {
+  if (!result.ok) throw new Error(`expected a successful mutation, got a refusal: ${result.error?.message}`)
+  return result.data as Data
+}
+
+describe('entity channels — end to end against a real database', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-entities-'))
+    openDatabase({ userDataDir: tmpDir })
+  })
+
+  afterEach(() => {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('companies: create -> list -> get -> update -> delete round-trips, and every call passes through its own request and response schema', async () => {
+    const created = expectOk(await callChannel('companies:create', { name: 'Acme' }))
+
+    const listed = await callChannel('companies:list')
+    expect(listed.map((company) => company.id)).toContain(created.id)
+
+    const fetched = await callChannel('companies:get', { id: created.id })
+    expect(fetched?.name).toBe('Acme')
+
+    const updated = expectOk(await callChannel('companies:update', { id: created.id, patch: { name: 'Acme Inc' } }))
+    expect(updated.name).toBe('Acme Inc')
+
+    const deleted = expectOk(await callChannel('companies:delete', { id: created.id }))
+    expect(deleted).toEqual({ id: created.id })
+
+    expect(await callChannel('companies:get', { id: created.id })).toBeNull()
+  })
+
+  it('companies:update on a missing id surfaces as a mutation-result refusal, not a thrown exception', async () => {
+    const result = await callChannel('companies:update', { id: 'does-not-exist', patch: { name: 'x' } })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('not-found')
+    // NotFoundError never sets a blocker — only RefusalError does (item 3).
+    expect(result.error.blocker).toBeUndefined()
+  })
+
+  it('companies:delete blocked by activity history: the refusal reaches the caller as data, carrying the reason and the blocking count structurally, with no filesystem path or stack frame', async () => {
+    const company = expectOk(await callChannel('companies:create', { name: 'Acme' }))
+    expectOk(
+      await callChannel('activity:log', {
+        occurredAt: '2026-08-28T00:00:00.000Z',
+        kind: 'note',
+        title: 'Kickoff call',
+        body: null,
+        companyId: company.id,
+        source: 'manual'
+      })
+    )
+
+    const result = await callChannel('companies:delete', { id: company.id })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('refused')
+    expect(result.error.message).toContain('activity record')
+    expect(result.error.message).toContain('Acme')
+    // Item 3: the refusal's blocker survives the envelope as data, not just
+    // as a sentence a caller would have to parse.
+    expect(result.error.blocker).toEqual({ reason: 'activity', count: 1 })
+    // No path, no stack frame — the message is what a person reads, never an
+    // implementation detail (this task's Risks: "map, do not forward").
+    expect(result.error.message).not.toMatch(/[A-Za-z]:[\\/]/)
+    expect(result.error.message).not.toContain('AppData')
+    expect(result.error.message).not.toContain('.db')
+    expect(result.error.message).not.toMatch(/\bat .*:\d+:\d+/)
+    // The company itself is untouched — refused, not partially deleted.
+    expect(await callChannel('companies:get', { id: company.id })).not.toBeNull()
+  })
+
+  it('people: create, addAffiliation, get returns the affiliation nested with current: true, move opens a new stint and closes the old one', async () => {
+    const companyA = expectOk(await callChannel('companies:create', { name: 'Company A' }))
+    const companyB = expectOk(await callChannel('companies:create', { name: 'Company B' }))
+    const person = expectOk(await callChannel('people:create', { name: 'Robby' }))
+
+    const affiliation = expectOk(
+      await callChannel('people:addAffiliation', { personId: person.id, companyId: companyA.id, started: '2026-01-01' })
+    )
+    expect(affiliation.companyId).toBe(companyA.id)
+
+    const fetched = await callChannel('people:get', { id: person.id })
+    expect(fetched?.affiliations).toEqual([expect.objectContaining({ id: affiliation.id, companyId: companyA.id, current: true })])
+
+    const moved = expectOk(
+      await callChannel('people:move', { personId: person.id, toCompanyId: companyB.id, options: { on: '2026-06-01' } })
+    )
+    expect(moved.companyId).toBe(companyB.id)
+
+    const afterMove = await callChannel('people:get', { id: person.id })
+    expect(afterMove?.affiliations.find((a) => a.id === affiliation.id)?.current).toBe(false)
+    expect(afterMove?.affiliations.find((a) => a.companyId === companyB.id)?.current).toBe(true)
+  })
+
+  it('people:delete round-trips for a person with no affiliations', async () => {
+    const person = expectOk(await callChannel('people:create', { name: 'No Affiliations' }))
+
+    const deleted = expectOk(await callChannel('people:delete', { id: person.id }))
+
+    expect(deleted).toEqual({ id: person.id })
+    expect(await callChannel('people:get', { id: person.id })).toBeNull()
+  })
+
+  it('engagements: create -> list -> get -> milestones (empty) -> update -> delete', async () => {
+    const company = expectOk(await callChannel('companies:create', { name: 'Client Co' }))
+    const created = expectOk(
+      await callChannel('engagements:create', {
+        name: 'Retainer',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        clientCompanyId: company.id
+      })
+    )
+
+    const listed = await callChannel('engagements:list')
+    expect(listed.map((e) => e.id)).toContain(created.id)
+
+    const filtered = await callChannel('engagements:list', { clientCompanyId: company.id })
+    expect(filtered.map((e) => e.id)).toEqual([created.id])
+
+    const milestones = await callChannel('engagements:milestones', { engagementId: created.id })
+    expect(milestones).toEqual([])
+
+    const updated = expectOk(await callChannel('engagements:update', { id: created.id, patch: { status: 'active' } }))
+    expect(updated.status).toBe('active')
+
+    const deleted = expectOk(await callChannel('engagements:delete', { id: created.id }))
+    expect(deleted).toEqual({ id: created.id })
+  })
+
+  it('tasks: create -> setNextStep -> countOpen reflects it -> update reopening clears a stale flag -> delete', async () => {
+    const company = expectOk(await callChannel('companies:create', { name: 'Task Co' }))
+    const task = expectOk(await callChannel('tasks:create', { title: 'Follow up', companyId: company.id }))
+
+    const flagged = expectOk(await callChannel('tasks:setNextStep', { id: task.id }))
+    expect(flagged.isNextStep).toBe(true)
+
+    const openCount = await callChannel('tasks:countOpen', { companyId: company.id })
+    expect(openCount).toEqual({ count: 1 })
+
+    const deleted = expectOk(await callChannel('tasks:delete', { id: task.id }))
+    expect(deleted).toEqual({ id: task.id })
+
+    expect(await callChannel('tasks:get', { id: task.id })).toBeNull()
+  })
+
+  it('tasks:setNextStep on a task with no company is refused, as data, not thrown', async () => {
+    const task = expectOk(await callChannel('tasks:create', { title: 'Orphan task' }))
+
+    const result = await callChannel('tasks:setNextStep', { id: task.id })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('refused')
+    expect(result.error.message).toContain('no company')
+    // Item 3: a blocker with no natural row count (a write-path refusal, not
+    // a delete-path referential one) still carries its reason structurally.
+    expect(result.error.blocker).toEqual({ reason: 'no-company' })
+  })
+
+  it('activity: log -> list -> get; logging with a companyId advances that company’s last_touch_at (ADR-001), visible on the next companies:get', async () => {
+    const company = expectOk(await callChannel('companies:create', { name: 'Touched Co' }))
+    expect((await callChannel('companies:get', { id: company.id }))?.lastTouchAt).toBeNull()
+
+    const logged = expectOk(
+      await callChannel('activity:log', {
+        occurredAt: '2026-08-28T12:00:00.000Z',
+        kind: 'call',
+        title: 'Check-in',
+        body: null,
+        companyId: company.id,
+        source: 'manual'
+      })
+    )
+
+    const listed = await callChannel('activity:list', { companyId: company.id })
+    expect(listed.map((a) => a.id)).toEqual([logged.id])
+
+    const fetched = await callChannel('activity:get', { id: logged.id })
+    expect(fetched?.title).toBe('Check-in')
+
+    expect((await callChannel('companies:get', { id: company.id }))?.lastTouchAt).toBe('2026-08-28T12:00:00.000Z')
+  })
+
+  it('settings: get returns the declared default, set validates and persists, getAll includes it, reset restores the default', async () => {
+    const initial = await callChannel('settings:get', { key: 'workspace.name' })
+    expect(initial).toEqual({ key: 'workspace.name', value: '' })
+
+    const set = expectOk(await callChannel('settings:set', { key: 'workspace.name', value: 'Solo CRM' }))
+    expect(set).toEqual({ key: 'workspace.name', value: 'Solo CRM' })
+
+    const snapshot = await callChannel('settings:getAll')
+    expect(snapshot['workspace.name']).toBe('Solo CRM')
+
+    const reset = expectOk(await callChannel('settings:reset', { key: 'workspace.name' }))
+    expect(reset).toEqual({ key: 'workspace.name', value: '' })
+  })
+
+  it('settings:set rejects a value that fails its key’s own schema, as a mutation-result refusal', async () => {
+    // Deliberately NOT routed through callChannel: this test exists to prove
+    // the repository's own validation (setSetting -> SETTINGS_REGISTRY) is a
+    // second, independent line of defence, not routed through the request
+    // schema a real IPC call already validates against — callChannel's
+    // request.parse would reject this payload itself (settingEntrySchema's
+    // superRefine checks the same registry) and never reach the handler,
+    // which would test index.ts's job, not the repository's.
+    // @ts-expect-error - deliberately the wrong shape (a bogus currency) to prove the repository's own validation still runs, independent of the request schema a real IPC call would already have failed at.
+    const result = await registry['settings:set'].handler({ key: 'workspace.currency', value: 'not-a-real-currency' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('validation')
   })
 })

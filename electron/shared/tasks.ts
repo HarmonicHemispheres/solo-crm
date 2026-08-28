@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { dateOnlySchema } from './types'
+import { dateOnlySchema, timestampSchema } from './types'
 
 /**
  * `tasks`' wire contract (ADR-007), following `electron/shared/companies.ts`
@@ -24,22 +24,6 @@ import { dateOnlySchema } from './types'
 /** `schema.ts`'s comment on `status`: "todo | waiting | done". */
 export const TASK_STATUSES = ['todo', 'waiting', 'done'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
-
-/** A `tasks` row, camelCased, as read back from the database. */
-export interface Task {
-  readonly id: string
-  readonly title: string
-  readonly status: TaskStatus | null
-  readonly isNextStep: boolean
-  readonly dueOn: string | null
-  readonly waitingSince: string | null
-  readonly doneAt: string | null
-  readonly companyId: string | null
-  readonly engagementId: string | null
-  readonly personId: string | null
-  readonly createdAt: string
-  readonly updatedAt: string
-}
 
 /**
  * Every writable column except `id`/`created_at`/`updated_at` (assigned by
@@ -77,3 +61,57 @@ export type CreateTaskInput = z.infer<typeof createTaskInputSchema>
 
 export const updateTaskInputSchema = taskWritableFieldsSchema.partial()
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>
+
+/**
+ * `listTasks`'/`countOpenTasks`' filter — moved here from a bare TypeScript
+ * interface in `electron/main/db/repositories/tasks.ts` (review fix, ADR-007
+ * rule 5), matching `activityFiltersSchema`'s identical move into
+ * `electron/shared/activity.ts` in the same diff: every read filter that
+ * crosses IPC gets a zod schema in its entity's shared module, imported by
+ * both the repository (as a type) and `electron/shared/ipc-types.ts` (as the
+ * request schema) — never redeclared in either.
+ *
+ * `.strict()`, matching every other filter/input schema in this file: an
+ * unknown key crossing the IPC boundary is a `ValidationError`, not a
+ * silently-ignored no-op. `countOpenTasks`'s `OpenTasksFilter` — this schema
+ * minus `status` — stays declared in the repository as
+ * `Omit<TaskFilter, 'status'>`, the same derivation it already used, since it
+ * is not itself a wire shape: `tasks:countOpen`'s request schema derives its
+ * own `.omit({ status: true })` view straight from `taskFilterSchema` below.
+ */
+export const taskFilterSchema = z
+  .object({
+    status: z.enum(TASK_STATUSES).optional(),
+    companyId: z.string().min(1).optional(),
+    engagementId: z.string().min(1).optional(),
+    personId: z.string().min(1).optional(),
+    /** Inclusive lower bound on `dueOn` (a `dateOnlySchema` value). */
+    dueFrom: dateOnlySchema.optional(),
+    /** Inclusive upper bound on `dueOn` (a `dateOnlySchema` value). */
+    dueTo: dateOnlySchema.optional(),
+    /**
+     * `true` applies `OPEN_STATUS_SQL`
+     * (`electron/main/db/repositories/tasks.ts`), the single definition of
+     * "open"; `false`/`undefined` apply no open/closed restriction.
+     */
+    open: z.boolean().optional()
+  })
+  .strict()
+export type TaskFilter = z.infer<typeof taskFilterSchema>
+
+/** A `tasks` row, camelCased, as read back from the database — `tasks:list`'s, `tasks:get`'s and every mutation channel's response shape (ADR-007 rule 5). */
+export const taskSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.enum(TASK_STATUSES).nullable(),
+  isNextStep: z.boolean(),
+  dueOn: dateOnlySchema.nullable(),
+  waitingSince: timestampSchema.nullable(),
+  doneAt: timestampSchema.nullable(),
+  companyId: z.string().nullable(),
+  engagementId: z.string().nullable(),
+  personId: z.string().nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Task = z.infer<typeof taskSchema>

@@ -38,20 +38,21 @@ export type ActivityKind = (typeof ACTIVITY_KINDS)[number]
 export const ACTIVITY_SOURCES = ['manual', 'gcal'] as const
 export type ActivitySource = (typeof ACTIVITY_SOURCES)[number]
 
-/** An `activity` row, camelCased, as read back from the database. */
-export interface Activity {
-  readonly id: string
-  readonly occurredAt: string
-  readonly kind: ActivityKind
-  readonly title: string
-  readonly body: string | null
-  readonly companyId: string | null
-  readonly personId: string | null
-  readonly engagementId: string | null
-  readonly source: ActivitySource
-  readonly createdAt: string
-  readonly updatedAt: string
-}
+/** An `activity` row, camelCased, as read back from the database — `activity:list`'s, `activity:get`'s and `activity:log`'s response shape (ADR-007 rule 5). */
+export const activitySchema = z.object({
+  id: z.string(),
+  occurredAt: timestampSchema,
+  kind: z.enum(ACTIVITY_KINDS),
+  title: z.string(),
+  body: z.string().nullable(),
+  companyId: z.string().nullable(),
+  personId: z.string().nullable(),
+  engagementId: z.string().nullable(),
+  source: z.enum(ACTIVITY_SOURCES),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Activity = z.infer<typeof activitySchema>
 
 /**
  * `logActivity`'s input. `occurredAt`, `kind`, `title`, `body` and `source`
@@ -90,3 +91,29 @@ export const recordContactEntitySchema = z.union([
   z.object({ personId: z.string().min(1) }).strict()
 ])
 export type RecordContactEntity = z.infer<typeof recordContactEntitySchema>
+
+/**
+ * `listActivity`'s filter — moved here from a bare TypeScript interface in
+ * `electron/main/db/repositories/activity.ts` (T-260828-24's review,
+ * carried into this task): every other repository's read filter that
+ * crosses IPC gets a zod schema in its `electron/shared/<entity>.ts` module,
+ * and `activity:list` (this task) needs exactly that to declare its request
+ * schema per ADR-007 rule 5 — importing it, not redeclaring its fields a
+ * second time in `electron/shared/ipc-types.ts`.
+ *
+ * `.strict()`, matching every other filter/input schema in this file: an
+ * unknown key crossing the IPC boundary is a `ValidationError`, not a
+ * silently-ignored no-op.
+ */
+export const activityFiltersSchema = z
+  .object({
+    companyId: z.string().min(1).optional(),
+    personId: z.string().min(1).optional(),
+    engagementId: z.string().min(1).optional(),
+    /** Inclusive lower bound on `occurredAt` (a `timestampSchema` value). */
+    occurredFrom: timestampSchema.optional(),
+    /** Inclusive upper bound on `occurredAt` (a `timestampSchema` value). */
+    occurredTo: timestampSchema.optional()
+  })
+  .strict()
+export type ActivityFilters = z.infer<typeof activityFiltersSchema>
