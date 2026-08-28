@@ -1,7 +1,7 @@
 ---
 id: T-260828-09
 title: Build the typed IPC bridge — channel registry, validation, error envelope
-status: open
+status: in-progress
 category: ipc
 plan_ref: P0-07
 created: 2026-08-28

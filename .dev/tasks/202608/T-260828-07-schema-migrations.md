@@ -1,11 +1,11 @@
 ---
 id: T-260828-07
 title: Write the Drizzle schema and the migration runner
-status: in-progress
+status: done
 category: data
 plan_ref: P0-05
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -83,4 +83,44 @@ has its own architecture gate. Seed data (T-260828-13).
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in run R-260828-01 (merge + fix commits through `d231854`).
+`schema.ts` (Drizzle, all 18 §5-as-amended tables), generated `0001_init.sql`
+checked in, `migrate.ts` runner (per-migration transactions, FK toggle outside
+the transaction per T-05's gotcha, `schema_migrations` bookkeeping readable
+for X-01), wired into `openDatabase()` with connection-level cleanup on
+failure. Migration SQL is bundled via Vite `?raw` — nothing read from disk at
+runtime, nothing to copy when packaging.
+
+The review mechanically verified every table/column/constraint against §5 as
+amended (perfect match), confirmed the checked-in SQL regenerates
+byte-identical from `schema.ts`, and confirmed ADR-001/002/003, G6 and
+CONVENTIONS.md compliance line by line. No blocking findings; 212/212 tests
+after merge fixes.
+
+Decisions worth knowing (all recorded in place):
+- **The task file misplaced the self-reference CHECK** — `billed_via_company_id`
+  lives on `companies` (§5), and the CHECK is there. An engagement billing ==
+  client is the ordinary case and is accepted.
+- **`activity` back-link FKs are RESTRICT, deliberately** (orchestrator
+  decision at merge): activity is the append-only record (G8/ADR-001), so a
+  company/person/engagement with history refuses deletion with a reason —
+  P1-01's criterion now says so. `ON DELETE SET NULL` would silently orphan
+  history. Revisit only with a migration.
+- **No CHECK on `engagements.status`** — G3 resolved it as repository-layer
+  (zod) enforcement; a DB CHECK would make adding a status a table rebuild.
+  Casing hazard recorded: the DB accepts 'Lost' alongside 'lost'; P1-03's zod
+  layer and T-13's seed must normalise.
+- **`schema_migrations` is exempt from the UUID rule** — per-replica state
+  that must not sync.
+
+Applied at merge (review should-fixes): the fresh-vs-replayed acceptance test
+now proves one-shot vs incremental-across-boots identity (the original
+compared two fresh builds — determinism only); a drift guard shells drizzle-kit
+against `schema.ts` and asserts the regenerated SQL matches `0001_init.sql`
+exactly (drizzle-kit needs POSIX paths on Windows; CRLF normalised).
+
+Follow-ups recorded, not blocking: no `PRAGMA foreign_key_check` after
+FK-off migrations (inert until the first rebuild-style migration); FK-pragma
+restoration after a throwing migration unasserted; `MIGRATIONS` manifest has
+no completeness test against the .sql files on disk; ADR-002's "exactly two
+members" wording now lags `schema_migrations`.
