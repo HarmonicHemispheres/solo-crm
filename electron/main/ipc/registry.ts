@@ -34,9 +34,9 @@ import {
 import { getActivity, listActivity, logActivity } from '../db/repositories/activity'
 import { getAllSettings, getSetting, resetSetting, setSetting } from '../db/repositories/settings'
 import type { SettingKey } from '../db/repositories/settings'
-import { RepositoryError } from '../db/repositories/errors'
+import { RefusalError, RepositoryError } from '../db/repositories/errors'
 import { CHANNEL_CONTRACTS } from '../../shared/ipc-types'
-import type { ChannelName, RepositoryErrorCode, SettingEntry } from '../../shared/ipc-types'
+import type { ChannelName, RepositoryErrorBlocker, RepositoryErrorCode, SettingEntry } from '../../shared/ipc-types'
 
 /**
  * The typed IPC bridge's behaviour (T-260828-09): one handler per channel,
@@ -93,13 +93,30 @@ export function defineChannel<Req extends z.ZodTypeAny, Res extends z.ZodTypeAny
  * so it still reaches `index.ts`'s `handler-error` path exactly as before:
  * logged loudly in main, reported to the renderer as a generic sentence,
  * never as a stack trace or a filesystem path.
+ *
+ * Review fix (item 3): a `RefusalError`'s `.blocker` — `{ reason, count? }`,
+ * set by every throw site in `referential-guard.ts` and every repository's
+ * own constraint-translation table — used to stop here, copied onto neither
+ * the envelope nor anything a caller could branch on. Carried through now,
+ * alongside `.code`/`.message`, so a renderer can tell an
+ * activity-history refusal from an engagement-reference one, or show the
+ * blocking row count, without parsing the prose sentence. Only a
+ * `RefusalError` ever sets `blocker` — `NotFoundError`/`ValidationError`
+ * never do — so the field is omitted, not sent as `undefined`, for either
+ * of those two.
  */
-function runMutation<Data>(fn: () => Data): { ok: true; data: Data } | { ok: false; error: { code: RepositoryErrorCode; message: string } } {
+function runMutation<Data>(
+  fn: () => Data
+): { ok: true; data: Data } | { ok: false; error: { code: RepositoryErrorCode; message: string; blocker?: RepositoryErrorBlocker } } {
   try {
     return { ok: true, data: fn() }
   } catch (error) {
     if (error instanceof RepositoryError) {
-      return { ok: false, error: { code: error.code, message: error.message } }
+      const blocker = error instanceof RefusalError ? error.blocker : undefined
+      return {
+        ok: false,
+        error: blocker ? { code: error.code, message: error.message, blocker } : { code: error.code, message: error.message }
+      }
     }
     throw error
   }

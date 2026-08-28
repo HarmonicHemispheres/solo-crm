@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { centsSchema, dateOnlySchema, hoursSchema } from './types'
+import { centsSchema, dateOnlySchema, hoursSchema, timestampSchema } from './types'
 
 /**
  * `engagements`' wire contract (ADR-007), the second entity module after
@@ -37,47 +37,68 @@ export type EngagementStatus = (typeof ENGAGEMENT_STATUSES)[number]
 export const BILLING_MODELS = ['retainer', 'fixed', 'tm', 'equity', 'none'] as const
 export type BillingModel = (typeof BILLING_MODELS)[number]
 
-/** An `engagements` row, camelCased, as read back from the database. */
-export interface Engagement {
-  readonly id: string
-  readonly name: string
-  readonly billingCompanyId: string | null
-  readonly clientCompanyId: string | null
-  readonly serviceVersionId: string | null
-  readonly agreedRateCents: number | null
-  readonly billingModel: BillingModel | null
-  readonly status: EngagementStatus | null
-  readonly startedOn: string
+/** An `engagements` row, camelCased, as read back from the database — `engagements:list`'s, `engagements:get`'s and every mutation channel's response shape (ADR-007 rule 5). */
+export const engagementSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  billingCompanyId: z.string().nullable(),
+  clientCompanyId: z.string().nullable(),
+  serviceVersionId: z.string().nullable(),
+  agreedRateCents: centsSchema.nullable(),
+  billingModel: z.enum(BILLING_MODELS).nullable(),
+  status: z.enum(ENGAGEMENT_STATUSES).nullable(),
+  startedOn: dateOnlySchema,
   /** `null` means rolling — see this file's header. Never defaulted or coalesced. */
-  readonly endsOn: string | null
-  readonly renewsOn: string | null
+  endsOn: dateOnlySchema.nullable(),
+  renewsOn: dateOnlySchema.nullable(),
   /** retainer only; `null` on every other billing model. */
-  readonly hoursIncluded: number | null
+  hoursIncluded: hoursSchema.nullable(),
   /** fixed only; `null` on every other billing model. */
-  readonly contractValueCents: number | null
+  contractValueCents: centsSchema.nullable(),
   /** tm only; `null` on every other billing model. */
-  readonly hourlyRateCents: number | null
+  hourlyRateCents: centsSchema.nullable(),
   /** tm only; `null` on every other billing model. */
-  readonly estimatedHours: number | null
+  estimatedHours: hoursSchema.nullable(),
   /** tm only; `null` on every other billing model. */
-  readonly notToExceedCents: number | null
-  readonly notes: string | null
-  readonly createdAt: string
-  readonly updatedAt: string
-}
+  notToExceedCents: centsSchema.nullable(),
+  notes: z.string().nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Engagement = z.infer<typeof engagementSchema>
 
-/** A `milestones` row, camelCased, as read back from the database. Editing stays P3-09 — this repository only reads. */
-export interface Milestone {
-  readonly id: string
-  readonly engagementId: string | null
-  readonly name: string | null
-  readonly sort: number | null
-  readonly completedAt: string | null
-  readonly amountCents: number | null
-  readonly expectedMonth: string | null
-  readonly createdAt: string
-  readonly updatedAt: string
-}
+/** A `milestones` row, camelCased, as read back from the database. Editing stays P3-09 — this repository only reads. `engagements:milestones`'s response shape (ADR-007 rule 5). */
+export const milestoneSchema = z.object({
+  id: z.string(),
+  engagementId: z.string().nullable(),
+  name: z.string().nullable(),
+  sort: z.number().int().nullable(),
+  completedAt: timestampSchema.nullable(),
+  amountCents: centsSchema.nullable(),
+  expectedMonth: dateOnlySchema.nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Milestone = z.infer<typeof milestoneSchema>
+
+/**
+ * `listEngagements`' filter — moved here from a bare TypeScript interface in
+ * `electron/main/db/repositories/engagements.ts` (review fix, ADR-007 rule
+ * 5), the same move `taskFilterSchema` (`electron/shared/tasks.ts`) and
+ * `activityFiltersSchema` (`electron/shared/activity.ts`) make in the same
+ * diff. `.strict()` so a typo'd key is a request-validation failure, not a
+ * silently-ignored no-op.
+ */
+export const listEngagementsFilterSchema = z
+  .object({
+    status: z.enum(ENGAGEMENT_STATUSES).optional(),
+    /** Matches `billingCompanyId` — independent of `clientCompanyId` (this file's header, §5). */
+    billingCompanyId: z.string().min(1).optional(),
+    /** Matches `clientCompanyId` — independent of `billingCompanyId` (this file's header, §5). */
+    clientCompanyId: z.string().min(1).optional()
+  })
+  .strict()
+export type ListEngagementsFilter = z.infer<typeof listEngagementsFilterSchema>
 
 // ---------------------------------------------------------------------------
 // Shared field shapes

@@ -1,24 +1,28 @@
 import { z } from 'zod'
-import { ACTIVITY_KINDS, ACTIVITY_SOURCES, activityFiltersSchema, logActivityInputSchema } from './activity'
-import { COMPANY_KINDS, createCompanyInputSchema, updateCompanyInputSchema } from './companies'
+import { activityFiltersSchema, activitySchema, logActivityInputSchema } from './activity'
+import { companySchema, createCompanyInputSchema, updateCompanyInputSchema } from './companies'
 import {
-  BILLING_MODELS,
   createEngagementInputSchema,
-  ENGAGEMENT_STATUSES,
+  engagementSchema,
+  listEngagementsFilterSchema,
+  milestoneSchema,
   updateEngagementInputSchema
 } from './engagements'
 import {
+  affiliationSchema,
   createAffiliationInputSchema,
   createPersonInputSchema,
   endAffiliationInputSchema,
   movePersonOptionsSchema,
+  personSchema,
+  personWithAffiliationsSchema,
   updateAffiliationInputSchema,
   updatePersonInputSchema
 } from './people'
 import { SETTINGS_KEYS, SETTINGS_REGISTRY } from './settings'
 import type { SettingKey, SettingsSnapshot, SettingValue } from './settings'
-import { createTaskInputSchema, TASK_STATUSES, updateTaskInputSchema } from './tasks'
-import { centsSchema, dateOnlySchema, hoursSchema, timestampSchema } from './types'
+import { createTaskInputSchema, taskFilterSchema, taskSchema, updateTaskInputSchema } from './tasks'
+import { timestampSchema } from './types'
 
 /**
  * The typed IPC bridge's shared wire contract (T-260828-09): channel name
@@ -40,17 +44,22 @@ import { centsSchema, dateOnlySchema, hoursSchema, timestampSchema } from './typ
  * Composes CONVENTIONS.md's shared primitives (T-260828-08) — the response
  * schemas below are built from `electron/shared/types.ts`, not redefined.
  *
- * T-260828-26 adds the whole entity surface at once (ADR-007 binds this):
- * every request schema that validates a create/update payload imports the
- * entity's own `create*InputSchema`/`update*InputSchema` from
- * `electron/shared/<entity>.ts` rather than redeclaring a field. The
- * *response* schemas below (`companySchema`, `personSchema`, …) are new —
- * no shared module owns a read-shape zod schema yet, only the TypeScript
- * `interface` a repository returns — so they are declared here, the same
- * way `schemaVersionResponseSchema` already was for `db:schemaVersion`
- * before any entity existed: composed from `types.ts`'s primitives and each
- * entity's own exported enum (`COMPANY_KINDS`, `ENGAGEMENT_STATUSES`, …)
- * rather than a locally invented value set.
+ * T-260828-26 adds the whole entity surface at once (ADR-007 binds this, all
+ * five rules): every request schema that validates a create/update payload,
+ * a read filter, or an id/patch envelope, AND every response schema that
+ * describes an entity's read shape (`companySchema`, `personSchema`, …)
+ * imports it from the entity's own `electron/shared/<entity>.ts` module
+ * rather than redeclaring a single field here. That module owns the
+ * entity's whole wire surface — create input, update input, read shape,
+ * list filter — with the TypeScript type always `z.infer`'d from the zod
+ * schema beside it, never a hand-maintained interface the schema could
+ * drift from silently (review fix: `registry.ts`'s `satisfies` catches a
+ * renamed or retyped field but not an *added* one — a column added to a
+ * repository's return type with no matching schema field passes both
+ * tsconfigs and never crosses IPC). This file only ever composes those
+ * imports (`z.array(...)`, `z.object({ id, patch }).strict()`,
+ * `mutationResultSchema(...)`) into a channel's request/response pair; it
+ * declares no entity field itself.
  */
 
 const schemaVersionResponseSchema = z.object({
@@ -77,7 +86,7 @@ const schemaVersionResponseSchema = z.object({
 // and returns it as *data*, shaped like `IpcResult` one level down. Every
 // mutating channel's response schema is `mutationResultSchema(<the entity's
 // domain schema>)` below — `{ ok: true, data }` on success, `{ ok: false,
-// error: { code, message } }` on a caught repository refusal — so
+// error: { code, message, blocker? } }` on a caught repository refusal — so
 // `index.ts`'s own envelope always sees `{ ok: true }` (nothing thrown) and
 // the refusal's message survives one layer in, intact.
 // ---------------------------------------------------------------------------
@@ -86,9 +95,29 @@ const schemaVersionResponseSchema = z.object({
 const REPOSITORY_ERROR_CODES = ['not-found', 'validation', 'refused'] as const
 export type RepositoryErrorCode = (typeof REPOSITORY_ERROR_CODES)[number]
 
+/**
+ * Mirrors `electron/main/db/repositories/errors.ts`'s `RefusalBlocker` —
+ * same reasoning, and the same boundary, as `RepositoryErrorCode` above.
+ * Review fix (item 3): `RefusalError.blocker` — `{ reason, count? }`,
+ * `errors.ts`'s own header says exists "so T-260828-26 does not have to
+ * string-match" — used to be dropped entirely by `runMutation`, which only
+ * ever copied `.code` and `.message`. A renderer that needs to tell an
+ * activity-history refusal from an engagement-reference one, or show the
+ * blocking row count, had only the prose sentence to parse. Carried through
+ * the envelope as structured data now, present only on a `refused` error
+ * (every `RefusalError` this codebase throws sets a `reason`; `count` is set
+ * only by a delete-path referential refusal — `referential-guard.ts`).
+ */
+const repositoryErrorBlockerSchema = z.object({
+  reason: z.string(),
+  count: z.number().int().nonnegative().optional()
+})
+export type RepositoryErrorBlocker = z.infer<typeof repositoryErrorBlockerSchema>
+
 const repositoryErrorSchema = z.object({
   code: z.enum(REPOSITORY_ERROR_CODES),
-  message: z.string()
+  message: z.string(),
+  blocker: repositoryErrorBlockerSchema.optional()
 })
 
 /** Every mutating channel's response shape: a caught repository refusal as data, never a thrown exception. See this file's header. */
@@ -100,163 +129,26 @@ function mutationResultSchema<Data extends z.ZodTypeAny>(data: Data) {
 }
 
 /** The TypeScript shape `mutationResultSchema`'s `z.infer` produces — exported so `electron/renderer/lib/ipc.ts` can unwrap it without re-deriving the shape by hand. */
-export type MutationResult<Data> = { readonly ok: true; readonly data: Data } | { readonly ok: false; readonly error: { readonly code: RepositoryErrorCode; readonly message: string } }
+export type MutationResult<Data> =
+  | { readonly ok: true; readonly data: Data }
+  | {
+      readonly ok: false
+      readonly error: { readonly code: RepositoryErrorCode; readonly message: string; readonly blocker?: RepositoryErrorBlocker }
+    }
 
 /** `{ id }` — every delete channel's success payload; there is no richer domain shape to echo back once a row is gone. */
 const idResultSchema = z.object({ id: z.string() }).strict()
 
-// ---------------------------------------------------------------------------
-// companies
-// ---------------------------------------------------------------------------
-
-const companySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  kind: z.enum(COMPANY_KINDS).nullable(),
-  website: z.string().nullable(),
-  billsDirectly: z.boolean().nullable(),
-  billedViaCompanyId: z.string().nullable(),
-  introducedByCompanyId: z.string().nullable(),
-  cadenceDays: z.number().int().nullable(),
-  lastTouchAt: timestampSchema.nullable(),
-  budgetNote: z.string().nullable(),
-  notes: z.string().nullable(),
-  since: dateOnlySchema.nullable(),
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
-
 const idRequestSchema = z.object({ id: z.string().min(1) }).strict()
 
 // ---------------------------------------------------------------------------
-// people + affiliations
+// companies, people + affiliations, engagements + milestones, tasks and
+// activity's read shapes, create/update input schemas and list filters all
+// live in their own `electron/shared/<entity>.ts` module (ADR-007) and are
+// imported above, not declared here — see this file's header. Activity gets
+// no update or delete channel below (G8) even though `activitySchema` is
+// available like every other entity's.
 // ---------------------------------------------------------------------------
-
-const personSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string().nullable(),
-  phone: z.string().nullable(),
-  notes: z.string().nullable(),
-  lastContactAt: timestampSchema.nullable(),
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
-
-const affiliationSchema = z.object({
-  id: z.string(),
-  personId: z.string(),
-  companyId: z.string(),
-  title: z.string().nullable(),
-  isPrimary: z.boolean().nullable(),
-  started: dateOnlySchema,
-  ended: dateOnlySchema.nullable(),
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
-
-const personAffiliationSchema = affiliationSchema.extend({ current: z.boolean() })
-
-const personWithAffiliationsSchema = personSchema.extend({
-  affiliations: z.array(personAffiliationSchema).readonly()
-})
-
-// ---------------------------------------------------------------------------
-// engagements + milestones
-// ---------------------------------------------------------------------------
-
-const engagementSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  billingCompanyId: z.string().nullable(),
-  clientCompanyId: z.string().nullable(),
-  serviceVersionId: z.string().nullable(),
-  agreedRateCents: centsSchema.nullable(),
-  billingModel: z.enum(BILLING_MODELS).nullable(),
-  status: z.enum(ENGAGEMENT_STATUSES).nullable(),
-  startedOn: dateOnlySchema,
-  endsOn: dateOnlySchema.nullable(),
-  renewsOn: dateOnlySchema.nullable(),
-  hoursIncluded: hoursSchema.nullable(),
-  contractValueCents: centsSchema.nullable(),
-  hourlyRateCents: centsSchema.nullable(),
-  estimatedHours: hoursSchema.nullable(),
-  notToExceedCents: centsSchema.nullable(),
-  notes: z.string().nullable(),
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
-
-const milestoneSchema = z.object({
-  id: z.string(),
-  engagementId: z.string().nullable(),
-  name: z.string().nullable(),
-  sort: z.number().int().nullable(),
-  completedAt: timestampSchema.nullable(),
-  amountCents: centsSchema.nullable(),
-  expectedMonth: dateOnlySchema.nullable(),
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
-
-/** `listEngagements`' filter (`electron/main/db/repositories/engagements.ts`'s `ListEngagementsFilter`) — every key optional, `.strict()` so a typo'd key is a request-validation failure, not a silently-ignored no-op. */
-const listEngagementsFilterSchema = z
-  .object({
-    status: z.enum(ENGAGEMENT_STATUSES).optional(),
-    billingCompanyId: z.string().min(1).optional(),
-    clientCompanyId: z.string().min(1).optional()
-  })
-  .strict()
-
-// ---------------------------------------------------------------------------
-// tasks
-// ---------------------------------------------------------------------------
-
-const taskSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  status: z.enum(TASK_STATUSES).nullable(),
-  isNextStep: z.boolean(),
-  dueOn: dateOnlySchema.nullable(),
-  waitingSince: timestampSchema.nullable(),
-  doneAt: timestampSchema.nullable(),
-  companyId: z.string().nullable(),
-  engagementId: z.string().nullable(),
-  personId: z.string().nullable(),
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
-
-/** `listTasks`'/`countOpenTasks`' filter (`electron/main/db/repositories/tasks.ts`'s `TaskFilter`). `countOpenTasks` uses the same shape minus `status` (`.omit({ status: true })` below) — mirrors that file's `OpenTasksFilter = Omit<TaskFilter, 'status'>` exactly rather than redeclaring a second, hand-trimmed object. */
-const taskFilterSchema = z
-  .object({
-    status: z.enum(TASK_STATUSES).optional(),
-    companyId: z.string().min(1).optional(),
-    engagementId: z.string().min(1).optional(),
-    personId: z.string().min(1).optional(),
-    dueFrom: dateOnlySchema.optional(),
-    dueTo: dateOnlySchema.optional(),
-    open: z.boolean().optional()
-  })
-  .strict()
-
-// ---------------------------------------------------------------------------
-// activity — G8: no update, no delete channel. Only list/get/log below.
-// ---------------------------------------------------------------------------
-
-const activitySchema = z.object({
-  id: z.string(),
-  occurredAt: timestampSchema,
-  kind: z.enum(ACTIVITY_KINDS),
-  title: z.string(),
-  body: z.string().nullable(),
-  companyId: z.string().nullable(),
-  personId: z.string().nullable(),
-  engagementId: z.string().nullable(),
-  source: z.enum(ACTIVITY_SOURCES),
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema
-})
 
 // ---------------------------------------------------------------------------
 // settings — one row per declared key (ADR-002), not an entity with

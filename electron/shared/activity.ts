@@ -38,20 +38,21 @@ export type ActivityKind = (typeof ACTIVITY_KINDS)[number]
 export const ACTIVITY_SOURCES = ['manual', 'gcal'] as const
 export type ActivitySource = (typeof ACTIVITY_SOURCES)[number]
 
-/** An `activity` row, camelCased, as read back from the database. */
-export interface Activity {
-  readonly id: string
-  readonly occurredAt: string
-  readonly kind: ActivityKind
-  readonly title: string
-  readonly body: string | null
-  readonly companyId: string | null
-  readonly personId: string | null
-  readonly engagementId: string | null
-  readonly source: ActivitySource
-  readonly createdAt: string
-  readonly updatedAt: string
-}
+/** An `activity` row, camelCased, as read back from the database — `activity:list`'s, `activity:get`'s and `activity:log`'s response shape (ADR-007 rule 5). */
+export const activitySchema = z.object({
+  id: z.string(),
+  occurredAt: timestampSchema,
+  kind: z.enum(ACTIVITY_KINDS),
+  title: z.string(),
+  body: z.string().nullable(),
+  companyId: z.string().nullable(),
+  personId: z.string().nullable(),
+  engagementId: z.string().nullable(),
+  source: z.enum(ACTIVITY_SOURCES),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Activity = z.infer<typeof activitySchema>
 
 /**
  * `logActivity`'s input. `occurredAt`, `kind`, `title`, `body` and `source`

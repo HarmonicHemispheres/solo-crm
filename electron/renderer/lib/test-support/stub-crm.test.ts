@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CHANNEL_NAMES } from '../../../shared/ipc-types'
 import { SETTINGS_KEYS } from '../../../shared/settings'
 import { stubCrm } from './stub-crm'
 
@@ -12,10 +13,17 @@ import { stubCrm } from './stub-crm'
  * the missing key.
  */
 describe('stubCrm', () => {
-  it('every channel a fresh CrmApi declares has a default — the stub satisfies the full type with no overrides', () => {
+  it('every CHANNEL_NAMES entry has a default — the stub satisfies the full type with no overrides', () => {
+    // Review fix (item 5): `typeof crm['companies:list'] === 'function'`
+    // cannot fail — `stubCrm()` is typed to return `CrmApi`, so a missing
+    // default is already a tsc error, and this assertion was proving
+    // nothing at runtime. Iterating CHANNEL_NAMES instead asserts what this
+    // file's own header promises: EVERY channel, not two hand-picked ones,
+    // has a default — and it grows automatically as CHANNEL_NAMES does.
     const crm = stubCrm()
-    expect(typeof crm['companies:list']).toBe('function')
-    expect(typeof crm['settings:reset']).toBe('function')
+    for (const name of CHANNEL_NAMES) {
+      expect(typeof crm[name]).toBe('function')
+    }
   })
 
   it('"settings:getAll"’s default covers exactly SETTINGS_KEYS — no missing key, no stale one', async () => {

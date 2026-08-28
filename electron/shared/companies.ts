@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { dateOnlySchema } from './types'
+import { dateOnlySchema, timestampSchema } from './types'
 
 /**
  * `companies`' wire contract (ADR-007): the domain type and the create/update
@@ -28,29 +28,30 @@ import { dateOnlySchema } from './types'
 export const COMPANY_KINDS = ['client', 'prospect', 'end_client', 'advisory', 'channel'] as const
 export type CompanyKind = (typeof COMPANY_KINDS)[number]
 
-/** A `companies` row, camelCased, as read back from the database. */
-export interface Company {
-  readonly id: string
-  readonly name: string
-  readonly kind: CompanyKind | null
-  readonly website: string | null
-  readonly billsDirectly: boolean | null
-  readonly billedViaCompanyId: string | null
-  readonly introducedByCompanyId: string | null
-  readonly cadenceDays: number | null
+/** A `companies` row, camelCased, as read back from the database — `companies:list`'s, `companies:get`'s and every mutation channel's response shape (ADR-007 rule 5: the read shape lives beside the write schemas, derived with `z.infer` rather than a hand-maintained interface, so an added column cannot silently stop at the repository the way `registry.ts`'s `satisfies` alone would let it). */
+export const companySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(COMPANY_KINDS).nullable(),
+  website: z.string().nullable(),
+  billsDirectly: z.boolean().nullable(),
+  billedViaCompanyId: z.string().nullable(),
+  introducedByCompanyId: z.string().nullable(),
+  cadenceDays: z.number().int().nullable(),
   /**
    * ADR-001: owned by the activity repository (T-260828-24), written in the
    * same transaction as an activity insert, and never moves backward. Not a
    * writable field on this repository's create/update schemas below — see
    * this task's Scope 7 fix — but still part of what a read returns.
    */
-  readonly lastTouchAt: string | null
-  readonly budgetNote: string | null
-  readonly notes: string | null
-  readonly since: string | null
-  readonly createdAt: string
-  readonly updatedAt: string
-}
+  lastTouchAt: timestampSchema.nullable(),
+  budgetNote: z.string().nullable(),
+  notes: z.string().nullable(),
+  since: dateOnlySchema.nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Company = z.infer<typeof companySchema>
 
 /**
  * Every writable column except `id`/`created_at`/`updated_at` (assigned by

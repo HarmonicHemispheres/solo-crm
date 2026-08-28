@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { dateOnlySchema } from './types'
+import { dateOnlySchema, timestampSchema } from './types'
 
 /**
  * `people` and `affiliations`' wire contract (ADR-007): the domain types and
@@ -16,13 +16,13 @@ import { dateOnlySchema } from './types'
  * schemas below rather than redeclaring any of them.
  */
 
-/** A `people` row, camelCased, as read back from the database. */
-export interface Person {
-  readonly id: string
-  readonly name: string
-  readonly email: string | null
-  readonly phone: string | null
-  readonly notes: string | null
+/** A `people` row, camelCased, as read back from the database — `people:list`'s, `people:get`'s and every mutation channel's response shape (ADR-007 rule 5). */
+export const personSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  notes: z.string().nullable(),
   /**
    * ADR-001: owned by the activity repository (T-260828-24), written in the
    * same transaction as an activity insert (and by the future Gmail
@@ -30,10 +30,11 @@ export interface Person {
    * field on this repository's create/update schemas below — mirrors
    * `Company.lastTouchAt` exactly — but still part of what a read returns.
    */
-  readonly lastContactAt: string | null
-  readonly createdAt: string
-  readonly updatedAt: string
-}
+  lastContactAt: timestampSchema.nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Person = z.infer<typeof personSchema>
 
 /**
  * Every writable column except `id`/`created_at`/`updated_at` (assigned by
@@ -75,20 +76,23 @@ export type UpdatePersonInput = z.infer<typeof updatePersonInputSchema>
  * explicitly *not* exempted the way `settings`/`favicons` are — because a
  * person can leave a company and return, so `(personId, companyId)` is not
  * unique and each stint is its own row with its own lifespan.
+ * `people:addAffiliation`'s, `people:updateAffiliation`'s, `people:endAffiliation`'s
+ * and `people:move`'s response shape (ADR-007 rule 5).
  */
-export interface Affiliation {
-  readonly id: string
-  readonly personId: string
-  readonly companyId: string
-  readonly title: string | null
-  readonly isPrimary: boolean | null
+export const affiliationSchema = z.object({
+  id: z.string(),
+  personId: z.string(),
+  companyId: z.string(),
+  title: z.string().nullable(),
+  isPrimary: z.boolean().nullable(),
   /** `dateOnlySchema` — the day this stint began. */
-  readonly started: string
+  started: dateOnlySchema,
   /** `dateOnlySchema`, or `null` while the stint is still open. */
-  readonly ended: string | null
-  readonly createdAt: string
-  readonly updatedAt: string
-}
+  ended: dateOnlySchema.nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema
+})
+export type Affiliation = z.infer<typeof affiliationSchema>
 
 /**
  * Every writable column except `id`/`personId`/`companyId`/`created_at`/
@@ -149,11 +153,11 @@ export type MovePersonOptions = z.infer<typeof movePersonOptionsSchema>
  * `current` telling a caller which one is still open instead of leaving that
  * to a `ended === null` check it might get backwards at a call site.
  */
-export interface PersonAffiliation extends Affiliation {
-  readonly current: boolean
-}
+export const personAffiliationSchema = affiliationSchema.extend({ current: z.boolean() })
+export type PersonAffiliation = z.infer<typeof personAffiliationSchema>
 
-/** `getPerson`'s return shape — the base row plus every affiliation, marked. */
-export interface PersonWithAffiliations extends Person {
-  readonly affiliations: readonly PersonAffiliation[]
-}
+/** `getPerson`'s return shape — the base row plus every affiliation, marked. `people:get`'s response shape (ADR-007 rule 5). */
+export const personWithAffiliationsSchema = personSchema.extend({
+  affiliations: z.array(personAffiliationSchema).readonly()
+})
+export type PersonWithAffiliations = z.infer<typeof personWithAffiliationsSchema>

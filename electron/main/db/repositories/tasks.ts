@@ -7,6 +7,8 @@ import {
   type CreateTaskInput,
   createTaskInputSchema,
   type Task,
+  type TaskFilter,
+  taskFilterSchema,
   type TaskStatus,
   type UpdateTaskInput,
   updateTaskInputSchema
@@ -45,8 +47,8 @@ import { NotFoundError, RefusalError, ValidationError } from './errors'
  * (ADR-007), not here — see that file's header comment, identical reasoning
  * to `companies.ts`'s.
  */
-export { TASK_STATUSES, createTaskInputSchema, updateTaskInputSchema }
-export type { CreateTaskInput, Task, TaskStatus, UpdateTaskInput }
+export { TASK_STATUSES, createTaskInputSchema, taskFilterSchema, updateTaskInputSchema }
+export type { CreateTaskInput, Task, TaskFilter, TaskStatus, UpdateTaskInput }
 
 // ---------------------------------------------------------------------------
 // Input parsing — identical to companies.ts's parseInput/stripUndefinedValues.
@@ -263,27 +265,6 @@ function getTaskRow(db: Database.Database, id: string): TaskRow | undefined {
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
-
-export interface TaskFilter {
-  readonly status?: TaskStatus
-  readonly companyId?: string
-  readonly engagementId?: string
-  readonly personId?: string
-  /** Inclusive lower bound on `due_on` (`dateOnlySchema` shape). */
-  readonly dueFrom?: string
-  /** Inclusive upper bound on `due_on` (`dateOnlySchema` shape). */
-  readonly dueTo?: string
-  /**
-   * Review fix (item 4): the one thing every real consumer needs
-   * (`countOpenTasks`, the future Todos and Today views) is "open", and until
-   * now `listTasks` could only filter by an *exact* status, forcing each
-   * consumer to hand-roll `status NOT IN ('waiting', 'done')` itself — the
-   * "open defined twice" risk arriving through the read path. `true` applies
-   * `OPEN_STATUS_SQL`, the same definition `countOpenTasks` and `setNextStep`
-   * use; `false`/`undefined` apply no open/closed restriction.
-   */
-  readonly open?: boolean
-}
 
 function buildFilterClause(filter: TaskFilter | undefined): { readonly clause: string; readonly values: unknown[] } {
   const conditions: string[] = []
