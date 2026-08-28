@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { LayerManager } from '../components/shell/LayerManager'
+import { LayerManagerContext, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
 import { useGlobalShortcuts } from './useGlobalShortcuts'
 
 function Harness() {
@@ -62,6 +63,30 @@ describe('useGlobalShortcuts', () => {
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  })
+
+  it('never re-enters openLayer while its layer is open — the isOpen guard, pinned directly', () => {
+    // The integration test above cannot fail without the guard (openLayer's
+    // own idempotency keeps the dialog count at 1 regardless), so this one
+    // pins the guard itself through a mocked context: with both layers
+    // reporting open, a recognised combo must not reach openLayer at all.
+    const openLayer = vi.fn()
+    const value: LayerManagerContextValue = {
+      isOpen: () => true,
+      isTopmost: () => true,
+      openLayer,
+      closeLayer: vi.fn(),
+      sheetTitle: '',
+      openSheet: vi.fn()
+    }
+    render(
+      <LayerManagerContext.Provider value={value}>
+        <Harness />
+      </LayerManagerContext.Provider>
+    )
+    fireEvent.keyDown(document, { key: 'k', metaKey: true })
+    fireEvent.keyDown(document, { key: 'l', metaKey: true })
+    expect(openLayer).not.toHaveBeenCalled()
   })
 
   it('prevents the browser/OS default for the recognised combo', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Sheet } from '../primitives/Sheet'
 import { EmptyState } from '../primitives/EmptyState'
 import { SearchIcon } from './icons'
@@ -21,18 +21,21 @@ const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'she
  * `layer-manager-context.ts` for the `LayerKind`/context types and
  * `useLayerManager`.
  *
- * `sheet` and `log` are two names for the *same* underlying `<Sheet>`
- * primitive, and Sheet.tsx (T-260828-11) carries its own document-level
- * Escape listener that fires whenever it is `open`, independent of whether
- * this manager considers it "topmost" — that is how Sheet is built and this
- * task does not change it (Sheet.test.tsx already covers that behaviour).
- * Two simultaneously-open Sheet instances would each react to the same Esc
- * press, which breaks "closes the topmost layer only" the moment `sheet`
- * isn't on top. `openLayer` below sidesteps this by making `sheet` and
- * `log` mutually exclusive — opening one always closes the other — so at
- * most one Sheet-primitive instance is ever mounted+open at a time, and its
- * own Escape listener and this manager's central Esc handler always agree
- * on what's closing.
+ * `sheet` and `log` are two instances of the same `<Sheet>` primitive
+ * (T-260828-11), rendered with `closeOnEscape={false}`: the primitive's
+ * standalone default is its own document-level Escape listener, which would
+ * fire alongside the central handler here and close a sheet that isn't
+ * topmost — one Esc taking two layers with it, the exact failure this
+ * task's Risks section names. With the primitive's listener off, the
+ * handler below is the only thing Esc reaches, so the palette and both
+ * sheets stack freely in any order (the mockup keeps the create form and
+ * quick-log independent, so ⌘L over a half-filled form must not discard it).
+ *
+ * All three overlay wrappers are the mockup's `.scrim` at the same
+ * z-index, so DOM order decides which paints on top: the overlays render
+ * sorted by stack position, topmost last. Without that, a palette opened
+ * over a sheet would focus its input while painting beneath the sheet's
+ * scrim — keystrokes landing in an invisible search box.
  */
 export function LayerManager({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<readonly LayerKind[]>([])
@@ -49,15 +52,18 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [stack])
 
   const openLayer = useCallback((kind: LayerKind, trigger?: HTMLElement | null) => {
-    triggers.current[kind] = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    // Skip the trigger write when `kind` is already open: re-opening is a
+    // documented no-op (layer-manager-context.ts), and that includes not
+    // silently retargeting where focus returns when the layer closes.
+    if (!stackRef.current.includes(kind)) {
+      triggers.current[kind] = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    }
     setStack((prev) => {
       if (prev.includes(kind)) return prev
       let next: readonly LayerKind[] = prev
       if (CLOSES_MENU_AND_POPOVER.has(kind)) {
         next = next.filter((k) => k !== 'menu' && k !== 'popover')
       }
-      if (kind === 'sheet') next = next.filter((k) => k !== 'log')
-      if (kind === 'log') next = next.filter((k) => k !== 'sheet')
       return [...next, kind]
     })
   }, [])
@@ -131,48 +137,71 @@ export function LayerManager({ children }: { children: ReactNode }) {
     [isOpen, isTopmost, openLayer, closeLayer, sheetTitle, openSheet]
   )
 
+  // DOM order is paint order here (see the component comment): a closed
+  // overlay renders null, so where the sort places it is irrelevant
+  // (`indexOf` -1 sorts it before every open layer).
+  const overlays: ReadonlyArray<{ kind: LayerKind; node: ReactNode }> = [
+    { kind: 'palette', node: <PaletteShell open={isOpen('palette')} onClose={() => closeLayer('palette')} /> },
+    {
+      kind: 'sheet',
+      node: (
+        <Sheet
+          open={isOpen('sheet')}
+          onClose={() => closeLayer('sheet')}
+          closeOnEscape={false}
+          title={sheetTitle || 'Create'}
+          aria-label={sheetTitle || 'Create'}
+          footerNote="saved locally"
+          footer={
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => closeLayer('sheet')}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-prim" disabled>
+                Create
+              </button>
+            </>
+          }
+        >
+          <EmptyState>This form ships with its own task (P1-08).</EmptyState>
+        </Sheet>
+      )
+    },
+    {
+      kind: 'log',
+      node: (
+        <Sheet
+          open={isOpen('log')}
+          onClose={() => closeLayer('log')}
+          closeOnEscape={false}
+          title="Log a touch"
+          aria-label="Log a touch"
+          footerNote="resets the cadence clock"
+          footer={
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => closeLayer('log')}>
+                Cancel
+              </button>
+              <button type="button" className="btn btn-prim" disabled>
+                Save
+              </button>
+            </>
+          }
+        >
+          <EmptyState>Quick-log ships with its own task (P1-09).</EmptyState>
+        </Sheet>
+      )
+    }
+  ]
+
   return (
     <LayerManagerContext.Provider value={value}>
       {children}
-      <PaletteShell open={isOpen('palette')} onClose={() => closeLayer('palette')} />
-      <Sheet
-        open={isOpen('sheet')}
-        onClose={() => closeLayer('sheet')}
-        title={sheetTitle || 'Create'}
-        aria-label={sheetTitle || 'Create'}
-        footerNote="saved locally"
-        footer={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => closeLayer('sheet')}>
-              Cancel
-            </button>
-            <button type="button" className="btn btn-prim" disabled>
-              Create
-            </button>
-          </>
-        }
-      >
-        <EmptyState>This form ships with its own task (P1-08).</EmptyState>
-      </Sheet>
-      <Sheet
-        open={isOpen('log')}
-        onClose={() => closeLayer('log')}
-        title="Log a touch"
-        aria-label="Log a touch"
-        footerNote="resets the cadence clock"
-        footer={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => closeLayer('log')}>
-              Cancel
-            </button>
-            <button type="button" className="btn btn-prim" disabled>
-              Save
-            </button>
-          </>
-        }
-      >
-        <EmptyState>Quick-log ships with its own task (P1-09).</EmptyState>
-      </Sheet>
+      {[...overlays]
+        .sort((a, b) => stack.indexOf(a.kind) - stack.indexOf(b.kind))
+        .map(({ kind, node }) => (
+          <Fragment key={kind}>{node}</Fragment>
+        ))}
     </LayerManagerContext.Provider>
   )
 }

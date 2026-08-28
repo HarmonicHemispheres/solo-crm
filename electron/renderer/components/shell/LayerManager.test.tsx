@@ -22,6 +22,7 @@ function Harness() {
     <div>
       <button onClick={(e) => openLayer('palette', e.currentTarget)}>open-palette</button>
       <button onClick={(e) => openSheet('New company', e.currentTarget)}>open-sheet</button>
+      <button onClick={(e) => openSheet('New company', e.currentTarget)}>open-sheet-again</button>
       <button onClick={(e) => openLayer('log', e.currentTarget)}>open-log</button>
       <button
         onClick={(e) => {
@@ -128,15 +129,55 @@ describe('LayerManager', () => {
     expect(state()).toMatchObject({ palette: true, sheet: true })
   })
 
-  it('opening the generic sheet or log layer closes the other — only one Sheet instance is ever open', () => {
+  it('Esc closes the topmost layer only — the palette opened over a sheet closes alone, leaving the sheet open', () => {
+    // The reverse ordering of the test above, and the one the primitive's
+    // own Escape listener would break: with `closeOnEscape` left on, one
+    // press here would take the half-filled create form down with the
+    // palette.
     renderHarness()
     fireEvent.click(screen.getByText('open-sheet'))
+    fireEvent.click(screen.getByText('open-palette'))
+    expect(screen.getAllByRole('dialog')).toHaveLength(2)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog', { name: 'Search' })).toBeNull()
     expect(screen.getByRole('dialog', { name: 'New company' })).toBeTruthy()
 
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('the topmost layer is the last overlay in the DOM, so it paints above the equal-z-index scrims', () => {
+    renderHarness()
+    fireEvent.click(screen.getByText('open-sheet'))
+    fireEvent.click(screen.getByText('open-palette'))
+
+    const sheet = screen.getByRole('dialog', { name: 'New company' })
+    const palette = screen.getByRole('dialog', { name: 'Search' })
+    expect(sheet.compareDocumentPosition(palette) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('the generic sheet and quick-log stack independently — ⌘L over a half-filled form must not discard it', () => {
+    renderHarness()
+    fireEvent.click(screen.getByText('open-sheet'))
     fireEvent.click(screen.getByText('open-log'))
-    expect(screen.queryByRole('dialog', { name: 'New company' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'New company' })).toBeTruthy()
     expect(screen.getByRole('dialog', { name: 'Log a touch' })).toBeTruthy()
-    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+
+    // And Esc unwinds them in stack order: log first, form second.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Log a touch' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'New company' })).toBeTruthy()
+  })
+
+  it('re-opening an already-open layer keeps the original focus-return target', () => {
+    renderHarness()
+    fireEvent.click(screen.getByText('open-sheet'))
+    fireEvent.click(screen.getByText('open-sheet-again'))
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(document.activeElement).toBe(screen.getByText('open-sheet'))
   })
 
   it('opening a heavier layer closes an already-open menu and popover', () => {

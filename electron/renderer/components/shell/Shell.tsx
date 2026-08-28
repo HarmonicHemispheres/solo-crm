@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router'
 import { useGlobalShortcuts } from '../../hooks/useGlobalShortcuts'
 import { Rail } from './Rail'
@@ -31,12 +31,23 @@ export function ShellLayout() {
 
   useGlobalShortcuts()
 
+  // The other half of the mockup's `go()` — `scrollTo(0,0)` beside the
+  // rail-close above — so a long list scrolled on one view doesn't leave the
+  // next view starting mid-page. `scrollTop = 0` on both candidates rather
+  // than `window.scrollTo` because whichever isn't the scroll container is a
+  // silent no-op (and jsdom implements neither scroll method).
+  const viewRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (viewRef.current) viewRef.current.scrollTop = 0
+    document.documentElement.scrollTop = 0
+  }, [location.pathname])
+
   return (
     <div className="app">
       <Rail open={railOpen} onNavigate={() => setRailOpen(false)} />
       <div className="main">
         <Topbar onToggleRail={() => setRailOpen((open) => !open)} />
-        <main className="view">
+        <main className="view" ref={viewRef}>
           <Outlet />
         </main>
       </div>
