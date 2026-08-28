@@ -1,7 +1,7 @@
 ---
 id: T-260828-16
 title: Brand the Windows installer — app icon, assisted flow, welcome banner
-status: open
+status: in-progress
 category: build
 plan_ref: X-09
 created: 2026-08-28

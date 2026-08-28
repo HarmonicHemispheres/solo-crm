@@ -9,7 +9,7 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 |---|---|---|---|---|
 | ○ open | [T-260828-14](T-260828-14-button-primitive.md) | Fold the shell's raw `.btn` classes into a Button primitive | 🎨 ui | P0-09 |
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
-| ○ open | [T-260828-16](T-260828-16-installer-branding.md) | Brand the Windows installer — app icon, assisted flow, welcome banner | 📦 build | X-09 |
+| ◐ in-progress | [T-260828-16](T-260828-16-installer-branding.md) | Brand the Windows installer — app icon, assisted flow, welcome banner | 📦 build | X-09 |
 | ○ open | [T-260828-17](T-260828-17-data-root-pointer.md) | Resolve the data root from a pointer file so its location can be a choice | 🗄 data | P0-03 |
 | ○ open | [T-260828-18](T-260828-18-first-run-location-chooser.md) | Ask where the data goes on first run, and never ask again | 🗄 data | P0-03 |
 | ○ open | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | P0-03 |
