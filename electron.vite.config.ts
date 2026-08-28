@@ -22,7 +22,21 @@ export default defineConfig({
   },
   preload: {
     build: {
-      externalizeDeps: true,
+      // T-260828-09: the preload (electron/preload/index.ts) imports
+      // electron/shared/ipc-types.ts, which imports zod as a real runtime
+      // value (it constructs the channel request/response schemas at module
+      // load, not just types) — sandbox: true means the preload's
+      // require() cannot resolve a node_modules package at runtime
+      // (T-260828-04's outcome), so externalizeDeps' default (leave every
+      // node_modules import as an external require()) would ship a preload
+      // that throws "module not found: zod" the moment Electron loads it.
+      // `exclude: ['zod']` bundles zod's code into index.cjs instead of
+      // externalizing it — T-260828-08's handoff, and verified directly:
+      // electron/main/ipc/bridge.test.ts's real-Electron proof failed
+      // exactly this way before this option was added (it uses its own
+      // esbuild bundle rather than this build, but the underlying
+      // constraint — zod must be inlined, not external — is the same one).
+      externalizeDeps: { exclude: ['zod'] },
       lib: {
         entry: resolve(__dirname, 'electron/preload/index.ts')
       },
