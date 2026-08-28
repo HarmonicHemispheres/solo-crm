@@ -1,11 +1,11 @@
 ---
 id: T-260828-05
 title: Open the SQLite database in main with WAL, foreign keys and a busy timeout
-status: in-progress
+status: done
 category: data
 plan_ref: P0-03
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 ## Why
@@ -73,4 +73,44 @@ repository. The read-only query connection (X-02).
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+Merged to main in `77b4cca` (run R-260828-01). `electron/main/db/connection.ts`
+is the single owner of the SQLite handle: `app.getPath('userData')/solocrm.db`,
+`journal_mode=WAL`, `foreign_keys=ON` re-applied on every open (asserted on a
+genuinely second connection), `busy_timeout=5000`.
+
+**`synchronous = NORMAL`, deliberately:** paired with WAL it cannot corrupt on
+OS crash/power loss — it only risks the last few commits since the previous
+checkpoint. FULL fsyncs every commit for no correctness gain over WAL+NORMAL.
+
+**WAL sidecars (for X-04's backup):** clean quit runs `wal_checkpoint
+(TRUNCATE)` and the `-wal`/`-shm` files are removed entirely — a post-quit
+backup needs only `solocrm.db`. While running, a copy of the `.db` alone can
+miss committed data still in the WAL.
+
+**ABI finding:** better-sqlite3 v13 ships N-API prebuilds that load under both
+system Node and Electron unmodified — the classic tests-vs-Electron ABI split
+did not materialize. The postinstall (`electron-builder install-app-deps`) was
+still proven to process better-sqlite3 on a clean install, and one test boots
+real Electron to prove the default-path wiring end to end. Note: `npm install
+<pkg>` does NOT run postinstall — only a bare `npm install` does.
+
+Review (code + architecture): no blocking. Applied at merge: startup failure
+now shows an error box and exits (was a windowless zombie process);
+`closeDatabase()` closes the handle in a `finally` so a throwing checkpoint
+cannot orphan an open connection. Verify after fixes: 147/147 tests, all four
+gates green.
+
+Seams left for the next tasks (reviewer-verified clean):
+- **T-260828-06:** insert the guard immediately before `new Database(dbPath)` —
+  better-sqlite3 creates the file at construction, so refusing before that
+  line satisfies "no file is created". `resolveDatabasePath()` is exported and
+  side-effect-free; symlink resolution is T-06's.
+- **T-260828-07:** call the migration runner at/after the end of
+  `openDatabase()` via `getDatabase()`. Gotcha for table rebuilds: `PRAGMA
+  foreign_keys` is a no-op inside a transaction — toggle before `BEGIN`.
+
+Follow-ups recorded: boundary-scan regex evadable by aliased imports (an
+eslint no-restricted-imports rule would enforce the real invariant); kill-test
+uses a 200ms sleep rather than a readiness handshake (loud failure, not false
+pass, if it races); electron-builder `files` allowlist has never packaged a
+native dep — check when packaging is wired (X-09).

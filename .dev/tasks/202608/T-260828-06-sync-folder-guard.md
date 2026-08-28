@@ -1,7 +1,7 @@
 ---
 id: T-260828-06
 title: Refuse to open a database inside a file-sync folder
-status: open
+status: in-progress
 category: data
 plan_ref: P0-04
 created: 2026-08-28
