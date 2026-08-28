@@ -62,6 +62,15 @@ function makeTmpDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
 }
 
+// Looked up by version, not `MIGRATIONS[0]` — a migration inserted ahead of
+// 0001 in the array would silently repoint an index-based reference at the
+// wrong file while every assertion here stayed green.
+const MIGRATION_0001: MigrationDefinition = (() => {
+  const found = MIGRATIONS.find((m) => m.version === 1)
+  if (!found) throw new Error('MIGRATIONS is missing migration version 1')
+  return found
+})()
+
 afterEach(() => {
   closeDatabase()
 })
@@ -430,7 +439,10 @@ describe('openDatabase and the migration runner (T-260828-07)', () => {
   it('applies migration 0001 as part of opening — the domain schema and schema_migrations both exist afterward', () => {
     const tmpDir = makeTmpDir('solo-crm-connection-migrate-')
     try {
-      openDatabase({ userDataDir: tmpDir })
+      // Scoped to migration 0001 alone, not the app's default set — this
+      // test is specifically about what running 0001 leaves behind; the
+      // default set has included 0002 (`search_fts`) since T-260828-36.
+      openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
       const db = getDatabase()
 
       const companiesTable = db
@@ -446,9 +458,11 @@ describe('openDatabase and the migration runner (T-260828-07)', () => {
 
   it('a throwing migration leaves openDatabase() no better than never having been called — no dangling handle, no file left mid-migration for a plain retry to trip over', () => {
     const tmpDir = makeTmpDir('solo-crm-connection-migrate-broken-')
+    // Versioned 3, not 2: version 2 is the real `0002_search_fts` migration
+    // (T-260828-36) since this test was written.
     const breakingMigrations: readonly MigrationDefinition[] = [
       ...MIGRATIONS,
-      { version: 2, name: 'test_broken', sql: 'THIS IS NOT VALID SQL;' }
+      { version: 3, name: 'test_broken', sql: 'THIS IS NOT VALID SQL;' }
     ]
     try {
       expect(() => openDatabase({ userDataDir: tmpDir, migrations: breakingMigrations })).toThrow()
@@ -461,7 +475,9 @@ describe('openDatabase and the migration runner (T-260828-07)', () => {
       // the same directory rather than hitting a stale "already open" guard
       // or a half-migrated file it cannot recover from.
       expect(() => openDatabase({ userDataDir: tmpDir })).not.toThrow()
-      expect(getSchemaVersion(getDatabase()).version).toBe(1)
+      // 2, not 1: the default migration set is 0001 + 0002 (`search_fts`,
+      // T-260828-36).
+      expect(getSchemaVersion(getDatabase()).version).toBe(2)
     } finally {
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })

@@ -12,9 +12,15 @@ import { describe, expect, it } from 'vitest'
 // (type-only, erased) — safe to import directly here under plain vitest,
 // unlike registry.ts/connection.ts below, which is why this doesn't need
 // the compile-to-cjs treatment the way those do.
+import { MIGRATIONS } from '../db/migrations'
 import { SECURE_WEB_PREFERENCES } from '../security'
 import { bundlePreloadForTest } from '../test-support/bundle-preload'
 import { compileToCommonJs } from '../test-support/compile-to-cjs'
+
+// Derived, not hardcoded: see registry.test.ts's identical guard. A fresh
+// database opened by the harness below (no explicit migrations list) always
+// lands on the latest registered version.
+const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version
 
 /**
  * The acceptance criterion this file exists to prove: "the bridge works
@@ -159,7 +165,7 @@ describe('the typed IPC bridge under a real, sandboxed Electron renderer', () =>
       expect(parsed.appVersion).toEqual({ ok: true, data: { version: expect.any(String) } })
       expect(parsed.schemaVersion).toEqual({
         ok: true,
-        data: { version: 1, lastMigrationAt: expect.any(String) }
+        data: { version: LATEST_SCHEMA_VERSION, lastMigrationAt: expect.any(String) }
       })
       // db:schemaVersion's request schema is z.undefined() — an unexpected
       // payload must fail validation in main and come back as a typed error

@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { closeDatabase, getDatabase, openDatabase } from './connection'
+import { MIGRATIONS, type MigrationDefinition } from './migrations'
 
 /**
  * Asserts the *shape* migration 0001 produces — every table requirements §5
@@ -29,6 +30,34 @@ function withMigratedDb<T>(fn: (db: Database.Database) => T): T {
   const tmpDir = makeTmpDir('solo-crm-schema-')
   try {
     openDatabase({ userDataDir: tmpDir })
+    return fn(getDatabase())
+  } finally {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * As `withMigratedDb`, but applies only migration 0001 — never the app's
+ * full default migration set, which since T-260828-36 also includes 0002
+ * (`search_fts`). The one test below asserting `search_fts`'s absence is
+ * specifically about what 0001 alone produces (G6); it would be trivially
+ * and wrongly broken by 0002 legitimately adding that table to every
+ * *default* `openDatabase()` call, so it opens through this instead.
+ */
+// Looked up by version, not `MIGRATIONS[0]` — a migration inserted ahead of
+// 0001 in the array would silently repoint an index-based reference at the
+// wrong file while every assertion here stayed green.
+const MIGRATION_0001: MigrationDefinition = (() => {
+  const found = MIGRATIONS.find((m) => m.version === 1)
+  if (!found) throw new Error('MIGRATIONS is missing migration version 1')
+  return found
+})()
+
+function withMigration0001OnlyDb<T>(fn: (db: Database.Database) => T): T {
+  const tmpDir = makeTmpDir('solo-crm-schema-0001-only-')
+  try {
+    openDatabase({ userDataDir: tmpDir, migrations: [MIGRATION_0001] })
     return fn(getDatabase())
   } finally {
     closeDatabase()
@@ -153,7 +182,7 @@ function domainTableNames(db: Database.Database): string[] {
 
 describe('migration 0001: the exact set of domain tables', () => {
   it('creates every §5 table named in EXPECTED_TABLES, no more and no fewer, and no search_fts', () => {
-    withMigratedDb((db) => {
+    withMigration0001OnlyDb((db) => {
       const actual = domainTableNames(db).sort()
       expect(actual).toEqual([...EXPECTED_TABLES].sort())
       expect(actual).not.toContain('search_fts')

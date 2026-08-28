@@ -1,4 +1,5 @@
 import migration0001Sql from './0001_init.sql?raw'
+import migration0002Sql from './0002_search_fts.sql?raw'
 
 /**
  * The ordered, explicit manifest of every migration `migrate.ts` knows how
@@ -27,4 +28,9 @@ export interface MigrationDefinition {
   readonly sql: string
 }
 
-export const MIGRATIONS: readonly MigrationDefinition[] = [{ version: 1, name: '0001_init', sql: migration0001Sql }]
+export const MIGRATIONS: readonly MigrationDefinition[] = [
+  { version: 1, name: '0001_init', sql: migration0001Sql },
+  // P1-06 (T-260828-36): search_fts and its five triggers. Hand-written SQL,
+  // not drizzle-kit output — see the migration file's own header for why.
+  { version: 2, name: '0002_search_fts', sql: migration0002Sql }
+]

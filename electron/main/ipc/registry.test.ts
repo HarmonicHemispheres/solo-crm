@@ -6,6 +6,13 @@ import type { z } from 'zod'
 import { CHANNEL_NAMES } from '../../shared/ipc-types'
 import type { ChannelName, ChannelRequest, ChannelResponse } from '../../shared/ipc-types'
 import type { ChannelDefinition } from './registry'
+import { MIGRATIONS } from '../db/migrations'
+
+// Derived, not hardcoded: a fresh database's schema version is whatever the
+// latest registered migration leaves it at. T-260828-36 added migration 0002,
+// bumping a freshly migrated database from 1 to 2 — hardcoding either number
+// here would silently re-break the moment another migration lands.
+const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version
 
 // electron/main/db/connection.ts imports `app` from 'electron' at its own
 // top level (for the no-override resolveDatabasePath path, unused below
@@ -91,8 +98,12 @@ describe("'db:schemaVersion'", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-'))
     try {
       openDatabase({ userDataDir: tmpDir })
+      // callChannel (not a bare handler call) parses BOTH the request and the
+      // response against the channel's contract and throws on a mismatch —
+      // T-260828-26's blocking review finding — so it subsumes the explicit
+      // response safeParse this test carried on the T-260828-36 side.
       const result = await callChannel('db:schemaVersion')
-      expect(result).toEqual({ version: 1, lastMigrationAt: expect.any(String) })
+      expect(result).toEqual({ version: LATEST_SCHEMA_VERSION, lastMigrationAt: expect.any(String) })
     } finally {
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })
