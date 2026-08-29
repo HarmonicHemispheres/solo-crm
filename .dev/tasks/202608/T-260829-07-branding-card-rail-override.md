@@ -1,10 +1,10 @@
 ---
 id: T-260829-07
 title: Upload an icon and a logo in Workspace Settings, and show them in the rail
-status: in-progress
+status: done
 category: ui
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -128,10 +128,71 @@ installer, print or export. Wiring the still-disabled backup folder button.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/renderer/components/shell/BrandMarks.tsx` (new) — Solo CRM's mark and wordmark lifted out of `Rail.tsx`.
+- `electron/renderer/components/shell/Rail.tsx` — the brand block made conditional on `branding:get`; the accessible name moved to the brand container and derived from `workspace.name`.
+- `electron/renderer/components/shell/Rail.css` — `.brand .mark` unscoped to `.mark`; `.wordmark` gained `aspect-ratio: 183 / 33` and `object-fit: contain`; a fill rule for the mark's `svg`/`img`.
+- `electron/renderer/views/WorkspaceSettings.tsx`, `.css` — the sixth `Branding` card: two rows, previews at the rail's own sizes, state lines, Upload…/Replace…/Remove, a per-row refusal message, and a caption composed from `BRANDING_CONTENT_TYPES` and `BRANDING_MAX_BYTES` rather than restating them.
+- `electron/renderer/lib/query-keys.ts` — `queryKeys.branding.all()/current()` and `invalidate.branding`.
+- `Rail.test.tsx`, `Rail.test.ts`, `WorkspaceSettings.test.tsx` — the tests.
 
-**Review:** what `code-review` found and what was done about each finding.
+**The default marks were extracted rather than copied.** The settings preview has
+to show what the rail will actually draw; a second inline copy of the SVG would
+be the "constant re-declared in a second place" defect, and it would drift the
+first time the mark changed. `gradientId` is a **required** prop because the rail
+and the preview mount together and a shared SVG `id` is a duplicate id in one
+document — a real bug avoided by making it impossible to forget.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+**Review:** no blocking findings.
+
+*Mutation-tested, five properties.* The builder pinned three: appending
+`'MUTATION-CHECK'` to the rail's query key → `expected "vi.fn()" to be called 1
+times, but got 2 times`; returning `null` for an `undefined` branding state →
+the first-paint test fails; deleting `aspect-ratio` → the stylesheet assertion
+fails. Independently at merge, two more against `Rail.test.tsx`: crossing the
+slots so the icon renders the logo's `dataUrl` → 2 red; ignoring a custom icon so
+the default always draws → 2 red. Every revert was a targeted edit and left no
+content change.
+
+*The one rewritten assertion is stronger, not weaker.* The accessible name moved
+off the wordmark, because an operator's own image replacing the wordmark would
+take the name with it. The test still asserts **exactly one** accessible name in
+the brand block and still asserts the `.rail-app` name span is absent; only the
+element that owns it changed, and two new cases were added — the workspace name
+overriding the product name, and a whitespace-only workspace name falling back
+rather than leaving an unnamed image.
+
+*Layout shift is pinned in both halves*, which is what the scope's Risks section
+asks for: `absent` and `undefined` take the same branch, so the default paints
+while the query is in flight; and both boxes are fixed in both dimensions with
+`object-fit: contain`. jsdom computes no layout, so the second half is asserted
+against the stylesheet in the existing `Rail.test.ts` carve-out.
+`aspect-ratio: 183 / 33` is the built-in wordmark's own viewBox ratio — the height
+it already rendered at, not a new magic number.
+
+`typecheck`, `lint` and the full `--project=renderer` (51 files, 447 tests) passed
+on the branch and again on the merged tree.
+
+**Deferred — the manual pass, which is most of this task's acceptance:**
+
+Six criteria need a real window and a person, and none of them were faked:
+
+1. Upload an icon and watch the rail's mark change without a reload; upload a
+   logo and watch the wordmark change; Remove each and watch the default return.
+   Screenshots of all three states.
+2. Icon-only and logo-only **in the app** — the independence is covered by tests
+   in both the card and the rail, but the scope asks for it in the app too.
+3. Restart and confirm both images survive.
+4. Choose an `.svg` and read the message naming SVG as unsupported. The render
+   path is tested with a stubbed refusal; the actual wording comes from
+   `writeBrandingSlot`'s sniff and needs a real picker.
+5. No shift or flash between first paint and the query resolving with a custom
+   image set — pinned structurally, but the visual claim needs a window.
+6. Cancel a picker and confirm no error state appears anywhere in the card.
+
+Worth doing in this order: Settings → Branding, upload a PNG icon and watch the
+top-left; upload a **tall, near-square** PNG as the logo, since that is the
+aspect-ratio case actually worth seeing; try an `.svg`; press Escape on a picker;
+restart; Remove each. These belong with
+[T-260828-15](T-260828-15-real-window-qa-pass.md).

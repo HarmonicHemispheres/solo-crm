@@ -30,7 +30,14 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(screen.getByText('Solo CRM')).toBeTruthy()
+    // "the scaffold rendered" — the rail's brand block, which is the first
+    // thing App mounts. It was `getByText` until T-260829-06 deleted the
+    // `.rail-app` name span the mockup carried and T-260829-07 moved the name
+    // onto the brand container, where an operator's own images can replace the
+    // wordmark without the block losing its accessible name. Same claim, read
+    // off the element that now carries it. `workspace.name` is unset in this
+    // harness, so the block falls back to the product name.
+    expect(screen.getByRole('img', { name: 'Solo CRM' })).toBeTruthy()
     expect(queryClientProviderSpy).toHaveBeenCalledWith(queryClient)
   })
 })
