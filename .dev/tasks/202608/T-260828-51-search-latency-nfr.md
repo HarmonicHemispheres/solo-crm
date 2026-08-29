@@ -1,11 +1,11 @@
 ---
 id: T-260828-51
 title: Make search meet its latency budget — the union view cannot be indexed
-status: in-progress
+status: done
 category: data
 plan_ref: P1-06
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -90,3 +90,101 @@ typo-tolerant matching. The palette UI (T-260828-37), which consumes this.
   reproduce the same conditions or the comparison is meaningless.
 - **Doing this while T-260828-37 is in flight.** The palette consumes `searchAll`;
   either land this first or keep the signature stable.
+
+
+---
+
+## Outcome
+
+Merged. Built by a subagent under the build-only process; reviewed and verified
+by the orchestrator at merge, with one documentation gap closed on top.
+
+**Changed:** `electron/main/db/migrations/0003_search_content_table.sql` (new),
+`migrations/index.ts`, `repositories/search.ts`, `search.latency.test.ts` (new),
+`schema.ts`, `migrate.test.ts`, `connection.test.ts`,
+`.dev/decisions/ADR-009-search-content-table.md` (new), and a *superseded in
+part* pointer on ADR-008.
+
+### What was wrong
+
+`search_fts` is external-content and 0002 pointed `content='search_source'` at a
+**view** whose `content_rowid` was the computed expression
+`rowid * 8 + <kind code>`. FTS5 resolves that rowid back to a row for **every
+result it returns**, and SQLite cannot index a computed expression inside a view
+— so every lookup was a full scan of all five source tables, once per returned
+row.
+
+`search_source` is now a real table whose `content_rowid` is an
+`INTEGER PRIMARY KEY`, which in SQLite makes it an alias for the table's own
+rowid: the one key resolved in O(log n) with no index to build. The query plan
+goes from five SCANs to
+`SEARCH search_source USING INTEGER PRIMARY KEY (rowid=?)`.
+
+The union view survives, renamed `search_source_live`, as the single written-down
+definition of the five-table union and the rowid encoding. The migration's
+backfill and `rebuildSearchIndex` both re-derive from it rather than each
+restating the union, so a sixth searchable table still extends one view and one
+trigger set.
+
+### Why not a self-contained FTS5 table
+
+Rejected **on correctness, not speed**, and recorded as ADR-009. SQLite detects
+that an index has drifted from its source only by reading the content relation.
+A self-contained table has no content relation to read, so it would have answered
+a query over a stale index confidently and wrongly instead of raising
+`SQLITE_CORRUPT_VTAB` — and T-260828-36's orphan-row guard, which this task's
+scope required to survive unmodified, asserts exactly that error. Under the
+rejected option that test could not have been kept.
+
+### The measurement, and why it is not the whole test
+
+The builder could not reproduce ADR-008's absolute numbers — same shapes, same
+31,000 rows, same queries, different machine and fixture. Warm medians here:
+union view 7.7–8.1 / 18.7–20.2 / 33.8–37.3 ms for `"acme"*` / `"engage"*` /
+`"a"*`; materialised table 2.9 / 9.3–9.8 / 12.4–14.1 ms. A 2.6–3.0× ratio,
+consistent with ADR-008's, on a machine where **the old shape would also have
+passed the 100 ms budget**.
+
+That is the finding worth keeping: *a latency-only benchmark would have been a
+green light with nothing behind it.* `search.latency.test.ts` therefore asserts
+the query plan as well as the budget, and its header says so. The builder said
+plainly that it could not reproduce the original conditions rather than
+presenting its own numbers as a match.
+
+### Reviewed at merge
+
+Three things checked directly rather than taken from the report:
+
+- **ADR-008's append-only rule holds.** Nothing renumbers a kind code; the
+  `rowid * 8 + <code>` encoding is byte-for-byte 0002's, so every rowid already
+  in the index still means what it meant. The migration rebuilds anyway, because
+  ADR-008 makes *any* change to what `content=` resolves to a full-rebuild
+  change.
+- **The name `search_source` is preserved.** `content='search_source'` is baked
+  into the virtual table's `CREATE` statement in `sqlite_master`, so keeping the
+  name means the virtual table and its inverted index need no drop and recreate.
+- **Atomicity.** `migrate.ts` applies each migration in its own
+  `db.transaction`, so the drop-view / create-table / backfill / retrigger /
+  rebuild sequence is all-or-nothing.
+
+`rebuildSearchIndex` had to grow rather than merely keep working: there are now
+two trigger-maintained derived relations, and rebuilding only the index would
+have faithfully reproduced a drifted content table. It now empties `search_fts`,
+empties `search_source`, re-derives it from `search_source_live` and refills the
+index — one transaction, that order.
+
+**Verified at merge:** `node` + `runtime-boot-node` projects, 28 files / 587
+tests green on the merged tree.
+
+### Closed on top of the merge: a rule that had grown a third exception
+
+AGENTS.md says every table gets a UUID primary key and
+`created_at`/`updated_at`, excepting tables keyed by natural identity —
+`settings` by key, `favicons` by host. `search_source` has none of them, and the
+migration argues correctly that it is not a table of records at all but FTS5's
+content relation, addressed only by `content_rowid` and holding no fact the five
+source tables do not.
+
+That argument lived only in the migration header, where **a future reader
+checking the schema against AGENTS.md would have found an apparent violation and
+"fixed" it.** AGENTS.md now names the exception and points at ADR-009.

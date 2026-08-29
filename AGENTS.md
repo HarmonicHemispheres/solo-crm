@@ -68,7 +68,11 @@ Things that are silently wrong rather than loudly broken:
 - **Every table gets a UUID primary key and `created_at` / `updated_at`** —
   except tables keyed by natural identity (`settings` by key, `favicons` by
   host), see
-  [ADR-002](.dev/decisions/ADR-002-settings-key-value-table.md). Costs
+  [ADR-002](.dev/decisions/ADR-002-settings-key-value-table.md), and
+  `search_source`, which is not a table of records at all but FTS5's content
+  relation — addressed only by `content_rowid`, holding no fact the five source
+  tables do not, and nothing holds a foreign key to it
+  ([ADR-009](.dev/decisions/ADR-009-search-content-table.md)). Costs
   nothing now; makes a later Turso/libSQL sync a drop-in rather than a rewrite.
 - **Hours are derived from `time_entries`.** Without the timelog import, every
   retainer hours-used and effective-rate figure is fiction within two weeks.

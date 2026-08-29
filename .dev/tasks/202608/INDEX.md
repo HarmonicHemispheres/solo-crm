@@ -23,7 +23,6 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
 | ○ open | [T-260828-49](T-260828-49-favicon-fetch-cache.md) | Fetch and cache favicons in main, once per host, never through a third party | 🔗 integration | P1-19 |
 | ○ open | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
-| ◐ in-progress | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | P1-06 |
 
 ### Follow-ups from review
 
@@ -94,3 +93,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | 🗄 data | R-260828-03 |
 | ● done | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | 🎨 ui | R-260828-03 |
 | ● done | [T-260828-53](T-260828-53-wave-d-ui-followups.md) | Restore the focus ring in the sheets, and close wave D UI review findings | 🎨 ui | R-260828-03 |
+| ● done | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | R-260828-03 |
