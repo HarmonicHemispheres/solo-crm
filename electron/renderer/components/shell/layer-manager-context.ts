@@ -17,11 +17,14 @@ export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover'
 
 /**
  * Which create form the generic `sheet` layer is currently holding
- * (T-260828-27). Left undefined by any caller that only needs the layer's
- * open/close mechanism and its own title (T-260828-12's own tests, and
- * anything from before this task) — `LayerManager` falls back to its
- * original placeholder content in that case, so those call sites keep
- * working unchanged. A caller that wants real content passes one of these.
+ * (T-260828-27). A closed union of four, every member of which has a real
+ * form — `LayerManager`'s switch over it is exhaustive, so a sheet with no
+ * content is unrepresentable. It was optional until T-260829-08, and the
+ * six list-view create buttons that never passed it opened a placeholder
+ * shell with a disabled Create button and no fields: no error, no warning,
+ * a plausible sheet with the right title. Making it required — and first,
+ * since a required parameter cannot follow an optional one — moved that
+ * from "everyone must remember" to "the type checker will not compile it".
  */
 export type SheetKind = 'company' | 'person' | 'engagement' | 'todo'
 
@@ -43,14 +46,26 @@ export interface LayerManagerContextValue {
   openLayer: (kind: LayerKind, trigger?: HTMLElement | null) => void
   /** Closes `kind` if open and returns focus to its stored trigger. */
   closeLayer: (kind: LayerKind) => void
-  /** The generic 'sheet' layer's title — see `openSheet`. */
+  /**
+   * The title the currently-open 'sheet' layer was opened with — see
+   * `openSheet`.
+   *
+   * Nothing reads this today: it was the placeholder shell's own
+   * `<Sheet title>`/`aria-label`, and T-260829-08 deleted that shell. Each
+   * of the four real forms hardcodes its own title and `aria-label`, so no
+   * sheet depends on this for its accessible name.
+   */
   sheetTitle: string
-  /** Opens the generic 'sheet' layer with a title (the New menu's Company /
-   * Person / Engagement items each want a different one). A dedicated
+  /** Opens the generic 'sheet' layer holding `kind`'s real form. A dedicated
    * setter rather than overloading `openLayer` with a payload argument that
-   * only one of five layer kinds ever uses. `kind` (T-260828-27) picks which
-   * real form `LayerManager` mounts inside it — see `SheetKind` above. */
-  openSheet: (title: string, trigger?: HTMLElement | null, kind?: SheetKind) => void
+   * only one of five layer kinds ever uses.
+   *
+   * `kind` leads and is required (T-260829-08): it is the argument that
+   * decides which form appears, so it must not be the one that is easiest
+   * to leave off the end — and with a closed union first, two positional
+   * strings swapped by mistake is a type error rather than a form titled
+   * "New person" containing a company's fields. */
+  openSheet: (kind: SheetKind, title: string, trigger?: HTMLElement | null) => void
 }
 
 export const LayerManagerContext = createContext<LayerManagerContextValue | null>(null)

@@ -30,8 +30,14 @@ function Harness() {
   return (
     <div>
       <button onClick={(e) => openLayer('palette', e.currentTarget)}>open-palette</button>
-      <button onClick={(e) => openSheet('New company', e.currentTarget)}>open-sheet</button>
-      <button onClick={(e) => openSheet('New company', e.currentTarget)}>open-sheet-again</button>
+      {/* A real `SheetKind`, not a title alone: `openSheet` requires one
+          (T-260829-08), and the kind-less path these two buttons used to
+          exercise — the placeholder shell with no fields — is gone. These
+          still exist to test the open/close mechanism, so they open the
+          same kind twice; what they assert is stacking and idempotency,
+          not the form's contents. */}
+      <button onClick={(e) => openSheet('company', 'New company', e.currentTarget)}>open-sheet</button>
+      <button onClick={(e) => openSheet('company', 'New company', e.currentTarget)}>open-sheet-again</button>
       <button onClick={(e) => openLayer('log', e.currentTarget)}>open-log</button>
       <button
         onClick={(e) => {
@@ -120,10 +126,14 @@ describe('LayerManager', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true')
   })
 
-  it('opens the generic sheet layer titled by whoever called openSheet', () => {
+  it('opens the sheet layer holding the real form for the kind it was given', () => {
     renderHarness()
     fireEvent.click(screen.getByText('open-sheet'))
-    expect(screen.getByRole('dialog', { name: 'New company' })).toBeTruthy()
+    const dialog = screen.getByRole('dialog', { name: 'New company' })
+    // Not merely "a dialog opened": the placeholder shell this replaced was
+    // also a dialog named 'New company' (T-260829-08). The field is what
+    // separates the real form from it.
+    expect(within(dialog).getByLabelText('Name')).toBeTruthy()
   })
 
   it('is idempotent — opening an already-open layer does not stack a second instance', () => {

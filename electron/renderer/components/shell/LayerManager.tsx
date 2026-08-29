@@ -1,7 +1,4 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Sheet } from '../primitives/Sheet'
-import { EmptyState } from '../primitives/EmptyState'
-import { Button } from '../primitives/Button'
 import { LayerManagerContext, type LayerKind, type LayerManagerContextValue, type SheetKind } from './layer-manager-context'
 import { CommandPalette } from './CommandPalette'
 import { CompanySheet } from '../sheets/CompanySheet'
@@ -46,10 +43,11 @@ const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'she
 export function LayerManager({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<readonly LayerKind[]>([])
   const [sheetTitle, setSheetTitle] = useState('')
-  // Which real form (T-260828-27) the generic 'sheet' layer is holding —
-  // undefined for any caller that only passed a title, which keeps this
-  // file's own placeholder content (see the `sheet` overlay below).
-  const [sheetKind, setSheetKind] = useState<SheetKind | undefined>(undefined)
+  // Which real form (T-260828-27) the generic 'sheet' layer is holding.
+  // Null only before the first `openSheet` — every caller passes a kind
+  // (T-260829-08 made it required), so there is no longer a state in which
+  // the layer is open holding nothing.
+  const [sheetKind, setSheetKind] = useState<SheetKind | null>(null)
   const triggers = useRef<Partial<Record<LayerKind, HTMLElement | null>>>({})
 
   // A ref mirror of `stack` so the document-level listeners below (each
@@ -93,7 +91,7 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [])
 
   const openSheet = useCallback(
-    (title: string, trigger?: HTMLElement | null, kind?: SheetKind) => {
+    (kind: SheetKind, title: string, trigger?: HTMLElement | null) => {
       // Matches `openLayer`'s own idempotency contract (see its comment: "a
       // held or repeated ⌘K [doing] nothing the first press didn't already
       // do") — extended here to the *content* a second call would pick,
@@ -174,14 +172,17 @@ export function LayerManager({ children }: { children: ReactNode }) {
     },
     {
       kind: 'sheet',
-      // T-260828-27 fills in the four real forms; a caller that opened
-      // 'sheet' with a title alone (no `kind` — T-260828-12's own tests, and
-      // anything from before this task) still gets the original empty shell
-      // below, unchanged.
+      // T-260828-27's four real forms, and nothing else: `SheetKind` is a
+      // closed union of four and `openSheet` requires one, so this switch is
+      // exhaustive and a sheet holding no form is unrepresentable. The
+      // placeholder shell that used to be this switch's `default` — a
+      // disabled Create button over a line of prose deferring the form to
+      // P1-08 — is what the six list-view create buttons were opening
+      // (T-260829-08); deleting it is what stops a seventh from doing so.
       //
-      // The four real forms are mounted only while `isOpen('sheet')` —
-      // unlike the fallback `<Sheet open={...}>` below, which stays mounted
-      // and toggles its own `open` prop. Each form owns real field state
+      // The four real forms are mounted only while `isOpen('sheet')`, rather
+      // than staying mounted and toggling `Sheet`'s own `open` prop. Each
+      // form owns real field state
       // (company's `kind` chip, engagement's shared-vs-model fields, …);
       // mounting fresh on every open is what resets that state to blank
       // without an effect that sets state on every open (React's own
@@ -191,8 +192,8 @@ export function LayerManager({ children }: { children: ReactNode }) {
       // already does when `open` flips false (`if (!open) return null`, no
       // exit transition to preserve).
       node: (() => {
+        if (!sheetKind || !isOpen('sheet')) return null
         const sheetOnClose = () => closeLayer('sheet')
-        if (sheetKind && !isOpen('sheet')) return null
         switch (sheetKind) {
           case 'company':
             return <CompanySheet onClose={sheetOnClose} />
@@ -202,29 +203,6 @@ export function LayerManager({ children }: { children: ReactNode }) {
             return <EngagementSheet onClose={sheetOnClose} />
           case 'todo':
             return <TodoSheet onClose={sheetOnClose} />
-          default:
-            return (
-              <Sheet
-                open={isOpen('sheet')}
-                onClose={sheetOnClose}
-                closeOnEscape={false}
-                title={sheetTitle || 'Create'}
-                aria-label={sheetTitle || 'Create'}
-                footerNote="saved locally"
-                footer={
-                  <>
-                    <Button variant="ghost" onClick={sheetOnClose}>
-                      Cancel
-                    </Button>
-                    <Button variant="primary" disabled>
-                      Create
-                    </Button>
-                  </>
-                }
-              >
-                <EmptyState>This form ships with its own task (P1-08).</EmptyState>
-              </Sheet>
-            )
         }
       })()
     },
