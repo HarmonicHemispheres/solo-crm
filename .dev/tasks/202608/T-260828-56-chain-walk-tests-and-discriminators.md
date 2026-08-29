@@ -1,7 +1,7 @@
 ---
 id: T-260828-56
 title: Test the chain walk directly, and stop reporting a cycle as depth exceeded
-status: open
+status: in-progress
 category: data
 plan_ref: 
 created: 2026-08-28

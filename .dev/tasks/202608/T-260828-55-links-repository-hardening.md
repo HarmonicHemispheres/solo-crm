@@ -1,7 +1,7 @@
 ---
 id: T-260828-55
 title: Store the URL that was validated, and match link hosts on a boundary
-status: open
+status: in-progress
 category: data
 plan_ref: P1-18
 created: 2026-08-28

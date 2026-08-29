@@ -22,10 +22,23 @@
 //   - Review is the orchestrator's, in the main session, reading these diffs.
 //   - Merges are sequential and need judgement about findings.
 //
-// Keep the list to about four. Six concurrent builders on eight cores drove the
-// median test run from ~20s to 44s and failed three healthy branches at their
-// gate; past four, more parallelism stopped buying throughput before it stopped
-// costing it.
+// How many at once: fill the harness cap, which is min(16, cores - 2) — six on
+// an eight-core machine. Agents past that queue rather than run, so a list of
+// fifteen is not fifteen builders, it is six builders and nine waits.
+//
+// An earlier version of this comment said "about four", from a measurement that
+// no longer describes this system: six builders drove the median test run from
+// ~20s to 44s and failed three healthy branches at their gate. Both inputs to
+// that number have since changed. Builders no longer run the full suite at all
+// (the orchestrator gates once on the merged tree), and T-260828-54 caps vitest
+// to two workers inside a worktree, so six agents now peak at 12 workers on 8
+// cores instead of 28. The cap that bound then does not bind now.
+//
+// What binds instead is file ownership. Two builders editing one file produce a
+// conflict the orchestrator resolves by hand, and the loser's tests were written
+// against a tree that no longer exists. Group a wave by disjoint files, not by
+// how many agents fit — a wave of six touching six file sets beats a wave of six
+// where two collide.
 
 export const meta = {
   name: 'run-tasks',
@@ -57,7 +70,7 @@ if (!tasks.length) {
   return { built: [], blocked: [], error: 'no tasks' }
 }
 if (tasks.length > 6) {
-  log(`WARNING: ${tasks.length} tasks dispatched at once. Past about four, contention makes every agent slower.`)
+  log(`NOTE: ${tasks.length} tasks dispatched; the harness runs min(16, cores - 2) at a time and queues the rest. Check they own disjoint files before assuming this is throughput.`)
 }
 
 // The standing rules live in one file so they cannot drift between waves. Read
