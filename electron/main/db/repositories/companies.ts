@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { z } from 'zod'
+import { ChainCycleError, ChainDepthExceededError, MAX_CHAIN_DEPTH, walkChain } from '../chain-walk'
 import { nowTimestamp } from '../../../shared/format'
 import {
   COMPANY_KINDS,
@@ -242,6 +243,113 @@ function getCompanyRow(db: Database.Database, id: string): CompanyRow | undefine
 }
 
 // ---------------------------------------------------------------------------
+// Billed-via / introduced-by cycle guard (T-260828-42)
+//
+// The database `CHECK` (`SELF_REFERENCE_CHECK_NAME` above) blocks only a
+// direct self-reference on `billed_via_company_id`, and nothing at all on
+// `introduced_by_company_id` — SQLite cannot express reachability in a
+// `CHECK`. A two-step cycle passes both: create B billed via A, then update A
+// to be billed via B, and the pointer chain is A -> B -> A. This walks the
+// EXISTING chain from the proposed target, using the same `walkChain`
+// traversal `seed/index.ts`'s `orderCompaniesForInsert` uses (../chain-walk),
+// and refuses before the write if that chain would reach the row being
+// written.
+//
+// Deliberately not exported and not a `getBilledCompanies()`-style reader:
+// per this file's header comment and T-260828-20's Risks, nothing here walks
+// the pointer as if companies had parents outside of this one refusal check.
+// ---------------------------------------------------------------------------
+
+type ChainColumn = 'billed_via_company_id' | 'introduced_by_company_id'
+
+interface ChainGuardSpec {
+  readonly column: ChainColumn
+  readonly fieldLabel: 'billedViaCompanyId' | 'introducedByCompanyId'
+  /** Matches the existing `SELF_REFERENCE_CHECK_NAME` refusal's `reason` for `billed_via_company_id` (T-260828-20) — preserved so a caller that already switches on it does not see the reason change out from under it. `introduced_by_company_id` has no such precedent (no database `CHECK` ever guarded it), so it gets its own. */
+  readonly selfReferenceReason: string
+  readonly transitiveCycleReason: string
+  readonly depthExceededReason: string
+}
+
+const BILLED_VIA_CHAIN_GUARD: ChainGuardSpec = {
+  column: 'billed_via_company_id',
+  fieldLabel: 'billedViaCompanyId',
+  selfReferenceReason: 'self-reference',
+  transitiveCycleReason: 'billed-via-cycle',
+  depthExceededReason: 'billed-via-chain-depth-exceeded'
+}
+
+const INTRODUCED_BY_CHAIN_GUARD: ChainGuardSpec = {
+  column: 'introduced_by_company_id',
+  fieldLabel: 'introducedByCompanyId',
+  selfReferenceReason: 'introduced-by-cycle',
+  transitiveCycleReason: 'introduced-by-cycle',
+  depthExceededReason: 'introduced-by-chain-depth-exceeded'
+}
+
+/**
+ * Refuses if writing `targetId` into `spec.column` on the row `selfId` (named
+ * `selfLabel` for the message — `createCompany` has no row yet to read a name
+ * back from, so it passes the input's own `name`) would make that column's
+ * chain loop back to `selfId`. Runs before the write, in the same style
+ * `deleteCompany`'s `refuseIfReferenced` checks before deleting — a check,
+ * not a catch-and-translate of a constraint SQLite has no way to express.
+ *
+ * A no-op when `targetId` is `null`/`undefined` — callers only invoke this
+ * when the column is actually part of the patch AND non-null (this file's
+ * Risks: running a recursive query behind every company rename would be the
+ * tempting, wrong default).
+ */
+function assertNoChainCycle(db: Database.Database, spec: ChainGuardSpec, selfId: string, selfLabel: string, targetId: string | null): void {
+  if (!targetId) return
+
+  if (targetId === selfId) {
+    throw new RefusalError(
+      `${spec.fieldLabel} cannot reference "${selfLabel}"'s own id.`,
+      { reason: spec.selfReferenceReason }
+    )
+  }
+
+  const getParentId = (id: string): string | null => {
+    const row = db.prepare(`SELECT ${spec.column} AS parent FROM companies WHERE id = ?`).get(id) as
+      | { parent: string | null }
+      | undefined
+    return row?.parent ?? null
+  }
+
+  let chain: readonly string[]
+  try {
+    chain = walkChain(targetId, getParentId, (id) => id, MAX_CHAIN_DEPTH)
+  } catch (error) {
+    if (error instanceof ChainCycleError || error instanceof ChainDepthExceededError) {
+      // The EXISTING chain from the proposed target already loops or runs
+      // past MAX_CHAIN_DEPTH without resolving, independent of this write —
+      // a pre-existing bad chain already sitting in the database (this
+      // task's Risks: bounded so that case cannot hang the check itself).
+      // Refuse rather than let the walk (or a later one) run unbounded.
+      throw new RefusalError(
+        `${spec.fieldLabel} could not be set: the existing ${spec.column} chain starting from the ` +
+          `proposed company already exceeds ${MAX_CHAIN_DEPTH} steps without resolving, which means it ` +
+          'already loops somewhere. Refusing rather than risking a hang; that pre-existing chain needs ' +
+          'fixing on its own before this write can be verified safe.',
+        { reason: spec.depthExceededReason }
+      )
+    }
+    throw error
+  }
+
+  if (chain.includes(selfId)) {
+    const targetRow = getCompanyRow(db, targetId)
+    const targetLabel = targetRow?.name ?? targetId
+    throw new RefusalError(
+      `${spec.fieldLabel} cannot be set to "${targetLabel}": that would make "${selfLabel}"'s ${spec.column} ` +
+        `chain loop back to itself through "${targetLabel}".`,
+      { reason: spec.transitiveCycleReason }
+    )
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
@@ -266,6 +374,13 @@ export function createCompany(db: Database.Database, input: unknown): Company {
   const id = randomUUID()
   const timestamp = nowTimestamp()
 
+  if (parsed.billedViaCompanyId) {
+    assertNoChainCycle(db, BILLED_VIA_CHAIN_GUARD, id, parsed.name, parsed.billedViaCompanyId)
+  }
+  if (parsed.introducedByCompanyId) {
+    assertNoChainCycle(db, INTRODUCED_BY_CHAIN_GUARD, id, parsed.name, parsed.introducedByCompanyId)
+  }
+
   const columns = ['id', ...FIELD_SPECS.map((spec) => spec.column), 'created_at', 'updated_at']
   const placeholders = columns.map(() => '?').join(', ')
   const values: unknown[] = [id]
@@ -289,8 +404,16 @@ export function createCompany(db: Database.Database, input: unknown): Company {
 export function updateCompany(db: Database.Database, id: string, patch: unknown): Company {
   const parsed = parseInput(updateCompanyInputSchema, patch)
 
-  if (!getCompanyRow(db, id)) {
+  const existing = getCompanyRow(db, id)
+  if (!existing) {
     throw new NotFoundError('Company', id)
+  }
+
+  if ('billedViaCompanyId' in parsed && parsed.billedViaCompanyId) {
+    assertNoChainCycle(db, BILLED_VIA_CHAIN_GUARD, id, existing.name, parsed.billedViaCompanyId)
+  }
+  if ('introducedByCompanyId' in parsed && parsed.introducedByCompanyId) {
+    assertNoChainCycle(db, INTRODUCED_BY_CHAIN_GUARD, id, existing.name, parsed.introducedByCompanyId)
   }
 
   const setClauses: string[] = []
