@@ -246,7 +246,13 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         expect(result.status).toBe(0)
 
         const generated = readdirSync(outDir).filter((f) => f.endsWith('.sql') && f !== '0001_init.sql')
-        expect(generated).toHaveLength(1)
+        expect(
+          generated,
+          'drizzle-kit generated no migration. The usual cause is a table renamed in schema.ts with no ' +
+            'matching `ALTER TABLE … RENAME TO` in a checked-in migration: drizzle sees one table gone and ' +
+            'another arrived, opens its interactive "created or renamed?" prompt, and aborts without a TTY. ' +
+            `Renames applied to the base snapshot were: ${JSON.stringify(renames)}. drizzle-kit said: ${result.stdout}${result.stderr}`
+        ).toHaveLength(1)
         // Normalize line endings: git's autocrlf checks the committed file out
         // with CRLF on Windows while drizzle-kit always emits LF.
         const delta = readFileSync(join(outDir, generated[0]), 'utf-8').replace(/\r\n/g, '\n')
