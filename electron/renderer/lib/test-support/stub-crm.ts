@@ -187,5 +187,6 @@ const STUB_SETTINGS_SNAPSHOT = {
   'appearance.motion': true,
   'appearance.density': 'comfortable' as const,
   'view.companies.mode': 'card' as const,
-  'view.people.mode': 'card' as const
+  'view.people.mode': 'card' as const,
+  'view.todos.groupBy': 'date' as const
 }

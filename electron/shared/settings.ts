@@ -46,6 +46,18 @@ export const VIEW_PRESENTATION_MODES = ['card', 'list'] as const
 export type ViewPresentationMode = (typeof VIEW_PRESENTATION_MODES)[number]
 
 /**
+ * Todos' by-date / by-client partition (T-260828-33's Scope: "The grouping
+ * choice in the ViewHeader, persisted per view (§6.13, T-260828-25)") — the
+ * same "remembered per view" principle §6.13 states for Companies/People's
+ * card/list toggle, applied to a different kind of per-view choice, so it
+ * gets its own vocabulary rather than being shoehorned into
+ * `VIEW_PRESENTATION_MODES` (a todo list isn't a card/list presentation
+ * choice, it's a partition of the same rows).
+ */
+export const TODO_GROUP_BY_MODES = ['date', 'client'] as const
+export type TodoGroupByMode = (typeof TODO_GROUP_BY_MODES)[number]
+
+/**
  * The pull-only sources §6.11's "integration toggles" cover. Deliberately
  * excludes the timelog CSV import (a folder path, not an enable switch in
  * the mockup) and Notion/Drive (§7: "Pulls Nothing. Links only." — no
@@ -121,7 +133,12 @@ export const SETTINGS_REGISTRY = {
   // guidance ("cards for under ~20 records") holds for a workspace just
   // getting started.
   'view.companies.mode': spec(z.enum(VIEW_PRESENTATION_MODES), 'card'),
-  'view.people.mode': spec(z.enum(VIEW_PRESENTATION_MODES), 'card')
+  'view.people.mode': spec(z.enum(VIEW_PRESENTATION_MODES), 'card'),
+
+  // T-260828-33's Scope: "The grouping choice in the ViewHeader, persisted
+  // per view." 'date' is the default — "what's owed now" (Overdue/Today)
+  // is the more common way to open the list than "who do I owe".
+  'view.todos.groupBy': spec(z.enum(TODO_GROUP_BY_MODES), 'date')
 } as const
 
 export type SettingKey = keyof typeof SETTINGS_REGISTRY

@@ -2,6 +2,7 @@ import { Navigate, Outlet, Route, Routes } from 'react-router'
 import { ShellLayout } from './components/shell/Shell'
 import { Companies } from './views/Companies'
 import { CompanyDetail } from './views/CompanyDetail'
+import { Todos } from './views/Todos'
 
 /**
  * A minimal stand-in for a view body — this task's scope is the shell, not
@@ -23,7 +24,7 @@ export function AppRoutes() {
     <Routes>
       <Route element={<ShellLayout />}>
         <Route index element={<ViewPlaceholder title="Today" />} />
-        <Route path="todos" element={<ViewPlaceholder title="Todos" />} />
+        <Route path="todos" element={<Todos />} />
         <Route path="revenue" element={<ViewPlaceholder title="Revenue" />} />
         <Route path="activity" element={<ViewPlaceholder title="Activity" />} />
         <Route path="companies" element={<Companies />} />

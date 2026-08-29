@@ -13,6 +13,8 @@ import {
   type SettingKey,
   type SettingsSnapshot,
   type SettingValue,
+  type TodoGroupByMode,
+  TODO_GROUP_BY_MODES,
   type ViewPresentationMode,
   VIEW_PRESENTATION_MODES
 } from '../../../shared/settings'
@@ -52,9 +54,19 @@ export {
   INTEGRATION_SOURCES,
   SETTINGS_KEYS,
   SETTINGS_REGISTRY,
+  TODO_GROUP_BY_MODES,
   VIEW_PRESENTATION_MODES
 }
-export type { CurrencyCode, DensityMode, IntegrationSource, SettingKey, SettingsSnapshot, SettingValue, ViewPresentationMode }
+export type {
+  CurrencyCode,
+  DensityMode,
+  IntegrationSource,
+  SettingKey,
+  SettingsSnapshot,
+  SettingValue,
+  TodoGroupByMode,
+  ViewPresentationMode
+}
 
 // ---------------------------------------------------------------------------
 // Key validation
