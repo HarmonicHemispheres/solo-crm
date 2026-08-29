@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Outlet, useLocation } from 'react-router'
 import { useGlobalShortcuts } from '../../hooks/useGlobalShortcuts'
+import { useMotionAttribute } from '../../hooks/useMotionAttribute'
+import { ipcQueryFn } from '../../lib/ipc'
+import { queryKeys } from '../../lib/query-keys'
 import { Rail } from './Rail'
 import { Topbar } from './Topbar'
 import './Shell.css'
@@ -10,8 +14,25 @@ import './Shell.css'
  * routed view body (`<main id="view" class="view">`). Registers ⌘K/⌘L once
  * here (`useGlobalShortcuts`) so every route gets them for free rather than
  * each view wiring its own listener.
+ *
+ * Also applies `appearance.motion` here (T-260828-38 review), not only in
+ * `WorkspaceSettings.tsx`: `ShellLayout` is the one component every route
+ * mounts under (`routes.tsx` wraps the whole tree in it), and the app boots
+ * on `/today` — a route that may never visit Settings in a given session.
+ * Before this, `useMotionAttribute`'s only call site was inside the Settings
+ * view itself, so turning motion off, restarting, and landing on `/today`
+ * showed animation again while the switch still read "off": the settings
+ * page appearing to work and not, the exact failure this task's Risks
+ * section names. Reading the same `settings:getAll` snapshot here — the
+ * query key `queryKeys.settings.list()` is shared, so this and
+ * `WorkspaceSettings.tsx`'s own query dedupe to one request/cache entry, not
+ * two — means the attribute is correct the moment the shell mounts,
+ * regardless of which route that is.
  */
 export function ShellLayout() {
+  const motionQuery = useQuery({ queryKey: queryKeys.settings.list(), queryFn: ipcQueryFn('settings:getAll') })
+  useMotionAttribute(motionQuery.data?.['appearance.motion'])
+
   const [railOpen, setRailOpen] = useState(false)
   const location = useLocation()
 

@@ -1,6 +1,6 @@
 /*
  * `/workspace/settings` (T-260828-38). `.settings-grid`, `.setrow`,
- * `.switch`, `.steps`, `.stepb`, `.kbdx`, `.inp`/select are transcribed from
+ * `.switch`, `.steps`, `.stepb`, `.kbdx` are transcribed from
  * planning/solo-crm-mockup.html (lines ~248-251, ~430-444) — none of them had
  * a home yet (Toggle.tsx's own header: the mockup's `.switch` on/off control
  * "is used in exactly one view and stays there", i.e. this one, so it is
@@ -10,6 +10,14 @@
  * view eagerly alongside this one so the rule is always present, and a
  * second copy would just be a maintenance hazard the first view didn't have
  * to accept.
+ *
+ * `.inp` itself is NOT redeclared globally either (review finding): the
+ * global class already lives in components/sheets/fields.css at 9px 11px
+ * padding, consumed by every create sheet, and a second global `.inp` here
+ * would race it for which stylesheet the bundler emits last. The mockup's
+ * own resolution — a global `.inp` with a per-surface override — is what
+ * this scopes to: only the padding this view's tighter rows want, scoped
+ * under `.settings-grid` so it touches nothing outside this page.
  */
 
 .settings-grid {
@@ -19,26 +27,13 @@
   align-items: start;
 }
 
-/* ── inputs — mockup lines ~248-251, never ported before this view needed
-   one. Applied via className="inp" to both <input> and <select> here (the
-   mockup's own bare `select` element selector isn't needed alongside it —
-   every select in this view already carries the class). ── */
+/* ── inputs — mockup lines ~248-251. The global `.inp` (components/sheets/
+   fields.css) already gives every field its border, background, radius and
+   focus ring; this view's rows are tighter than a create sheet's, so it
+   overrides only the padding, scoped so nothing outside this page sees it. ── */
 
-.inp {
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-9);
+.settings-grid .inp {
   padding: 5px 9px;
-  color: var(--papyrus);
-  font-family: inherit;
-  font-size: 13.5px;
-  outline: none;
-  transition: border-color var(--motion-hover);
-}
-
-.inp:focus {
-  border-color: var(--verdigris);
 }
 
 /* ── on/off rows — mockup lines ~430-438 ── */

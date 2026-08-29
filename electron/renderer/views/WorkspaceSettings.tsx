@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../components/primitives/Card'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
@@ -8,6 +8,8 @@ import { EmptyState } from '../components/primitives/EmptyState'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { GLOBAL_SHORTCUTS } from '../hooks/useGlobalShortcuts'
+import { useMotionAttribute } from '../hooks/useMotionAttribute'
+import { formatShortcut } from '../lib/platform'
 import { COMPANY_KINDS, type CompanyKind } from '../../shared/companies'
 import {
   CURRENCY_CODES,
@@ -247,8 +249,25 @@ const KIND_VARIANT: Record<CompanyKind, TagVariant> = {
 
 const CADENCE_STEPS = [7, 14, 30, 90] as const
 
-function cadenceKey(kind: CompanyKind): SettingKey {
-  return `cadence.defaultDays.${kind}` as SettingKey
+/**
+ * The one place `cadence.defaultDays.<kind>` keys are composed, as a literal
+ * map rather than a template-literal function — ADR-002 rule 3 names a key
+ * built at a call site a defect outright ("it makes what settings exist
+ * unanswerable by grep"), and Companies.tsx's `MODE_SETTING_KEY` const is
+ * the merged precedent for declaring one instead. A literal here also drops
+ * the `as SettingKey` cast the function version needed: `tsc` proves each
+ * value against the `SettingKey` union on its own, and — the direction that
+ * actually matters — a `cadence.defaultDays.*` key renamed or dropped from
+ * `SETTINGS_REGISTRY` now fails this file to compile instead of silently
+ * reading `undefined` from `snapshot` and writing a key the repository
+ * rejects.
+ */
+const CADENCE_SETTING_KEY: Record<CompanyKind, SettingKey> = {
+  client: 'cadence.defaultDays.client',
+  end_client: 'cadence.defaultDays.end_client',
+  prospect: 'cadence.defaultDays.prospect',
+  advisory: 'cadence.defaultDays.advisory',
+  channel: 'cadence.defaultDays.channel'
 }
 
 function CadenceCard({
@@ -262,7 +281,7 @@ function CadenceCard({
     <Card>
       <Card.Header title="Default cadence" actions={<span className="meta">days between touches</span>} />
       {COMPANY_KINDS.map((kind) => {
-        const key = cadenceKey(kind)
+        const key = CADENCE_SETTING_KEY[kind]
         const value = snapshot[key] as number
         return (
           <div className="setrow" key={kind}>
@@ -310,8 +329,11 @@ const INTEGRATION_NOTE: Record<IntegrationSource, string> = {
   gmail: 'Last-contacted timestamp only, no message bodies'
 }
 
-function integrationKey(source: IntegrationSource): SettingKey {
-  return `integrations.${source}.enabled` as SettingKey
+/** Same reasoning as `CADENCE_SETTING_KEY` above — a declared literal map, no call-site key composition, no cast. */
+const INTEGRATION_SETTING_KEY: Record<IntegrationSource, SettingKey> = {
+  stripe: 'integrations.stripe.enabled',
+  googleCalendar: 'integrations.googleCalendar.enabled',
+  gmail: 'integrations.gmail.enabled'
 }
 
 function IntegrationsCard({
@@ -325,7 +347,7 @@ function IntegrationsCard({
     <Card>
       <Card.Header title="Integrations" count="pull-only" />
       {INTEGRATION_SOURCES.map((source) => {
-        const key = integrationKey(source)
+        const key = INTEGRATION_SETTING_KEY[source]
         return (
           <SettingSwitch
             key={source}
@@ -410,7 +432,7 @@ function ShortcutsCard() {
       {GLOBAL_SHORTCUTS.map((shortcut) => (
         <div className="field" key={shortcut.key}>
           <span className="k">
-            <span className="kbdx">⌘{shortcut.key.toUpperCase()}</span>
+            <span className="kbdx">{formatShortcut(shortcut.key)}</span>
           </span>
           <span className="v">{shortcut.label}</span>
         </div>
@@ -423,32 +445,6 @@ function ShortcutsCard() {
       </div>
     </Card>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Motion — the in-app override for `appearance.motion`, mirroring the OS
-// `prefers-reduced-motion` effect base.css already handles centrally. Writes
-// a `data-motion` attribute to the document root rather than a component
-// style: base.css's rule targets that attribute globally (every view, not
-// just this one), and no cleanup runs on unmount — the setting is a
-// workspace-wide preference, not something scoped to this page being open.
-// Known gap: a session that never visits this view before another one
-// renders sees the OS default rather than a previously-saved "off" until
-// this effect has run once — closing that needs the same read to happen at
-// the app shell (App.tsx/Shell.tsx), which this task's Touches does not
-// include; noted in the run's report as a fast-follow rather than expanded
-// into here.
-// ---------------------------------------------------------------------------
-
-function useMotionAttribute(motionOn: boolean | undefined) {
-  useEffect(() => {
-    if (motionOn == null) return
-    if (motionOn) {
-      document.documentElement.removeAttribute('data-motion')
-    } else {
-      document.documentElement.setAttribute('data-motion', 'off')
-    }
-  }, [motionOn])
 }
 
 function SettingsGlyph() {

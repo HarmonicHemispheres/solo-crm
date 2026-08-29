@@ -5,6 +5,7 @@ import { WorkspaceSettings } from './WorkspaceSettings'
 import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import { GLOBAL_SHORTCUTS } from '../hooks/useGlobalShortcuts'
+import { formatShortcut } from '../lib/platform'
 import { SETTINGS_KEYS, type SettingsSnapshot } from '../../shared/settings'
 import type { SettingEntry } from '../../shared/ipc-types'
 
@@ -156,6 +157,40 @@ describe('WorkspaceSettings', () => {
     )
   })
 
+  it('each integration switch reflects its own stored value, not just its presence', async () => {
+    // DEFAULT_SNAPSHOT stores Stripe/Calendar on and Gmail off — a real,
+    // mixed snapshot. `checked={snapshot[key]}` replaced with `checked={true}`
+    // (the reviewer's mutant) renders every switch on regardless of what is
+    // stored; the presence-only assertions elsewhere in this file don't
+    // notice, because they only check the switch exists. This does.
+    renderSettings()
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Stripe' })).toBeTruthy())
+
+    expect(screen.getByRole('switch', { name: 'Stripe' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('switch', { name: 'Google Calendar' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('switch', { name: 'Gmail' }).getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('the cadence stepper marks only the stored default as pressed, not every step or none', async () => {
+    // DEFAULT_SNAPSHOT: client -> 7, channel -> 30. `aria-pressed={step ===
+    // value}` replaced with `false` (the reviewer's mutant) leaves every
+    // stepper button unpressed; nothing before this asserted the pressed
+    // button matched what is actually stored, only that clicking one issues
+    // the right settings:set call.
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Client')).toBeTruthy())
+
+    const clientRow = screen.getByText('Client').closest('.setrow') as HTMLElement
+    expect(within(clientRow).getByRole('button', { name: '7' }).getAttribute('aria-pressed')).toBe('true')
+    for (const other of ['14', '30', '90']) {
+      expect(within(clientRow).getByRole('button', { name: other }).getAttribute('aria-pressed')).toBe('false')
+    }
+
+    const channelRow = screen.getByText('Channel').closest('.setrow') as HTMLElement
+    expect(within(channelRow).getByRole('button', { name: '30' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(channelRow).getByRole('button', { name: '7' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('states pull-only in the rendered output, not only in source', async () => {
     renderSettings()
     await waitFor(() => expect(screen.getByText('Integrations')).toBeTruthy())
@@ -202,13 +237,19 @@ describe('WorkspaceSettings', () => {
     renderSettings()
     await waitFor(() => expect(screen.getByText('Shortcuts')).toBeTruthy())
     for (const shortcut of GLOBAL_SHORTCUTS) {
-      expect(screen.getByText(`⌘${shortcut.key.toUpperCase()}`)).toBeTruthy()
+      // Rendered via the same platform-derived glyph the component uses
+      // (lib/platform.ts) rather than a hardcoded ⌘ — jsdom's navigator
+      // reads as non-Mac, matching the one platform this app ships on
+      // (package.json builds only a Windows NSIS target), so this is
+      // 'Ctrl+K'/'Ctrl+L', not the Mac-only glyph a hardcoded assertion
+      // would have hidden the same bug behind (T-260828-38 review).
+      expect(screen.getByText(formatShortcut(shortcut.key))).toBeTruthy()
       expect(screen.getByText(shortcut.label)).toBeTruthy()
     }
     // Pinned count, not just presence: a shortcut removed from the hook
     // without a matching removal here would otherwise still pass every
     // assertion above.
-    expect(screen.getAllByText(/^⌘[A-Z]$/)).toHaveLength(GLOBAL_SHORTCUTS.length)
+    expect(screen.getAllByText(/^(⌘|Ctrl\+)[A-Z]$/)).toHaveLength(GLOBAL_SHORTCUTS.length)
   })
 
   it('every switch has role="switch" and an accessible name, and every stepper button is a real, keyboard-reachable button', async () => {
