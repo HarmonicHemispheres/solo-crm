@@ -51,25 +51,37 @@ A timeout may move **only** with a measured duration in a comment beside it.
 
 ## How to run the checks
 
-The test suite is ~62% of all agent wall-clock in this project and it slows down
-for every concurrent agent. What follows changes nothing about *what* is
-checked — only how many times, and how.
+**You are not the gate.** The orchestrator runs the full suite once, on the
+merged tree, after every task in the wave has landed. Your job is to know that
+*your own change* works — not to prove the whole repository is green, which you
+cannot do anyway, because the other branches in this wave are not in your tree.
 
-**While iterating**, run only what covers your change:
+The suite is ~62% of all agent wall-clock in this project and it slows down for
+every concurrent agent. Six agents each running the full suite is six times the
+cost for less information than one run on the merged result.
 
-```
-node_modules/.bin/vitest run path/to/thing.test.ts     # one file
-npm run test:unit                                       # the fast pool
-```
-
-**Once, at the end, before reporting**, run the full gate:
+**So run only what covers what you touched:**
 
 ```
-npm run typecheck && npm run lint && npm test && npm run check:index
+node_modules/.bin/vitest run path/to/thing.test.ts     # the files you changed
+node_modules/.bin/vitest run electron/main/db          # a directory
+npm run test:unit                                       # the fast pool, if broad
 ```
 
-`npm test` runs **two** invocations — a fast pool, then a serial runtime-boot
-pool. Read **both** summaries; the last alone is only the 5-file boot pool.
+**Before you report, run these three — they are cheap and they are yours:**
+
+```
+npm run typecheck
+npm run lint
+node_modules/.bin/vitest run <every test file your diff touches or affects>
+```
+
+Typecheck and lint are whole-tree and fast, and a type error in your branch is
+unambiguously yours. Do **not** run `npm test` — that is the orchestrator's gate,
+it takes ~100s, and running it here tells you about code you did not write.
+
+If you genuinely cannot tell which tests cover your change, say so in your
+report rather than falling back to the whole suite.
 
 **Never run bare `npx vitest run`.** With no project filter it runs all five
 projects including the serial Electron pools — 179 such calls cost 128 minutes

@@ -48,6 +48,16 @@ notice, not once per merge.
 them in when the diff touches IPC, the preload bridge, integration credentials,
 the filesystem, or the data model.
 
+**`security-review` runs in its own session, over the accumulated surface —
+not inside a run, per diff.** A per-diff security pass sees one channel at a
+time and cannot see the thing that actually matters: what the whole boundary now
+permits. The URL-scheme gap on `companies.website` was found that way, by a
+reviewer looking at one field and naming both its sinks; the same reviewer could
+not have told you whether every other string crossing IPC had the same gap.
+Batch it, give it the whole `electron/main/ipc/` and `preload/` surface plus
+every integration, and run it when a wave has landed rather than while it is
+still moving.
+
 ## Where a task's record lives
 
 **One task, one file, whole lifecycle.** The scope is written up front and the
