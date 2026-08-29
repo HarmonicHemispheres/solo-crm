@@ -37,6 +37,8 @@ import { getActivity, listActivity, logActivity } from '../db/repositories/activ
 import { searchAll } from '../db/repositories/search'
 import { addLink, deleteLink, listLinks, updateLink } from '../db/repositories/links'
 import { getFavicon } from '../favicons'
+import { chooseBrandingImage, getBrandingSlotState, getBrandingSnapshot } from '../branding'
+import { clearBrandingSlot } from '../db/repositories/branding'
 import { getAllSettings, getSetting, resetSetting, setSetting } from '../db/repositories/settings'
 import type { SettingKey } from '../db/repositories/settings'
 import { RefusalError, RepositoryError } from '../db/repositories/errors'
@@ -110,20 +112,45 @@ export function defineChannel<Req extends z.ZodTypeAny, Res extends z.ZodTypeAny
  * never do — so the field is omitted, not sent as `undefined`, for either
  * of those two.
  */
-function runMutation<Data>(
-  fn: () => Data
-): { ok: true; data: Data } | { ok: false; error: { code: RepositoryErrorCode; message: string; blocker?: RepositoryErrorBlocker } } {
+type MutationFailure = {
+  ok: false
+  error: { code: RepositoryErrorCode; message: string; blocker?: RepositoryErrorBlocker }
+}
+
+/** The catch half, shared by the sync and async wrappers so the two cannot translate a refusal differently. Rethrows anything that is not a `RepositoryError`. */
+function mutationFailure(error: unknown): MutationFailure {
+  if (error instanceof RepositoryError) {
+    const blocker = error instanceof RefusalError ? error.blocker : undefined
+    return {
+      ok: false,
+      error: blocker ? { code: error.code, message: error.message, blocker } : { code: error.code, message: error.message }
+    }
+  }
+  throw error
+}
+
+function runMutation<Data>(fn: () => Data): { ok: true; data: Data } | MutationFailure {
   try {
     return { ok: true, data: fn() }
   } catch (error) {
-    if (error instanceof RepositoryError) {
-      const blocker = error instanceof RefusalError ? error.blocker : undefined
-      return {
-        ok: false,
-        error: blocker ? { code: error.code, message: error.message, blocker } : { code: error.code, message: error.message }
-      }
-    }
-    throw error
+    return mutationFailure(error)
+  }
+}
+
+/**
+ * `runMutation` for a handler that has to await something — currently only
+ * `branding:choose`, whose whole body is a native dialog the operator takes an
+ * unbounded amount of time to answer. A `try/catch` around a synchronous call
+ * would not see that rejection at all, so this is a separate function rather
+ * than a widened one: the sync form's `fn()` returning a promise would resolve
+ * to `{ ok: true, data: Promise }` and a refusal would surface as an unhandled
+ * rejection instead of an error envelope.
+ */
+async function runMutationAsync<Data>(fn: () => Promise<Data>): Promise<{ ok: true; data: Data } | MutationFailure> {
+  try {
+    return { ok: true, data: await fn() }
+  } catch (error) {
+    return mutationFailure(error)
   }
 }
 
@@ -444,6 +471,63 @@ export const registry = {
   'favicons:get': defineChannel({
     ...CHANNEL_CONTRACTS['favicons:get'],
     handler: ({ url }) => getFavicon(getDatabase(), url)
+  }),
+
+  // ---------------------------------------------------------------------
+  // branding — the operator's own icon and wordmark (T-260829-05).
+  //
+  // The one place a renderer request opens a native dialog. Read
+  // `electron/main/branding/picker.ts`'s header before changing any of the
+  // three: the property they exist to hold is that the picker's result
+  // crosses back as an image and never as a path.
+  // ---------------------------------------------------------------------
+
+  /**
+   * A read, and only a read — the same shape as `favicons:get`. It opens no
+   * dialog, touches no file, and answers from the `branding` table
+   * immediately, so the shell can paint the rail on first load without
+   * waiting on anything.
+   */
+  'branding:get': defineChannel({
+    ...CHANNEL_CONTRACTS['branding:get'],
+    handler: () => getBrandingSnapshot(getDatabase())
+  }),
+
+  /**
+   * `runMutationAsync`, not `runMutation`: the operator may sit on the open
+   * dialog indefinitely, and every refusal — no focused window, over the
+   * cap, unreadable, not a supported raster format — is a `ValidationError`
+   * that has to become an error envelope rather than an unhandled rejection.
+   *
+   * A cancelled picker takes neither path: it resolves as
+   * `{ ok: true, data: { outcome: 'cancelled' } }`, because the operator
+   * changing their mind is not a failed mutation.
+   *
+   * Nothing about the chosen file's location is in either branch, and the
+   * refusal messages are written by `picker.ts` for exactly that reason —
+   * Node's own `fs` errors carry the absolute path in `.message`, and this
+   * wrapper relays a `RepositoryError`'s message verbatim.
+   */
+  'branding:choose': defineChannel({
+    ...CHANNEL_CONTRACTS['branding:choose'],
+    handler: ({ slot }) => runMutationAsync(() => chooseBrandingImage(getDatabase(), slot))
+  }),
+
+  /**
+   * Clearing is a `DELETE`, and clearing an already-default slot is a no-op
+   * that succeeds — absence *is* the default (`electron/shared/branding.ts`),
+   * so "there is no operator image here" is the state the caller asked for and
+   * it is already true. The response is the slot's state afterwards, which is
+   * therefore always `{ state: 'absent' }`, read back rather than assumed.
+   */
+  'branding:clear': defineChannel({
+    ...CHANNEL_CONTRACTS['branding:clear'],
+    handler: ({ slot }) =>
+      runMutation(() => {
+        const db = getDatabase()
+        clearBrandingSlot(db, slot)
+        return getBrandingSlotState(db, slot)
+      })
   }),
 
   // ---------------------------------------------------------------------

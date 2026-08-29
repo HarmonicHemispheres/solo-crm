@@ -104,7 +104,15 @@ describe('the typed IPC bridge under a real, sandboxed Electron renderer', () =>
           `      const appVersion = await window.crm['app:version']()`,
           `      const schemaVersion = await window.crm['db:schemaVersion']()`,
           `      const invalidRequest = await window.crm['db:schemaVersion']({ unexpected: 'payload' })`,
-          `      return { hasWindowCrm, appVersion, schemaVersion, invalidRequest }`,
+          // T-260829-05: the three branding channels reached the renderer
+          // through the same generic preload loop, with no edit to
+          // preload/index.ts. `branding:get` is safe to actually call here —
+          // it is a database read that opens no dialog. `branding:choose` is
+          // deliberately not called: it would open a real native picker this
+          // harness could never dismiss.
+          `      const brandingApi = ['branding:get', 'branding:choose', 'branding:clear'].map((name) => typeof window.crm[name])`,
+          `      const branding = await window.crm['branding:get']()`,
+          `      return { hasWindowCrm, appVersion, schemaVersion, invalidRequest, brandingApi, branding }`,
           `    })()`,
           `  \`)`,
           `  writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify({ ...result, consoleMessages, preloadErrors }))`,
@@ -133,6 +141,8 @@ describe('the typed IPC bridge under a real, sandboxed Electron renderer', () =>
         appVersion: unknown
         schemaVersion: unknown
         invalidRequest: unknown
+        brandingApi: string[]
+        branding: unknown
         consoleMessages: string[]
         preloadErrors: string[]
       } | { error: string; consoleMessages: string[]; preloadErrors: string[] }
@@ -173,6 +183,16 @@ describe('the typed IPC bridge under a real, sandboxed Electron renderer', () =>
       expect(parsed.invalidRequest).toEqual({
         ok: false,
         error: { code: 'invalid-request', message: expect.any(String) }
+      })
+      // T-260829-05's acceptance criterion, proved in a real renderer rather
+      // than argued from the preload's loop: all three branding channels are
+      // callable methods on window.crm, and `branding:get` answers from the
+      // real database — both slots absent on a fresh install, which is the
+      // state the rail draws its built-in mark against.
+      expect(parsed.brandingApi).toEqual(['function', 'function', 'function'])
+      expect(parsed.branding).toEqual({
+        ok: true,
+        data: { icon: { state: 'absent', slot: 'icon' }, logo: { state: 'absent', slot: 'logo' } }
       })
     },
     // T-260828-47: the heaviest of the five runtime-boot files — it

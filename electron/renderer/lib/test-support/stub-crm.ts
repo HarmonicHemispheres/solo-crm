@@ -117,6 +117,25 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
       data: { state: 'none' as const, reason: 'never-fetched' as const, retryAfter: null }
     })),
 
+    // T-260829-05. The default is both slots absent — the state every install
+    // starts in and the one the rail draws its built-in mark against, so a
+    // test that renders the shell without overriding this gets the ordinary
+    // case rather than a fabricated logo. `branding:choose` defaults to
+    // `cancelled` deliberately: a stub must never look like it opened a native
+    // dialog, and cancellation is the one outcome that is true without one.
+    'branding:get': vi.fn(async () => ({
+      ok: true as const,
+      data: { icon: { state: 'absent' as const, slot: 'icon' as const }, logo: { state: 'absent' as const, slot: 'logo' as const } }
+    })),
+    'branding:choose': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: { outcome: 'cancelled' as const } }
+    })),
+    'branding:clear': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: { state: 'absent' as const, slot: 'icon' as const } }
+    })),
+
     'settings:get': vi.fn(async () => ({ ok: true as const, data: { key: 'workspace.name' as const, value: '' } })),
     'settings:getAll': vi.fn(async () => ({ ok: true as const, data: STUB_SETTINGS_SNAPSHOT })),
     'settings:set': vi.fn(async () => ({
