@@ -224,6 +224,24 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         const renamedBase = JSON.parse(applyRenames(snapshot0001, renames)) as Record<string, unknown>
         renamedBase.prevId = (JSON.parse(snapshot0001) as { id: string }).id
         renamedBase.id = '00000000-0000-0000-0000-0000000006ce'
+        // Guard on the transform itself. `applyRenames` substitutes over the
+        // snapshot's raw text — which is what lets one pass fix drizzle's
+        // compound foreign-key names
+        // (`engagements_service_version_id_service_versions_id_fk`) at the
+        // same time as the table keys, but which also means a future rename
+        // whose *source* is a token that appears somewhere it does not mean
+        // would rewrite more than it should. A column renamed from `name` or
+        // `type` is the realistic case: every table in a drizzle snapshot has
+        // a `"name"` key.
+        //
+        // That failure is closed rather than open — an over-substituted base
+        // stops matching 0004 and 0005 and this test goes red — but it would
+        // go red somewhere unreadable. So it is caught here instead: the
+        // derived base must hold exactly the tables a fully migrated database
+        // has, which is what `EXPECTED_TABLES` independently spells out.
+        expect(Object.keys((renamedBase as { tables: Record<string, unknown> }).tables).sort()).toEqual(
+          [...EXPECTED_TABLES].sort()
+        )
         writeFileSync(join(outDir, 'meta', '0001a_renamed_snapshot.json'), JSON.stringify(renamedBase, null, 2))
 
         // drizzle-kit treats --schema as a glob, and its globber only
