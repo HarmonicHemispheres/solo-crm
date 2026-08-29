@@ -1,5 +1,11 @@
 import { z } from 'zod'
 import { activityFiltersSchema, activitySchema, logActivityInputSchema } from './activity'
+import {
+  brandingChoiceSchema,
+  brandingSlotRequestSchema,
+  brandingSlotStateSchema,
+  brandingSnapshotSchema
+} from './branding'
 import { companySchema, createCompanyInputSchema, updateCompanyInputSchema } from './companies'
 import { faviconRequestSchema, faviconResultSchema } from './favicons'
 import {
@@ -523,6 +529,30 @@ export const CHANNEL_CONTRACTS = {
   // constraint the whole thing exists for.
 
   'favicons:get': { request: faviconRequestSchema, response: faviconResultSchema },
+
+  // -- branding — the operator's own icon and wordmark (T-260829-05) ------
+  //
+  // Three channels, and the shape of them is the security decision. The
+  // renderer cannot read a file and must not start: it asks for a *picker*, by
+  // slot, and gets back an *image*. `branding:choose` therefore takes no path,
+  // no filename and no declared content type — main opens the dialog, main
+  // reads the bytes bounded by `BRANDING_MAX_BYTES`, and the bytes' own magic
+  // numbers decide what they are. Nothing in any of the three responses names
+  // a location on disk, in any branch, including the refusals: see
+  // `electron/main/branding/picker.ts`'s header, and the test beside it that
+  // walks the returned object for path separators rather than trusting a read
+  // of the diff.
+  //
+  // `branding:get` is a synchronous database read, like `favicons:get` — it
+  // never opens a dialog and never touches the filesystem.
+  //
+  // A cancelled picker is `{ ok: true, data: { outcome: 'cancelled' } }`, not
+  // a failed mutation; `electron/shared/branding.ts` argues that where the
+  // schema lives.
+
+  'branding:get': { request: z.undefined(), response: brandingSnapshotSchema },
+  'branding:choose': { request: brandingSlotRequestSchema, response: mutationResultSchema(brandingChoiceSchema) },
+  'branding:clear': { request: brandingSlotRequestSchema, response: mutationResultSchema(brandingSlotStateSchema) },
 
   // -- settings ---------------------------------------------------------
 

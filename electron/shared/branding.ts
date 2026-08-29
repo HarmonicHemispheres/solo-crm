@@ -129,3 +129,39 @@ const brandingSnapshotShape = {
 
 export const brandingSnapshotSchema = z.object(brandingSnapshotShape).strict()
 export type BrandingSnapshot = z.infer<typeof brandingSnapshotSchema>
+
+/**
+ * `{ slot }` — the request body both mutating channels take (T-260829-05).
+ * `.strict()`, so a caller cannot smuggle a second field past validation, and
+ * deliberately the *whole* request: `branding:choose` takes no path, no
+ * filename, no declared content type and no byte count, because every one of
+ * those would be a claim the renderer made about a file it is not allowed to
+ * see. Main opens the picker, main reads the bytes, and the bytes decide what
+ * they are (`electron/main/db/repositories/branding.ts`).
+ */
+export const brandingSlotRequestSchema = z.object({ slot: brandingSlotSchema }).strict()
+export type BrandingSlotRequest = z.infer<typeof brandingSlotRequestSchema>
+
+/**
+ * What `branding:choose` answers with.
+ *
+ * **A cancelled picker is a success.** The operator opening the dialog and
+ * pressing Escape did nothing wrong and nothing failed, so cancellation is a
+ * branch of the answer rather than a `{ ok: false }` envelope — the same
+ * shape decision `faviconResultSchema` makes for "there is no icon", and the
+ * same one `MoveDataFolderOutcome` makes for its own `{ kind: 'cancelled' }`.
+ * A renderer that treated cancellation as an error would show a failure every
+ * time someone changed their mind.
+ *
+ * Note what the `chosen` branch does **not** carry: the path of the file that
+ * was picked, its directory, or its basename. The renderer asked for a picker
+ * and gets back an image. That is the property the whole design rests on
+ * (T-260829-05's Risks) — a filename returned "just to show in the UI" would
+ * hand the renderer a filesystem fact it has no other way to obtain, and the
+ * boundary would be gone without a single line of it looking wrong.
+ */
+export const brandingChoiceSchema = z.discriminatedUnion('outcome', [
+  z.object({ outcome: z.literal('chosen'), state: brandingSlotStateSchema }).strict(),
+  z.object({ outcome: z.literal('cancelled') }).strict()
+])
+export type BrandingChoice = z.infer<typeof brandingChoiceSchema>

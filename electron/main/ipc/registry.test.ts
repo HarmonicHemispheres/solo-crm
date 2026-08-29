@@ -1,12 +1,13 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { z } from 'zod'
 import { CHANNEL_NAMES } from '../../shared/ipc-types'
 import type { ChannelName, ChannelRequest, ChannelResponse } from '../../shared/ipc-types'
 import type { ChannelDefinition } from './registry'
 import { MIGRATIONS } from '../db/migrations'
+import { pathLikeStrings } from '../branding/test-support/path-leak'
 
 // Derived, not hardcoded: a fresh database's schema version is whatever the
 // latest registered migration leaves it at. T-260828-36 added migration 0002,
@@ -23,11 +24,38 @@ const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version
 // vi.mock is hoisted above every import in this file (vitest's static
 // analysis, not execution order), so the imports below already see the
 // mocked module.
+//
+// T-260829-05 adds `dialog` and `BrowserWindow` to the mock, because
+// `branding:choose` is the one handler that reaches a native dialog and its
+// definition takes no injection point — the picker's dependencies are
+// injectable (`branding/picker.test.ts` drives every branch that way), but a
+// registry entry is a fixed `(payload) => …`, so driving the *channel* end to
+// end means steering the module boundary instead. `hoisted` state is what lets
+// the factory below, which vitest hoists above every import, be controlled per
+// test.
+const electronFake = vi.hoisted(() => ({
+  /** What `BrowserWindow.getFocusedWindow()` answers. `null` is the refusal case. */
+  focusedWindow: {} as object | null,
+  /** What `dialog.showOpenDialog` resolves to. */
+  openDialogResult: { canceled: true, filePaths: [] as string[] },
+  /** Every options object the dialog was opened with. */
+  openDialogCalls: [] as Array<Record<string, unknown>>
+}))
+
 vi.mock('electron', () => ({
   app: {
     getVersion: () => '0.1.0-test',
     getPath: () => {
       throw new Error('app.getPath should not be called — every test here overrides userDataDir')
+    }
+  },
+  BrowserWindow: {
+    getFocusedWindow: () => electronFake.focusedWindow
+  },
+  dialog: {
+    showOpenDialog: async (_window: unknown, options: Record<string, unknown>) => {
+      electronFake.openDialogCalls.push(options)
+      return electronFake.openDialogResult
     }
   }
 }))
@@ -515,5 +543,161 @@ describe("'search:query'", () => {
     expect(registry['search:query'].request.safeParse({ query: 'acme', limit: 0 }).success).toBe(false)
     expect(registry['search:query'].request.safeParse({ query: 'acme', limit: 10_000 }).success).toBe(false)
     expect(registry['search:query'].request.safeParse({ limit: 5 }).success).toBe(false)
+  })
+})
+
+/**
+ * The three branding channels (T-260829-05), driven end to end through
+ * `callChannel` — so every assertion below is about what a *renderer* would
+ * actually receive, after both the request and the response schema have run.
+ *
+ * The branch coverage of the picker itself (single-flight, the bounded read,
+ * the SVG refusal) lives in `electron/main/branding/picker.test.ts`, which
+ * injects the dialog directly. What is here is the wire: that the channels
+ * exist, that a cancelled pick is a success, that a refusal is an envelope,
+ * and — the criterion this task turns on — that nothing any of the three
+ * answers with names a location on disk.
+ */
+describe('branding channels — end to end against a real database', () => {
+  let tmpDir: string
+  let fileDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-branding-'))
+    fileDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-images-'))
+    openDatabase({ userDataDir: tmpDir })
+    electronFake.focusedWindow = {}
+    electronFake.openDialogResult = { canceled: true, filePaths: [] }
+    electronFake.openDialogCalls.length = 0
+  })
+
+  afterEach(() => {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(fileDir, { recursive: true, force: true })
+  })
+
+  /** A genuine 1x1 PNG, written where the picker's fake says it was chosen. */
+  function writePng(name: string): string {
+    const path = join(fileDir, name)
+    writeFileSync(
+      path,
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      )
+    )
+    return path
+  }
+
+  it('branding:get answers both slots as absent on a fresh database, and opens no dialog', async () => {
+    expect(await callChannel('branding:get')).toEqual({
+      icon: { state: 'absent', slot: 'icon' },
+      logo: { state: 'absent', slot: 'logo' }
+    })
+    expect(electronFake.openDialogCalls).toEqual([])
+  })
+
+  it('branding:choose stores the picked file and answers with a data: URL', async () => {
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('logo.png')] }
+
+    const choice = expectOk(await callChannel('branding:choose', { slot: 'logo' }))
+    expect(choice.outcome).toBe('chosen')
+    if (choice.outcome !== 'chosen') return
+    expect(choice.state.state).toBe('present')
+    if (choice.state.state !== 'present') return
+    expect(choice.state.dataUrl.startsWith('data:image/png;base64,')).toBe(true)
+
+    // And it is readable back through the read channel, which never opens a
+    // dialog of its own.
+    const snapshot = await callChannel('branding:get')
+    expect(snapshot.logo).toEqual(choice.state)
+    expect(snapshot.icon).toEqual({ state: 'absent', slot: 'icon' })
+    expect(electronFake.openDialogCalls).toHaveLength(1)
+  })
+
+  it('a cancelled picker is ok: true with outcome cancelled, and the slot is identical before and after', async () => {
+    electronFake.openDialogResult = { canceled: true, filePaths: [] }
+    const before = await callChannel('branding:get')
+
+    const result = await callChannel('branding:choose', { slot: 'icon' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data).toEqual({ outcome: 'cancelled' })
+
+    expect(await callChannel('branding:get')).toEqual(before)
+  })
+
+  it('branding:choose with no focused window is refused as a mutation error, and no dialog is opened', async () => {
+    electronFake.focusedWindow = null
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('logo.png')] }
+
+    const result = await callChannel('branding:choose', { slot: 'logo' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('validation')
+    expect(electronFake.openDialogCalls).toEqual([])
+  })
+
+  it('branding:clear on a default slot succeeds with { state: absent } rather than erroring', async () => {
+    const result = expectOk(await callChannel('branding:clear', { slot: 'icon' }))
+    expect(result).toEqual({ state: 'absent', slot: 'icon' })
+  })
+
+  it('branding:clear removes a stored image and branding:get agrees', async () => {
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('icon.png')] }
+    expectOk(await callChannel('branding:choose', { slot: 'icon' }))
+
+    expect(expectOk(await callChannel('branding:clear', { slot: 'icon' }))).toEqual({ state: 'absent', slot: 'icon' })
+    expect(await callChannel('branding:get')).toEqual({
+      icon: { state: 'absent', slot: 'icon' },
+      logo: { state: 'absent', slot: 'logo' }
+    })
+  })
+
+  it('the request schemas take a slot and nothing else — no path, no filename, no declared content type', () => {
+    expect(registry['branding:choose'].request.safeParse({ slot: 'icon' }).success).toBe(true)
+    expect(registry['branding:choose'].request.safeParse({ slot: 'sidebar' }).success).toBe(false)
+    expect(registry['branding:choose'].request.safeParse({ slot: 'icon', path: 'C:\\logo.png' }).success).toBe(false)
+    expect(registry['branding:choose'].request.safeParse({ slot: 'icon', contentType: 'image/png' }).success).toBe(false)
+    expect(registry['branding:clear'].request.safeParse({ slot: 'logo' }).success).toBe(true)
+    expect(registry['branding:clear'].request.safeParse({}).success).toBe(false)
+    expect(registry['branding:get'].request.safeParse(undefined).success).toBe(true)
+    expect(registry['branding:get'].request.safeParse({ slot: 'icon' }).success).toBe(false)
+  })
+
+  it('no response from any of the three channels contains a filesystem path — every branch, walked', async () => {
+    const chosenPath = writePng('logo.png')
+    // The premise: the path handed to the dialog really does look like one,
+    // so finding none in the responses means something.
+    expect(chosenPath).toContain(sep)
+
+    const responses: unknown[] = []
+
+    electronFake.openDialogResult = { canceled: false, filePaths: [chosenPath] }
+    responses.push(await callChannel('branding:choose', { slot: 'logo' }))
+    responses.push(await callChannel('branding:get'))
+
+    electronFake.openDialogResult = { canceled: true, filePaths: [] }
+    responses.push(await callChannel('branding:choose', { slot: 'icon' }))
+
+    // The refusal branches — their messages cross the boundary verbatim, so
+    // they are part of the same property, not a separate concern.
+    electronFake.openDialogResult = { canceled: false, filePaths: [join(fileDir, 'not-here.png')] }
+    responses.push(await callChannel('branding:choose', { slot: 'icon' }))
+
+    electronFake.focusedWindow = null
+    responses.push(await callChannel('branding:choose', { slot: 'icon' }))
+    electronFake.focusedWindow = {}
+
+    responses.push(await callChannel('branding:clear', { slot: 'logo' }))
+    responses.push(await callChannel('branding:get'))
+
+    // Every refusal above really was one, so the sweep is not walking a list
+    // of successes that never had a chance to leak anything.
+    const refusals = responses.filter((response) => (response as { ok?: boolean }).ok === false)
+    expect(refusals).toHaveLength(2)
+
+    expect(pathLikeStrings(responses)).toEqual([])
   })
 })
