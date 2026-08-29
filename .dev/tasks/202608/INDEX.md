@@ -8,7 +8,6 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
-| ◐ in-progress | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | P0-03 |
 | ◐ in-progress | [T-260829-02](T-260829-02-release-versioning.md) | Give each release a distinct version so two installers are never the same file name | 📦 build | X-09 |
 | ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
 
@@ -95,3 +94,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | R-260828-03 |
 | ● done | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | R-260828-03 |
 | ● done | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | R-260828-03 |
+| ● done | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | R-260828-03 |

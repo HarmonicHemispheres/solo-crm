@@ -1,11 +1,11 @@
 ---
 id: T-260828-19
 title: Move an existing data root to a new folder without losing a write
-status: in-progress
+status: done
 category: data
 plan_ref: P0-03
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -90,3 +90,83 @@ surface for it too. Scoped here so the gap is on record rather than rediscovered
 **Review:** what `code-review` found and what was done about each finding.
 
 **Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+
+
+---
+
+## Outcome
+
+Merged. Built by a subagent under the build-only process; reviewed and verified
+by the orchestrator at merge.
+
+**Changed:** `electron/main/db/move-data-root.{ts,test.ts}` (new),
+`electron/main/app-menu.{ts,test.ts}` (new), `electron/main/db/connection.{ts,test.ts}`,
+`electron/main/index.ts`.
+
+### The ordering is the whole task
+
+**The pointer is written last.** Copy, verify, then repoint — so a failure at any
+earlier step leaves the original root untouched and the app still opening it.
+The acceptance criterion about killing the process mid-move is tested by
+modelling the on-disk state each kill leaves and then running the *next launch*
+for real against it, rather than by timing an actual kill. That includes
+asserting the state the ordering makes **impossible** — a pointer committed
+before a verified copy — from the other side.
+
+On any failure the module removes the database, `-wal` and `-shm` it (or the
+integrity probe) created in the target. That is safe precisely because the target
+was proven empty first, so nothing of the user's can be removed, and the original
+root is never touched.
+
+### Three deliberate departures from the scope, each reported
+
+1. **The move is not in `data-root.ts`.** That file is imported by
+   `connection.ts`, and the move needs `closeDatabase`/`openDatabase`/
+   `isDatabaseOpen`/`databasePathIn` from it — so putting it there would have
+   created an import cycle. It is a new module layered above both.
+2. **The `databasePathIn` importer pin was extended, deliberately and with its
+   reason written into the test.** T-260828-57 added that pin an hour earlier to
+   stop the unguarded path helper quietly acquiring callers. The move genuinely
+   needs it: it must name `solocrm.db` inside a folder the user is merely
+   *moving to*, in order to refuse a target that already holds one and to say
+   where the copy lands — and it never opens what it names. The dispatch told
+   this builder not to add an importer quietly; it didn't.
+   **The stronger pin is untouched:** only `connection.ts` and
+   `readonly-connection.ts` may construct a `Database`, which is why the
+   integrity check lives in `connection.ts` as `checkDatabaseFileIntegrity`
+   rather than opening its own handle in the move module. It opens read-write on
+   purpose — a copy carrying a hot `-wal` needs recovery, which a read-only
+   handle cannot do — and checkpoints `TRUNCATE` on success so the new root is
+   self-contained.
+3. **No writability probe on the target.** The first-run chooser needs one
+   because a bad pointer bricks the app; here the pointer is written last, so a
+   copy failure is already fully recoverable. Duplicating `probeWritable` out of
+   `data-location-prompt.ts` would have been a second copy of a check, in a file
+   this task did not own.
+
+### The entry point
+
+P2-01 Workspace settings does not exist yet, so the move is an application menu
+item — **Data → Move Data Folder…** — in a new `app-menu.ts`, installed from
+`index.ts` after `openDatabase()`. Setting an application menu replaces
+Electron's default, so the standard file/edit/view/window roles are rebuilt in
+the template rather than silently lost.
+
+The flow is warn → pick → confirm → move → report, over the same structural
+dialog seam `data-location-prompt.ts` already uses, which is what makes it
+testable with a plain fake instead of a real dialog.
+
+**Verified at merge:** typecheck clean across all three passes, lint clean,
+`node` + `runtime-boot-node` 32 files / 694 tests green on the merged tree.
+
+## Known limit
+
+The copy is synchronous and there is no progress indicator; the confirmation
+dialog warns that the window will be unresponsive. A real indicator is noted in
+the code as belonging with P2-01, where the settings surface that would host it
+lives.
+
+Scope's "refuse a non-empty target" has a consequence worth stating: the default
+`userData` folder can never be a target, so the question of whether moving *back*
+to the default should delete the pointer — ADR-006 says absence is the default —
+never arises.
