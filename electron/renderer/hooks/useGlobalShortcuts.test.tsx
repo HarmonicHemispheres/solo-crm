@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
@@ -20,15 +21,23 @@ function Harness() {
 /** ⌘L now opens P1-09's real quick log (T-260828-35), which reads through
  * TanStack Query — so the harness carries the same provider + `window.crm`
  * stub `App.tsx` gives it in production. See `LayerManager.test.tsx`'s
- * identical note. */
+ * identical note.
+ *
+ * The MemoryRouter is the same accommodation one layer on (T-260828-37): the
+ * palette layer now renders the real CommandPalette, which calls useNavigate to
+ * open whatever the user picks. Without a router the hook throws before any of
+ * these assertions is reached. LayerManager.test.tsx carries the identical pair
+ * for the identical reason. */
 function renderHarness() {
   window.crm = stubCrm()
   return render(
-    <QueryClientProvider client={createQueryClient()}>
-      <LayerManager>
-        <Harness />
-      </LayerManager>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={createQueryClient()}>
+        <LayerManager>
+          <Harness />
+        </LayerManager>
+      </QueryClientProvider>
+    </MemoryRouter>
   )
 }
 

@@ -80,6 +80,16 @@ Typecheck and lint are whole-tree and fast, and a type error in your branch is
 unambiguously yours. Do **not** run `npm test` — that is the orchestrator's gate,
 it takes ~100s, and running it here tells you about code you did not write.
 
+**If you change something other components mount, run its whole project.**
+A layer, a shell, a provider, a route table: `--project=renderer` or
+`--project=node` is about a minute and is the only reliable way to find the
+harnesses that mount your thing from somewhere you did not think to look.
+T-260828-37 replaced the palette layer placeholder with a component that
+navigates and queries, then ran `components/shell`, `lib` and `views` — and
+never ran `hooks`, where a harness mounts that layer and had no router. Five
+tests failed at the orchestrator gate, which costs a full-suite re-run and a
+diagnosis, both more expensive than the minute.
+
 If you genuinely cannot tell which tests cover your change, say so in your
 report rather than falling back to the whole suite.
 

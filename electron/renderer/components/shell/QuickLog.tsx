@@ -202,7 +202,7 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
       // confirmation for a companies + people + activity round trip, against
       // a goal measured in felt seconds. The views still update themselves
       // when those land, exactly as before.
-      void Promise.all([invalidate.activity(queryClient), invalidate.companies(queryClient), invalidate.people(queryClient)])
+      void Promise.all([invalidate.activity(queryClient), invalidate.companies(queryClient), invalidate.people(queryClient), invalidate.search(queryClient)])
     },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not log this touch.')
   })

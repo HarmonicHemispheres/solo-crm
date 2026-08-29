@@ -46,7 +46,16 @@ export function useSheetMutation<TVariables, TData>(
   const mutation = useMutation({
     mutationFn,
     onSuccess: async () => {
-      await invalidate[entity](queryClient)
+      // Search alongside the entity (T-260828-37 review). The palette caches a
+      // result set for SEARCH_STALE_MS, so without this, creating a company and
+      // then re-running a search term typed moments earlier answers from a cache
+      // that predates the row — a record the user just made, missing from the one
+      // surface built to find anything. The index itself is already correct: it is
+      // trigger-maintained, so nothing in the renderer can observe that it changed.
+      // The palette stale time stays as the backstop for writes that do not pass
+      // through here (an update, a delete, the seeder); this closes the create path,
+      // which is the one a user watches happen and then immediately searches for.
+      await Promise.all([invalidate[entity](queryClient), invalidate.search(queryClient)])
       onClose()
     },
     onError: (err: unknown) => setRawError(err instanceof Error ? err.message : errorFallback)
