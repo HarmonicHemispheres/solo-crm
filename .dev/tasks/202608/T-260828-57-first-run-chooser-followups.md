@@ -1,7 +1,7 @@
 ---
 id: T-260828-57
 title: One database path, one sync-folder guard, and a folder proven writable
-status: open
+status: in-progress
 category: data
 plan_ref: P0-03
 created: 2026-08-28

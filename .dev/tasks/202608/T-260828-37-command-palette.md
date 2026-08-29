@@ -1,7 +1,7 @@
 ---
 id: T-260828-37
 title: Build the command palette (⌘K) — search everything, lead with create commands
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-10
 created: 2026-08-28

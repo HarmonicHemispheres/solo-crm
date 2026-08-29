@@ -1,7 +1,7 @@
 ---
 id: T-260828-41
 title: Index the foreign-key columns and settle what happens to polymorphic rows on delete
-status: open
+status: in-progress
 category: data
 plan_ref:
 created: 2026-08-28
