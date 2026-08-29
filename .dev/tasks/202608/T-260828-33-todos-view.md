@@ -1,7 +1,7 @@
 ---
 id: T-260828-33
 title: Build the Todos view — grouped by date or client, inline completion and quick-add
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-16
 created: 2026-08-28

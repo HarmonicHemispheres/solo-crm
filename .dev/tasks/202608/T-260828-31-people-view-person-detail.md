@@ -1,7 +1,7 @@
 ---
 id: T-260828-31
 title: Build the People view and person detail — affiliation history made visible
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-14
 created: 2026-08-28

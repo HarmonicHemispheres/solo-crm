@@ -22,11 +22,11 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ◐ in-progress | [T-260828-27](T-260828-27-create-sheets.md) | Build the create sheets — company, person, engagement, todo | 🎨 ui | P1-08 |
 | ◐ in-progress | [T-260828-28](T-260828-28-companies-view.md) | Build the Companies view — card and list presentations with a real record set | 🎨 ui | P1-11 |
 | ◐ in-progress | [T-260828-29](T-260828-29-company-detail-engagements.md) | Build company detail — engagements billed here, delivered here, end clients | 🎨 ui | P1-12 · P1-CUT |
-| ○ open | [T-260828-30](T-260828-30-company-detail-todos-activity.md) | Build company detail — todos with the next step, activity timeline, contacts | 🎨 ui | P1-13 |
-| ○ open | [T-260828-31](T-260828-31-people-view-person-detail.md) | Build the People view and person detail — affiliation history made visible | 🎨 ui | P1-14 |
-| ○ open | [T-260828-32](T-260828-32-engagements-view.md) | Build the Engagements view — cards grouped by status, progress per billing model | 🎨 ui | P1-15 |
-| ○ open | [T-260828-33](T-260828-33-todos-view.md) | Build the Todos view — grouped by date or client, inline completion and quick-add | 🎨 ui | P1-16 |
-| ○ open | [T-260828-34](T-260828-34-activity-view.md) | Build the Activity view — the append-only log across every entity | 🎨 ui | P1-17 |
+| ◐ in-progress | [T-260828-30](T-260828-30-company-detail-todos-activity.md) | Build company detail — todos with the next step, activity timeline, contacts | 🎨 ui | P1-13 |
+| ◐ in-progress | [T-260828-31](T-260828-31-people-view-person-detail.md) | Build the People view and person detail — affiliation history made visible | 🎨 ui | P1-14 |
+| ◐ in-progress | [T-260828-32](T-260828-32-engagements-view.md) | Build the Engagements view — cards grouped by status, progress per billing model | 🎨 ui | P1-15 |
+| ◐ in-progress | [T-260828-33](T-260828-33-todos-view.md) | Build the Todos view — grouped by date or client, inline completion and quick-add | 🎨 ui | P1-16 |
+| ◐ in-progress | [T-260828-34](T-260828-34-activity-view.md) | Build the Activity view — the append-only log across every entity | 🎨 ui | P1-17 |
 | ○ open | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | P1-09 · P1-CUT |
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
 | ○ open | [T-260828-48](T-260828-48-links-repository.md) | Build the links repository — paste a URL on any entity, host decides the kind | 🗄 data | P1-18 |
@@ -51,7 +51,7 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-38](T-260828-38-workspace-settings-view.md) | Build the Workspace Settings view — identity, cadence, integrations, appearance | 🎨 ui | *(plan gap)* |
+| ◐ in-progress | [T-260828-38](T-260828-38-workspace-settings-view.md) | Build the Workspace Settings view — identity, cadence, integrations, appearance | 🎨 ui | *(plan gap)* |
 | ○ open | [T-260828-39](T-260828-39-readonly-query-channel.md) | Open a genuinely read-only query channel — second connection plus statement refusal | 🔌 ipc | X-02 |
 | ○ open | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | X-01 · X-03 |
 

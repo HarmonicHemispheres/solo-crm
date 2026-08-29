@@ -1,7 +1,7 @@
 ---
 id: T-260828-32
 title: Build the Engagements view — cards grouped by status, progress per billing model
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-15
 created: 2026-08-28

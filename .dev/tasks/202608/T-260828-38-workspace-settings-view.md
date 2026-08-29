@@ -1,7 +1,7 @@
 ---
 id: T-260828-38
 title: Build the Workspace Settings view — identity, cadence defaults, integrations, appearance, shortcuts
-status: open
+status: in-progress
 category: ui
 plan_ref:
 created: 2026-08-28

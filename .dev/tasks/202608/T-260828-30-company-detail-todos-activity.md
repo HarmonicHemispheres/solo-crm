@@ -1,7 +1,7 @@
 ---
 id: T-260828-30
 title: Build company detail — todos with the next step, activity timeline, contacts
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-13
 created: 2026-08-28

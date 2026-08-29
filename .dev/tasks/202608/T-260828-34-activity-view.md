@@ -1,7 +1,7 @@
 ---
 id: T-260828-34
 title: Build the Activity view — the append-only log across companies, people and engagements
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-17
 created: 2026-08-28
