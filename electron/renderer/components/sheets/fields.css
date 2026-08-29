@@ -1,0 +1,66 @@
+/*
+ * Shared field markup for every create form in this directory — `.f-lab`,
+ * `.inp` and `.chiprow` from planning/solo-crm-mockup.html's `#formBody`
+ * styles (`.chip` itself already lives in primitives/Chip.css, reused as-is
+ * by Field.tsx's `ChipField`). One file rather than four copies: every sheet
+ * in this directory imports it, and CSS Modules/Vite dedupe the import to a
+ * single stylesheet the way `Sheet.css` already is for `Sheet.tsx`'s two
+ * current consumers.
+ */
+
+.f-lab {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 6px;
+  display: block;
+}
+
+.inp {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+  padding: 9px 11px;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color var(--motion-hover);
+}
+
+.inp:focus {
+  border-color: var(--verdigris);
+}
+
+.chiprow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/*
+ * Every sheet wraps its fields in a real <form> so pressing Enter in a text
+ * input submits it (the footer's Create/Save button lives outside sheet-b,
+ * in sheet-f, and reaches this form via the HTML `form="<id>"` attribute
+ * rather than DOM nesting — Sheet.tsx's own header explains why footer and
+ * body are siblings). `display: contents` removes the <form> element's own
+ * box so its children become direct grid items of `.sheet-b`
+ * (`display: grid; gap: 14px` — Sheet.css) exactly as if the form tag were
+ * not there at all; without it every field would collapse into one grid
+ * cell instead of stacking with the mockup's own row gap.
+ */
+.sheet-form {
+  display: contents;
+}
+
+/* A validation failure — client-side or the repository's own ValidationError
+ * message — rendered inside the sheet body so it names the field without
+ * closing the sheet or discarding what was typed (acceptance: T-260828-27). */
+.field-error {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+}

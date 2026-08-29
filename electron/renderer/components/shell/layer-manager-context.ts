@@ -15,6 +15,16 @@ import { createContext, useContext } from 'react'
  */
 export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover'
 
+/**
+ * Which create form the generic `sheet` layer is currently holding
+ * (T-260828-27). Left undefined by any caller that only needs the layer's
+ * open/close mechanism and its own title (T-260828-12's own tests, and
+ * anything from before this task) — `LayerManager` falls back to its
+ * original placeholder content in that case, so those call sites keep
+ * working unchanged. A caller that wants real content passes one of these.
+ */
+export type SheetKind = 'company' | 'person' | 'engagement' | 'todo'
+
 export interface LayerManagerContextValue {
   /** Is `kind` open at all, regardless of what else is stacked above it? */
   isOpen: (kind: LayerKind) => boolean
@@ -38,8 +48,9 @@ export interface LayerManagerContextValue {
   /** Opens the generic 'sheet' layer with a title (the New menu's Company /
    * Person / Engagement items each want a different one). A dedicated
    * setter rather than overloading `openLayer` with a payload argument that
-   * only one of five layer kinds ever uses. */
-  openSheet: (title: string, trigger?: HTMLElement | null) => void
+   * only one of five layer kinds ever uses. `kind` (T-260828-27) picks which
+   * real form `LayerManager` mounts inside it — see `SheetKind` above. */
+  openSheet: (title: string, trigger?: HTMLElement | null, kind?: SheetKind) => void
 }
 
 export const LayerManagerContext = createContext<LayerManagerContextValue | null>(null)

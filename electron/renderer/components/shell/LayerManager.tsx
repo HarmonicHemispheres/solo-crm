@@ -3,7 +3,11 @@ import { Sheet } from '../primitives/Sheet'
 import { EmptyState } from '../primitives/EmptyState'
 import { Button } from '../primitives/Button'
 import { SearchIcon } from './icons'
-import { LayerManagerContext, type LayerKind, type LayerManagerContextValue } from './layer-manager-context'
+import { LayerManagerContext, type LayerKind, type LayerManagerContextValue, type SheetKind } from './layer-manager-context'
+import { CompanySheet } from '../sheets/CompanySheet'
+import { PersonSheet } from '../sheets/PersonSheet'
+import { EngagementSheet } from '../sheets/EngagementSheet'
+import { TodoSheet } from '../sheets/TodoSheet'
 import './LayerManager.css'
 
 /** Layers that close `menu` and `popover` when they open — the mockup's own
@@ -40,6 +44,10 @@ const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'she
 export function LayerManager({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<readonly LayerKind[]>([])
   const [sheetTitle, setSheetTitle] = useState('')
+  // Which real form (T-260828-27) the generic 'sheet' layer is holding —
+  // undefined for any caller that only passed a title, which keeps this
+  // file's own placeholder content (see the `sheet` overlay below).
+  const [sheetKind, setSheetKind] = useState<SheetKind | undefined>(undefined)
   const triggers = useRef<Partial<Record<LayerKind, HTMLElement | null>>>({})
 
   // A ref mirror of `stack` so the document-level listeners below (each
@@ -83,8 +91,20 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [])
 
   const openSheet = useCallback(
-    (title: string, trigger?: HTMLElement | null) => {
-      setSheetTitle(title)
+    (title: string, trigger?: HTMLElement | null, kind?: SheetKind) => {
+      // Matches `openLayer`'s own idempotency contract (see its comment: "a
+      // held or repeated ⌘K [doing] nothing the first press didn't already
+      // do") — extended here to the *content* a second call would pick,
+      // not just the stack membership `openLayer` alone guards. Without
+      // this, a second `openSheet` call while 'sheet' is already open (the
+      // New button stays clickable — `Sheet` has no focus trap, so a stray
+      // click can reopen the menu over an open sheet) would silently swap
+      // which real form is mounted (code review, T-260828-27), discarding
+      // every field the user had already typed into the one that was open.
+      if (!stackRef.current.includes('sheet')) {
+        setSheetTitle(title)
+        setSheetKind(kind)
+      }
       openLayer('sheet', trigger)
     },
     [openLayer]
@@ -144,28 +164,59 @@ export function LayerManager({ children }: { children: ReactNode }) {
     { kind: 'palette', node: <PaletteShell open={isOpen('palette')} onClose={() => closeLayer('palette')} /> },
     {
       kind: 'sheet',
-      node: (
-        <Sheet
-          open={isOpen('sheet')}
-          onClose={() => closeLayer('sheet')}
-          closeOnEscape={false}
-          title={sheetTitle || 'Create'}
-          aria-label={sheetTitle || 'Create'}
-          footerNote="saved locally"
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => closeLayer('sheet')}>
-                Cancel
-              </Button>
-              <Button variant="primary" disabled>
-                Create
-              </Button>
-            </>
-          }
-        >
-          <EmptyState>This form ships with its own task (P1-08).</EmptyState>
-        </Sheet>
-      )
+      // T-260828-27 fills in the four real forms; a caller that opened
+      // 'sheet' with a title alone (no `kind` — T-260828-12's own tests, and
+      // anything from before this task) still gets the original empty shell
+      // below, unchanged.
+      //
+      // The four real forms are mounted only while `isOpen('sheet')` —
+      // unlike the fallback `<Sheet open={...}>` below, which stays mounted
+      // and toggles its own `open` prop. Each form owns real field state
+      // (company's `kind` chip, engagement's shared-vs-model fields, …);
+      // mounting fresh on every open is what resets that state to blank
+      // without an effect that sets state on every open (React's own
+      // guidance — and this codebase's `react-hooks/set-state-in-effect`
+      // lint rule — is to let a fresh mount do that, not an effect).
+      // Unmounting on close is also behaviourally identical to what `Sheet`
+      // already does when `open` flips false (`if (!open) return null`, no
+      // exit transition to preserve).
+      node: (() => {
+        const sheetOnClose = () => closeLayer('sheet')
+        if (sheetKind && !isOpen('sheet')) return null
+        switch (sheetKind) {
+          case 'company':
+            return <CompanySheet onClose={sheetOnClose} />
+          case 'person':
+            return <PersonSheet onClose={sheetOnClose} />
+          case 'engagement':
+            return <EngagementSheet onClose={sheetOnClose} />
+          case 'todo':
+            return <TodoSheet onClose={sheetOnClose} />
+          default:
+            return (
+              <Sheet
+                open={isOpen('sheet')}
+                onClose={sheetOnClose}
+                closeOnEscape={false}
+                title={sheetTitle || 'Create'}
+                aria-label={sheetTitle || 'Create'}
+                footerNote="saved locally"
+                footer={
+                  <>
+                    <Button variant="ghost" onClick={sheetOnClose}>
+                      Cancel
+                    </Button>
+                    <Button variant="primary" disabled>
+                      Create
+                    </Button>
+                  </>
+                }
+              >
+                <EmptyState>This form ships with its own task (P1-08).</EmptyState>
+              </Sheet>
+            )
+        }
+      })()
     },
     {
       kind: 'log',
