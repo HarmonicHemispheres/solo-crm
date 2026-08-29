@@ -1,11 +1,11 @@
 ---
 id: T-260828-29
 title: Build company detail — engagements billed here, delivered here, end clients, details
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-12
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -78,3 +78,38 @@ retainer allowance, which needs `time_entries` and stays provisional until P4-05
   flag in `architecture-review`.
 - **`ends_on` NULL rendered as a missing date rather than "rolling".** The null
   carries meaning here.
+
+
+---
+
+## Outcome
+
+Merged as `36da568`, resolving a two-line `routes.tsx`
+conflict against T-260828-28 by taking both sides.
+
+**Changed:** `views/CompanyDetail.tsx` and its test, one line of `routes.tsx`.
+
+**This is the view that proves the data model was worth the trouble** — split
+billing is an abstraction until a company page shows *billed here* and
+*delivered here, billed elsewhere* as two sections reading correctly from either
+side of the same row.
+
+**Review:** non-blocking.
+
+**Deferred → T-260828-53:**
+
+- ADR-001's never-contacted guard is untestable as written: replacing
+  `cadenceState`'s `lastTouchAt == null` branch with `{ pct: 0, label: 'never' }`
+  renders a never-contacted company as a green "ok" bar and no test notices.
+  That is the exact state every row is in on a fresh install.
+- `companiesById` is built only from the list query, which has no pending gate
+  and no error branch, while the body renders as soon as the detail query
+  resolves — the three IPC calls race.
+- The header's metadata row and the engagement pills are asserted by nothing:
+  deleting the kind tag, the budget-note tag or the status tag leaves the suite
+  green.
+- No fixture sets `introducedByCompanyId`, so half of the "following billed-via
+  or introduced-by navigates" criterion is unverified.
+- `.endrow` is a `<Link>` where the mockup used a `<button>`, so `base.css`'s
+  anchor colour cascades and end-client names render verdigris instead of
+  papyrus.

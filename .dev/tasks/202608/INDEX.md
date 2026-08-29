@@ -19,9 +19,6 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-27](T-260828-27-create-sheets.md) | Build the create sheets — company, person, engagement, todo | 🎨 ui | P1-08 |
-| ◐ in-progress | [T-260828-28](T-260828-28-companies-view.md) | Build the Companies view — card and list presentations with a real record set | 🎨 ui | P1-11 |
-| ◐ in-progress | [T-260828-29](T-260828-29-company-detail-engagements.md) | Build company detail — engagements billed here, delivered here, end clients | 🎨 ui | P1-12 · P1-CUT |
 | ◐ in-progress | [T-260828-30](T-260828-30-company-detail-todos-activity.md) | Build company detail — todos with the next step, activity timeline, contacts | 🎨 ui | P1-13 |
 | ◐ in-progress | [T-260828-31](T-260828-31-people-view-person-detail.md) | Build the People view and person detail — affiliation history made visible | 🎨 ui | P1-14 |
 | ◐ in-progress | [T-260828-32](T-260828-32-engagements-view.md) | Build the Engagements view — cards grouped by status, progress per billing model | 🎨 ui | P1-15 |
@@ -34,6 +31,7 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ○ open | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
 | ○ open | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | P1-06 |
 | ○ open | [T-260828-52](T-260828-52-adr-search-index-shape.md) | Record the search index shape as an ADR — union view and rowid encoding | 📄 docs | P1-06 |
+| ○ open | [T-260828-53](T-260828-53-wave-d-ui-followups.md) | Restore the focus ring in the sheets, and close wave D UI review findings | 🎨 ui | *(review)* |
 
 ### Follow-ups from review
 
@@ -68,6 +66,9 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 | ● done | [T-260828-36](T-260828-36-fts5-index-triggers.md) | Create the FTS5 search index and its triggers in their own migration | 🗄 data | R-260828-02 |
 | ● done | [T-260828-44](T-260828-44-settings-guard-tests.md) | Make the settings credential guard test actually guard it | 🗄 data | R-260828-02 |
 | ● done | [T-260828-47](T-260828-47-stabilise-real-electron-tests.md) | Stop the real-Electron tests timing out under parallel load | 📦 build | R-260828-02 |
+| ● done | [T-260828-27](T-260828-27-create-sheets.md) | Build the create sheets — company, person, engagement, todo | 🎨 ui | R-260828-02 |
+| ● done | [T-260828-28](T-260828-28-companies-view.md) | Build the Companies view — card and list presentations with a real record set | 🎨 ui | R-260828-02 |
+| ● done | [T-260828-29](T-260828-29-company-detail-engagements.md) | Build company detail — engagements billed here, delivered here, end clients | 🎨 ui | R-260828-02 |
 | ● done | [T-260828-16](T-260828-16-installer-branding.md) | Brand the Windows installer — app icon, assisted flow, welcome banner | 📦 build | R-260828-02 |
 | ● done | [T-260828-24](T-260828-24-activity-repository-last-touch.md) | Build the append-only activity repository and maintain the last-touch timestamps | 🗄 data | R-260828-02 |
 | ● done | [T-260828-25](T-260828-25-settings-repository.md) | Build the settings repository — typed accessors, declared defaults, no credentials | 🗄 data | R-260828-02 |

@@ -1,11 +1,11 @@
 ---
 id: T-260828-27
 title: Build the create sheets — company, person, engagement, todo
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-08
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -95,3 +95,40 @@ inline (the detail views own that). The catalogue / service-version picker
 - **Mockup fidelity drift.** `planning/solo-crm-mockup.html` is the
   authoritative visual spec — open it rather than inferring the look, and note
   its `FORMS.engagement` omits `lost`, which G3 decided to add.
+
+
+---
+
+## Outcome
+
+Merged as `db5db97`. Verify on the merged tree: typecheck and
+lint clean, 703 tests (666 fast pool + 37 serial boot pool).
+
+**This is the task that closes the complaint the run started from** — the New
+menu's items led nowhere and there was no way to put a record into the database
+from the UI.
+
+**Changed:** `components/sheets/` — `CompanySheet`, `PersonSheet`,
+`EngagementSheet`, `TodoSheet`, plus `fields.css`, `queries.ts` and a shared
+`useSheetMutation`; `shell/NewMenu.tsx` wired.
+
+The engagement form asks **"Billed to"** and **"Work is for"** as two separate
+questions, with the second defaulting to the first and ceasing to track it once
+edited. That was the finding most at risk: collapsing them because they match
+80% of the time would have undone §5's split-billing decision at the only place
+a user can express it.
+
+**Review:** non-blocking. All findings → **T-260828-53**, notably:
+
+- `.inp { outline: none }` suppresses the global keyboard focus ring on every
+  input in all four sheets — verified against the production bundle's cascade
+  order, not inferred. An accessibility regression (X-06) that reads as a nit
+  until you try to fill a form by keyboard.
+- Acceptance criteria 1 and 6 named their own assertion method ("reading the row
+  back over IPC", "verified on the raw column") and no test does that; all four
+  suites assert an outbound payload against a stub that accepts anything.
+- Validation errors render as one banner naming the database column — a user
+  typing `$28,500` into Contract value sees `contractValueCents: ... is not a
+  valid amount`.
+- Two surviving mutants, both guarding real paths: the `billsDirectly` reset and
+  the double-submit guard.

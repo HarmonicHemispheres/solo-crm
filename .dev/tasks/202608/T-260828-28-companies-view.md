@@ -1,11 +1,11 @@
 ---
 id: T-260828-28
 title: Build the Companies view — card and list presentations with a real record set
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-11
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -82,3 +82,29 @@ neutral state. Filtering and saved views (P2-08).
   be null for every row. Determinate state, not `NaN`.
 - **The mockup is the authoritative visual spec** (AGENTS.md). Its Pipeline nav
   item is deliberately absent under ADR-005; nothing here should reintroduce it.
+
+
+---
+
+## Outcome
+
+Merged as `285fad6`. The first route to get a real body, and
+the pattern the other views copy.
+
+**Changed:** `views/Companies.tsx`, `Companies.css`, `Companies.test.tsx`,
+and one line of `routes.tsx`.
+
+**Review:** non-blocking. Confirmed clean on the thing that mattered — no card or
+cell computes a revenue figure, so ADR-003 holds where the mockup fakes it with
+hardcoded arrays.
+
+**Deferred → T-260828-53:** the presentation toggle uses text labels where the
+mockup uses icon buttons; `handleModeChange` writes optimistically to the query
+cache with no `onError`, so a failed `settings:set` leaves the optimistic value
+disagreeing with the stored one.
+
+**Deferred, nowhere:** the mockup's default sort (by decay ratio) is not ported,
+and five view-scoped class names are global rather than CSS-module-scoped. Both
+recorded here rather than as a task — the sort is a P2-03 concern once decay
+bands exist, and the class names are only a hazard once a second view declares
+the same ones.
