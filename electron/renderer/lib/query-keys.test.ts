@@ -42,8 +42,13 @@ describe('queryKeys — T-260828-26 entities', () => {
     }
   })
 
-  it('G8: no activity key beyond list/detail — no update or delete scope exists to key', () => {
-    expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'detail', 'list'])
+  it('G8: no activity update or delete scope exists to key', () => {
+    // `byPerson` (T-260828-31: a person's page reads `activity:list({ personId })`,
+    // scoped under its own id the same reason `engagements.byBillingCompany`/
+    // `byClientCompany` are — see query-keys.ts's own comment) is a second
+    // *read* scope, not an update/delete one; G8's actual constraint is that
+    // no mutating scope exists to key, which this still holds.
+    expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'byPerson', 'detail', 'list'])
   })
 })
 

@@ -1,0 +1,343 @@
+/*
+ * `/person/:id` (T-260828-31). `.back`, `.dbanner`, `.dhead`, `.dmeta`,
+ * `.cmark`, `.field`, `.chiprow` are the same detail-page classes
+ * CompanyDetail.css already ports from planning/solo-crm-mockup.html —
+ * CompanyDetail.css's own header names this route as the page they're
+ * meant to be shared with, and duplicates them here for the identical
+ * reason that file gives: no shared/primitive home for them exists yet.
+ * `.person-detail-grid` mirrors `.company-detail-grid` exactly (same rule,
+ * new name so each view's stylesheet stays self-contained).
+ *
+ * `.tl`/`.tli`/`.bul`/`.d`/`.note` (the activity timeline) are lifted
+ * verbatim from the mockup's own `.tl`/`.tli` rules (lines ~174-182) — the
+ * first real view to render `tlItem`'s markup; CompanyDetail.tsx's own
+ * header notes activity/timeline was out of that task's scope, so no prior
+ * port of these selectors exists to reuse.
+ *
+ * `.move-form` has no mockup source: the mockup's person record never
+ * changes company in place (`p.co` is a flat field with no history), so
+ * there is nothing to port for "move this person to a new company" — this
+ * is new UI, styled to match the existing `.field-input`/`select` look
+ * rather than lifted from a selector that isn't there.
+ */
+
+.person-detail-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  align-items: start;
+}
+
+/* ── detail header ───────────────────── */
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.back:hover,
+.back:focus-visible {
+  color: var(--verdigris);
+}
+
+.dbanner {
+  height: 76px;
+  border-radius: var(--radius-13);
+  margin-bottom: -40px;
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--c) 26%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--surface-2), transparent);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.dbanner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 120% at 88% 0%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
+}
+
+.dhead {
+  position: relative;
+  z-index: 1;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.dmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.cmark {
+  border-radius: var(--radius-9);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+.cmark span {
+  position: relative;
+  z-index: 1;
+}
+
+.cmark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+  background: currentColor;
+}
+
+/* ── details card ────────────────────── */
+
+.field {
+  display: flex;
+  gap: 12px;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  align-items: center;
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.field .k {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--faint);
+  width: 88px;
+  flex: 0 0 88px;
+}
+
+.field .v {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── inline edit — matches CompanyDetail.css's own affordance ── */
+
+.field-value-btn {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--radius-5);
+  color: var(--papyrus);
+  text-align: left;
+  font: inherit;
+  width: 100%;
+  transition: background var(--motion-hover);
+}
+
+.field-value-btn:hover,
+.field-value-btn:focus-visible {
+  background: var(--surface-2);
+}
+
+.field-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+  padding: 5px 8px;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--motion-hover);
+}
+
+.field-input:focus {
+  border-color: var(--verdigris);
+}
+
+textarea.field-input {
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
+  font-family: var(--font);
+}
+
+.field-error {
+  color: var(--red);
+  font-size: 11px;
+  margin-top: 4px;
+  display: block;
+}
+
+/* ── move-to-company form — no mockup source, see this file's header ── */
+
+.move-form {
+  padding: 12px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.move-form .label {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.move-form select,
+.move-form input[type='date'] {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+  padding: 6px 8px;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--motion-hover);
+}
+
+.move-form select:focus,
+.move-form input[type='date']:focus {
+  border-color: var(--verdigris);
+}
+
+.move-form .move-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.move-form .move-row > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── affiliation history ─────────────── */
+
+.aff {
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.aff:last-child {
+  border-bottom: 0;
+}
+
+.aff-t {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.aff-t .nm {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.aff-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 6px;
+  letter-spacing: 0.3px;
+}
+
+/* ── activity timeline — planning/solo-crm-mockup.html lines ~174-182 ── */
+
+.tl {
+  padding: 5px 15px 12px;
+}
+
+.tli {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  position: relative;
+}
+
+.tli:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 30px;
+  bottom: -10px;
+  width: 1px;
+  background: var(--border);
+}
+
+.tli .bul {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: var(--radius-7);
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  z-index: 1;
+}
+
+.tli .bul svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--verdigris);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tli .t {
+  font-size: 13px;
+  display: block;
+  line-height: 1.4;
+}
+
+.tli .d {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  margin-top: 3px;
+  display: block;
+  letter-spacing: 0.4px;
+}
+
+.tli .note {
+  font-size: 12.5px;
+  color: var(--mute);
+  margin-top: 4px;
+  line-height: 1.5;
+}
