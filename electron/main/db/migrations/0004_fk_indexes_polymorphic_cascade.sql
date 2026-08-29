@@ -25,11 +25,11 @@
 -- three parent tables -- so nothing stopped a company delete from stranding
 -- their rows, and `seed/index.ts` writes `links` rows with
 -- `entity_type = 'company'` today. The recorded decision is **cascade, not
--- refuse**: ADR-010 (.dev/decisions/ADR-010-polymorphic-attachment-cascade.md)
+-- refuse**: ADR-011 (.dev/decisions/ADR-011-polymorphic-attachment-cascade.md)
 -- has the reasoning and the alternative it rejects.
 --
 -- The cascade is a trigger rather than a call inside each `deleteX`, for the
--- reason ADR-010 states: a trigger runs inside the deleting statement's own
+-- reason ADR-011 states: a trigger runs inside the deleting statement's own
 -- transaction, cannot be forgotten by the next repository, and also covers the
 -- writers that never go through a repository at all (the seeder, the importers
 -- P4 adds). `referential-guard.ts` holds the matching declaration in TypeScript

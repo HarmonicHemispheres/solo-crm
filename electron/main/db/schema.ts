@@ -52,7 +52,7 @@ import { type AnySQLiteColumn, check, index, sqliteTable, text, integer, real, b
  * statements and nothing else. So this file stays the cumulative description
  * of the schema — 0001's tables *plus* 0004's indexes — while the checked-in
  * migrations stay incremental. Migration 0004's cascade triggers are not
- * declarable in Drizzle and are deliberately absent here; ADR-010 and that
+ * declarable in Drizzle and are deliberately absent here; ADR-011 and that
  * migration's own header say where they live.
  */
 

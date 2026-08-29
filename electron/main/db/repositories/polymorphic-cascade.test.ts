@@ -21,7 +21,7 @@ import {
 } from './referential-guard'
 
 /**
- * ADR-010's guarantee, end to end: deleting an entity takes its polymorphic
+ * ADR-011's guarantee, end to end: deleting an entity takes its polymorphic
  * attachments with it, and an attachment cannot be created against an entity
  * that does not exist (T-260828-41).
  *
@@ -62,7 +62,7 @@ const NOW = '2026-08-29T12:00:00.000Z'
 /**
  * Writes one row into each of the three attachment tables for
  * `entityType`/`entityId`. `taggings` and `external_refs` have no repository
- * yet (ADR-010's table), so they are inserted directly — the trigger under
+ * yet (ADR-011's table), so they are inserted directly — the trigger under
  * test does not care which writer produced the row, which is the point.
  */
 function attachAll(db: Database.Database, entityType: string, entityId: string): void {
@@ -269,7 +269,7 @@ describe('addLink refuses an entity that does not exist', () => {
 
       deleteCompany(db, company.id)
 
-      // Both halves of ADR-010 in one assertion: the cascade removed the row,
+      // Both halves of ADR-011 in one assertion: the cascade removed the row,
       // and re-creating it is now refused rather than recreating the orphan.
       expect(countPolymorphicAttachments(db, 'company', company.id)).toBe(0)
       expect(() =>

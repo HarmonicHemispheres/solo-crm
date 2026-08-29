@@ -41,7 +41,7 @@ import { type ConstraintHandler, translateWriteError } from './sqlite-errors'
  * `FOREIGN KEY` beyond `id`'s primary key and the two `NOT NULL` timestamp
  * columns this repository always sets itself. The single constraint a normal
  * call here can trip is the one migration 0004 added — the `BEFORE INSERT`
- * trigger that refuses a row naming an entity that does not exist (ADR-010),
+ * trigger that refuses a row naming an entity that does not exist (ADR-011),
  * which SQLite reports as `SQLITE_CONSTRAINT_TRIGGER`.
  */
 export { LINK_ENTITY_TYPES, LINK_KIND_RULES, LINK_KINDS, createLinkInputSchema, updateLinkInputSchema }
@@ -166,7 +166,7 @@ export function listLinks(db: Database.Database, input: unknown): readonly Link[
  * would mean branching on `entityType` to pick a table (the per-type
  * branching the polymorphic design exists to avoid) and would be a
  * half-guarantee anyway, since nothing stopped the entity being deleted a
- * second later. ADR-010 closes both halves at once: the same migration that
+ * second later. ADR-011 closes both halves at once: the same migration that
  * makes an entity delete cascade its attachments makes an attachment
  * impossible to create against an entity that is not there. The branching
  * lives in one trigger body rather than in every writer, and the window this
@@ -238,7 +238,7 @@ export function updateLink(db: Database.Database, id: string, patch: unknown): L
  *
  * Deleting one link is still just that. What happens to a link when its
  * *entity* is deleted is no longer an open question and is still not this
- * function's business: ADR-010 settles it as a cascade, implemented as an
+ * function's business: ADR-011 settles it as a cascade, implemented as an
  * `AFTER DELETE` trigger on each parent table (migration 0004), so
  * `deleteCompany`/`deletePerson`/`deleteEngagement` clear a row's links
  * without either side importing the other.

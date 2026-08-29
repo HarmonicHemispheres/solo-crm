@@ -41,7 +41,7 @@ export const MIGRATIONS: readonly MigrationDefinition[] = [
   // reason as 0002. See ADR-009.
   { version: 3, name: '0003_search_content_table', sql: migration0003Sql },
   // T-260828-41: the foreign-key indexes every delete pre-check needs, and
-  // the polymorphic cascade (ADR-010) that stops a delete stranding `links`,
+  // the polymorphic cascade (ADR-011) that stops a delete stranding `links`,
   // `taggings` or `external_refs` rows. The index half is drizzle-kit output
   // diffed against 0001's snapshot; the trigger half is hand-written, because
   // no schema-diffing tool expresses a cascade whose parent table is chosen

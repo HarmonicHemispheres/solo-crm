@@ -65,20 +65,20 @@ export function refuseIfReferenced(db: Database.Database, id: string, blockers: 
 }
 
 // ---------------------------------------------------------------------------
-// Polymorphic attachments (T-260828-41, ADR-010)
+// Polymorphic attachments (T-260828-41, ADR-011)
 // ---------------------------------------------------------------------------
 
 /**
  * The three tables that reference an entity as `entity_type`/`entity_id`
  * rather than through a foreign key. They are deliberately **not**
- * `ReferenceBlocker`s: ADR-010 settles that an attachment is cascaded with
+ * `ReferenceBlocker`s: ADR-011 settles that an attachment is cascaded with
  * its entity rather than blocking the delete, so nothing above ever asks
  * about them.
  *
  * The cascade itself is three `AFTER DELETE` triggers installed by migration
  * `0004_fk_indexes_polymorphic_cascade.sql`, not code in this file — a
  * trigger cannot be forgotten by the next repository and also covers the
- * writers that never go through one (the seeder, the P4 importers). ADR-010
+ * writers that never go through one (the seeder, the P4 importers). ADR-011
  * has the full reasoning.
  *
  * What lives here is the *declaration*: the single place in TypeScript that
@@ -116,7 +116,7 @@ export function attachmentCascadeTriggerName(parentTable: PolymorphicParentTable
 
 /**
  * How many rows across all three attachment tables still point at
- * `entityType`/`entityId` — the query ADR-010's guarantee is stated in, and
+ * `entityType`/`entityId` — the query ADR-011's guarantee is stated in, and
  * the one place the three table names are spelled out for a caller rather
  * than for a trigger. Written as a `UNION ALL` of three counts so a caller
  * gets one number for "is this entity fully detached" without three

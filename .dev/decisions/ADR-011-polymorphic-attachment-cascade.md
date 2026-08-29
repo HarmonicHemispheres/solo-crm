@@ -1,4 +1,4 @@
-# ADR-010 — A polymorphic attachment is cascaded with its entity, by trigger
+# ADR-011 — A polymorphic attachment is cascaded with its entity, by trigger
 
 - **Status:** accepted
 - **Date:** 2026-08-29

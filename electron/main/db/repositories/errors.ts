@@ -25,7 +25,7 @@
  *   many rows) for the same string-match-avoidance reason as `.code` above.
  *
  * Note what is *not* a `RefusalError`: a polymorphic attachment (`links`,
- * `taggings`, `external_refs`) never blocks an entity delete. ADR-010
+ * `taggings`, `external_refs`) never blocks an entity delete. ADR-011
  * (T-260828-41) settles those as a cascade, so a delete that would once have
  * stranded them now succeeds and takes them with it — there is no error type
  * for it because there is no failure. The one refusal that decision *does*

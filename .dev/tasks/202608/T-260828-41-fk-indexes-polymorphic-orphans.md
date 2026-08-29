@@ -1,11 +1,11 @@
 ---
 id: T-260828-41
 title: Index the foreign-key columns and settle what happens to polymorphic rows on delete
-status: in-progress
+status: done
 category: data
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -88,3 +88,111 @@ single-table FK is possible). New indexes on non-FK columns; measure first.
   decision, not a default.
 - **The migration must not touch `search_fts`** — T-260828-36 owns that table
   and its triggers, and the two migrations must not collide.
+
+
+---
+
+## Outcome
+
+Merged. Built by a subagent under the build-only process; reviewed and verified
+by the orchestrator at merge, with an ADR number collision resolved on top.
+
+**Changed:** `0004_fk_indexes_polymorphic_cascade.sql` (new), `migrations/index.ts`,
+`schema.ts`, `schema.test.ts`, `repositories/{errors,links,referential-guard}.ts`,
+`polymorphic-cascade.test.ts` (new), `search.test.ts`,
+`.dev/decisions/ADR-011-polymorphic-attachment-cascade.md` (new).
+
+### The cascade is a trigger, not a call in the shared helper
+
+The scope said to implement it in the shared refusal helper "so all six
+repositories inherit it" — but that call would have had to live in
+`repositories/{companies,engagements,people}.ts`, which T-260828-46 owned
+concurrently. Migration 0004 installs
+`trg_{companies,people,engagements}_attachments_ad` instead.
+
+**This is better than merely available, and that is why it was accepted.** A
+trigger runs inside the deleting statement's own transaction by construction, it
+cannot be forgotten by a seventh repository, and it covers writers that are not
+repositories at all — `seed/index.ts` and the P4 importers — which a TypeScript
+helper never would.
+
+`referential-guard.ts` holds the declaration (`POLYMORPHIC_ATTACHMENT_TABLES`,
+`POLYMORPHIC_PARENT_ENTITY_TYPES`, `attachmentCascadeTriggerName`,
+`countPolymorphicAttachments`) and a test asserts a trigger exists per
+(parent, attachment) pair — so **a fourth attachment table fails a test rather
+than going silently uncovered.**
+
+### The create-side check T-260828-55 deferred here
+
+`addLink` with an `entityId` no entity owns now throws `RefusalError` with
+`blocker.reason: 'unknown-entity'`, where it previously succeeded. Enforced by
+`trg_links_entity_exists_bi`/`_bu` and translated through the shared
+`translateWriteError`. T-260828-55 documented that gap in `links.ts` and named
+this task as its owner; both halves — refusing a link to a nonexistent entity,
+and cascading links when the entity goes — now land in the same migration.
+
+No existing test relied on the old behaviour. `taggings` and `external_refs`
+deliberately get **no** equivalent trigger: no writer exists for either, and
+guarding a repository nobody has written is a guess.
+
+### A schema drift test that could only ever have passed once
+
+`schema.test.ts` compared a from-scratch `drizzle-kit generate` against
+`0001_init.sql`. `schema.ts` is cumulative and migrations are incremental, so
+**that comparison could only hold while 0001 was the sole schema-derived
+migration** — adding any index broke it by construction, not by drift.
+
+It now seeds a temp folder with 0001's snapshot, regenerates, and asserts the
+delta is exactly 0004's `CREATE INDEX` statements and nothing else; a table-level
+drift shows up as a `CREATE`/`ALTER` and fails the indexes-only assertion. Two
+gotchas are baked into comments there: drizzle-kit joins cwd with `--out`, so an
+absolute temp path is read back as `<repoRoot>\C:\Users\…` and fails ENOENT, and
+`migrations/meta/` is deliberately left at 0001 because 0002/0003/0004's trigger
+halves declare nothing `schema.ts` knows about.
+
+**Mutation-checked:** removing one `index()` from `schema.ts` makes the drift
+test fail with `expected [ …(18) ] to deeply equal [ …(19) ]`; restored by
+targeted edit, not `git checkout`.
+
+### One pre-existing test fixed rather than weakened
+
+`search.test.ts` asserted `SELECT name FROM sqlite_master WHERE type='trigger'`
+returned exactly 15 rows — **a count of every trigger in the database**, which
+the 5 new cascade triggers broke. Narrowed to `AND name LIKE 'trg%search%'`:
+still exactly 15, still each named individually below it. The assertion got
+*more* specific, not looser.
+
+### Six indexes beyond the scope's list, none for symmetry
+
+`milestones.engagement_id`, `revenue_lines.engagement_id` and
+`time_entries.engagement_id` are `deleteEngagement` pre-checks the scope's list
+omitted. The three composite `(entity_type, entity_id)` indexes are what the
+cascade deletes by — **without them each cascade is a triple full scan.**
+
+`0004` leaves pre-existing `links` rows whose `entity_type` is NULL or
+unrecognised alone. The cascade compares `entity_type` against a literal per
+parent, so such rows are never swept up by whichever delete happened to run last
+— a migration that quietly deleted user data would be exactly the loss ADR-011 is
+careful about, arriving by the back door.
+
+**Verified at merge:** typecheck clean across all three passes, lint clean,
+`node` + `runtime-boot-node` 30 files / 658 tests green on the merged tree.
+
+## The second ADR collision in one run — and the gate that caught it
+
+This branch created `ADR-010-polymorphic-attachment-cascade.md`. An hour
+earlier, T-260828-46's `ADR-009` had been renumbered to **ADR-010** to resolve
+the *first* collision of this run — so by the time this merged, 010 was taken by
+a decision that did not exist when this branch was cut.
+
+**The check added while closing T-260828-46 caught it immediately**, on a
+collision it had no knowledge of, at the merge that caused it. That is the whole
+argument for a gate over a reminder: the same mistake recurred within the hour,
+made by a different agent, for a reason nobody could have avoided by being more
+careful.
+
+Renumbered to **ADR-011**, with all references moved across nine files. The
+renumber was done by hand rather than by blanket replace: `people.ts` and
+`people.test.ts` cite T-260828-46's ADR-010 and are correct as they stand, so a
+repo-wide substitution would have silently repointed them at the cascade
+decision.
