@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { z } from 'zod'
 import { nowTimestamp } from '../../../shared/format'
 import {
   type CreateLinkInput,
@@ -18,14 +17,15 @@ import {
   type UpdateLinkInput,
   updateLinkInputSchema
 } from '../../../shared/links'
-import { NotFoundError, ValidationError } from './errors'
+import { NotFoundError } from './errors'
+import { parseInput } from './input'
 
 /**
  * The `links` repository (T-260828-48) — the first **polymorphic** table in
  * this codebase, `entity_type`/`entity_id` with no foreign key, and the
  * first repository built after T-260828-20's fix pass, so it follows that
- * pattern (`parseInput`, `.strict()` schemas, `NotFoundError`/
- * `ValidationError` from `./errors`) without re-deriving it. `Link`,
+ * pattern (the shared `parseInput` from `./input`, `.strict()` schemas,
+ * `NotFoundError` from `./errors`) without re-deriving it. `Link`,
  * `LINK_ENTITY_TYPES`, `LINK_KINDS`, `detectLinkKind`/`LINK_KIND_RULES` and
  * the create/update/list zod schemas live in `electron/shared/links.ts`
  * (ADR-007) — that module's header explains the host-based kind-detection
@@ -45,26 +45,6 @@ import { NotFoundError, ValidationError } from './errors'
  */
 export { LINK_ENTITY_TYPES, LINK_KIND_RULES, LINK_KINDS, createLinkInputSchema, updateLinkInputSchema }
 export type { CreateLinkInput, Link, LinkEntityType, LinkKind, ListLinksInput, UpdateLinkInput }
-
-// ---------------------------------------------------------------------------
-// Input parsing — identical shape to companies.ts's parseInput/
-// stripUndefinedValues; see that file's header comment on why an
-// explicit-`undefined`-valued key must be stripped before `'key' in parsed`
-// checks run. `updateLink` only ever writes one field (`title`), which is
-// always required (never optional) on the update schema, so the
-// present-vs-absent distinction that machinery exists for does not arise
-// here — `parseInput` is still reused for the single `.strict()` schema
-// parse + `ValidationError` translation every repository shares.
-// ---------------------------------------------------------------------------
-
-function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
-  const result = schema.safeParse(input)
-  if (!result.success) {
-    const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, result.error.issues)
-  }
-  return result.data
-}
 
 // ---------------------------------------------------------------------------
 // Row <-> domain mapping

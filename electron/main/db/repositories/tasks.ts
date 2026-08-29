@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { z } from 'zod'
 import { nowTimestamp } from '../../../shared/format'
 import {
   TASK_STATUSES,
@@ -13,7 +12,9 @@ import {
   type UpdateTaskInput,
   updateTaskInputSchema
 } from '../../../shared/tasks'
-import { NotFoundError, RefusalError, ValidationError } from './errors'
+import { NotFoundError, RefusalError } from './errors'
+import { parseInput } from './input'
+import { type ConstraintHandler, NOT_NULL_HANDLER, PRIMARY_KEY_HANDLER, translateWriteError } from './sqlite-errors'
 
 /**
  * The `tasks` repository (T-260828-23), built on `companies.ts`'s pattern
@@ -49,37 +50,6 @@ import { NotFoundError, RefusalError, ValidationError } from './errors'
  */
 export { TASK_STATUSES, createTaskInputSchema, taskFilterSchema, updateTaskInputSchema }
 export type { CreateTaskInput, Task, TaskFilter, TaskStatus, UpdateTaskInput }
-
-// ---------------------------------------------------------------------------
-// Input parsing — identical to companies.ts's parseInput/stripUndefinedValues.
-// ---------------------------------------------------------------------------
-
-function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
-  const result = schema.safeParse(input)
-  if (!result.success) {
-    const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, result.error.issues)
-  }
-  // See companies.ts's parseInput for why this matters: zod's `.partial()`
-  // marks a field optional, not absent, so a caller's `{ field: undefined }`
-  // (the shape a renderer's `{ field: dirty ? value : undefined }` naturally
-  // produces, preserved across Electron's structured-clone IPC boundary)
-  // still parses with the key present, holding `undefined`. Every write path
-  // below distinguishes "key absent" from "key present" via `in`, so an
-  // undefined-valued key left in `result.data` would read as "the caller
-  // explicitly set this" and wipe a column to NULL or skip a documented
-  // default.
-  return stripUndefinedValues(result.data)
-}
-
-function stripUndefinedValues<T>(value: T): T {
-  if (typeof value !== 'object' || value === null) return value
-  const cleaned = { ...(value as Record<string, unknown>) }
-  for (const key of Object.keys(cleaned)) {
-    if (cleaned[key] === undefined) delete cleaned[key]
-  }
-  return cleaned as T
-}
 
 // ---------------------------------------------------------------------------
 // Column mapping — shared between createTask and updateTask, same reasoning
@@ -177,25 +147,9 @@ function statusTransitionColumns(prevStatus: TaskStatus | null, nextStatus: Task
 }
 
 // ---------------------------------------------------------------------------
-// SQLite constraint translation — same shape as companies.ts's.
+// SQLite constraint translation — the machinery lives in sqlite-errors.ts;
+// only the per-table map below is local.
 // ---------------------------------------------------------------------------
-
-interface SqliteConstraintError {
-  readonly code: string
-  readonly message: string
-}
-
-function isSqliteConstraintError(error: unknown): error is SqliteConstraintError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    (error as { code: string }).code.startsWith('SQLITE_CONSTRAINT')
-  )
-}
-
-type ConstraintHandler = () => RefusalError
 
 /**
  * `tasks` declares no `CHECK` and no `UNIQUE` constraint (migration 0001) —
@@ -209,17 +163,8 @@ type ConstraintHandler = () => RefusalError
 const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
   SQLITE_CONSTRAINT_FOREIGNKEY: () =>
     new RefusalError('This write references a company, engagement or person that does not exist.', { reason: 'foreign-key' }),
-  SQLITE_CONSTRAINT_NOTNULL: () => new RefusalError('A required field was left empty.', { reason: 'not-null' }),
-  SQLITE_CONSTRAINT_PRIMARYKEY: () => new RefusalError('This id is already in use.', { reason: 'primary-key' })
-}
-
-function translateWriteError(error: unknown): never {
-  if (isSqliteConstraintError(error)) {
-    const handler = CONSTRAINT_HANDLERS[error.code]
-    if (handler) throw handler()
-    throw new RefusalError('This write violates a database constraint.', { reason: 'constraint' })
-  }
-  throw error
+  SQLITE_CONSTRAINT_NOTNULL: NOT_NULL_HANDLER,
+  SQLITE_CONSTRAINT_PRIMARYKEY: PRIMARY_KEY_HANDLER
 }
 
 // ---------------------------------------------------------------------------
@@ -389,7 +334,7 @@ export function createTask(db: Database.Database, input: unknown): Task {
   try {
     db.prepare(`INSERT INTO tasks (${columns.join(', ')}) VALUES (${placeholders})`).run(...values)
   } catch (error) {
-    translateWriteError(error)
+    translateWriteError(CONSTRAINT_HANDLERS, error)
   }
 
   // Guaranteed to exist: this connection just inserted it and nothing here
@@ -486,7 +431,7 @@ export function updateTask(db: Database.Database, id: string, patch: unknown): T
   try {
     db.prepare(`UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`).run(...values)
   } catch (error) {
-    translateWriteError(error)
+    translateWriteError(CONSTRAINT_HANDLERS, error)
   }
 
   return getTask(db, id) as Task

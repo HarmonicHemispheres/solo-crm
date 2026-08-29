@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { type SearchKind, type SearchResult, searchQueryInputSchema } from '../../../shared/search'
-import { ValidationError } from './errors'
+import { parseInput } from './input'
 
 /**
  * The `search` repository (T-260828-36 / P1-06) — reads `search_fts`, the
@@ -18,12 +18,10 @@ import { ValidationError } from './errors'
  * Re-exported here so nothing downstream of *this* module needs to know the
  * split happened.
  *
- * Deliberately no local copy of the ~50-line `parseInput` /
- * `translateWriteError` machinery every entity repository currently repeats
- * (T-260828-43 extracts it) — `searchAll` validates one flat, non-partial
- * schema with no create/update distinction to preserve, so `parseQueryInput`
- * below is the whole of what this module needs, and `rebuildSearchIndex`
- * has no user input to translate a constraint error for.
+ * No `translateWriteError` handler map here: `searchAll` validates one flat,
+ * non-partial schema through the shared `parseInput` (`input.ts`,
+ * T-260828-43), and `rebuildSearchIndex` has no user input to translate a
+ * constraint error for.
  *
  * `searchAll` takes one `input: unknown` argument — `{ query, limit? }` —
  * validated whole against `searchQueryInputSchema`, the same shape
@@ -40,12 +38,7 @@ export type { SearchKind, SearchQueryInput, SearchResult } from '../../../shared
 // ---------------------------------------------------------------------------
 
 function parseQueryInput(input: unknown): { readonly query: string; readonly limit?: number } {
-  const result = searchQueryInputSchema.safeParse(input)
-  if (!result.success) {
-    const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, result.error.issues)
-  }
-  return result.data
+  return parseInput(searchQueryInputSchema, input)
 }
 
 // ---------------------------------------------------------------------------

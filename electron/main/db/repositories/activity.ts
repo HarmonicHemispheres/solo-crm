@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { z } from 'zod'
 import { nowTimestamp } from '../../../shared/format'
 import { timestampSchema } from '../../../shared/types'
 import {
@@ -16,7 +15,9 @@ import {
   type RecordContactEntity,
   recordContactEntitySchema
 } from '../../../shared/activity'
-import { NotFoundError, RefusalError, ValidationError } from './errors'
+import { NotFoundError, RefusalError } from './errors'
+import { parseInput } from './input'
+import { type ConstraintHandler, NOT_NULL_HANDLER, translateWriteError } from './sqlite-errors'
 
 /**
  * The `activity` repository (T-260828-24) — the maintainer ADR-001 promises
@@ -55,65 +56,16 @@ export { ACTIVITY_KINDS, ACTIVITY_SOURCES, activityFiltersSchema, logActivityInp
 export type { Activity, ActivityFilters, ActivityKind, ActivitySource, LogActivityInput, RecordContactEntity }
 
 // ---------------------------------------------------------------------------
-// Input parsing
-// ---------------------------------------------------------------------------
-
-/**
- * Parses `input` against `schema` and strips explicitly-`undefined`-valued
- * keys from the result — see `companies.ts`'s `parseInput` for the full
- * rationale (Electron's structured clone preserves a key set to the literal
- * value `undefined` across the IPC boundary; zod's `.optional()` keeps such a
- * key rather than treating it as absent). Reused unchanged here rather than
- * imported from `companies.ts`: nothing exports it there, and the function
- * itself is table-agnostic — it is the pattern that must not drift, not a
- * shared dependency to wire up.
- */
-function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
-  const result = schema.safeParse(input)
-  if (!result.success) {
-    const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, result.error.issues)
-  }
-  return stripUndefinedValues(result.data)
-}
-
-function stripUndefinedValues<T>(value: T): T {
-  if (typeof value !== 'object' || value === null) return value
-  const cleaned = { ...(value as Record<string, unknown>) }
-  for (const key of Object.keys(cleaned)) {
-    if (cleaned[key] === undefined) delete cleaned[key]
-  }
-  return cleaned as T
-}
-
-// ---------------------------------------------------------------------------
 // SQLite constraint translation
 // ---------------------------------------------------------------------------
-
-interface SqliteConstraintError {
-  readonly code: string
-  readonly message: string
-}
-
-function isSqliteConstraintError(error: unknown): error is SqliteConstraintError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    (error as { code: string }).code.startsWith('SQLITE_CONSTRAINT')
-  )
-}
-
-type ConstraintHandler = (error: SqliteConstraintError) => RefusalError
 
 /**
  * `activity` declares no `CHECK` and no `UNIQUE` — only three nullable
  * foreign keys (`company_id`, `person_id`, `engagement_id`) and the `NOT
  * NULL` columns `logActivityInputSchema` already validates ahead of SQL. Two
  * branches cover every `SQLITE_CONSTRAINT_*` subcode this table can actually
- * raise; the fallback in `translateWriteError` covers the rest without ever
- * forwarding `error.message`, same discipline as `companies.ts`.
+ * raise; `translateWriteError`'s fallback (sqlite-errors.ts) covers the rest
+ * without ever forwarding `error.message`.
  */
 const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
   SQLITE_CONSTRAINT_FOREIGNKEY: () =>
@@ -121,16 +73,7 @@ const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
       'This activity references a company, person or engagement that does not exist — check companyId, personId and engagementId.',
       { reason: 'foreign-key' }
     ),
-  SQLITE_CONSTRAINT_NOTNULL: () => new RefusalError('A required field was left empty.', { reason: 'not-null' })
-}
-
-function translateWriteError(error: unknown): never {
-  if (isSqliteConstraintError(error)) {
-    const handler = CONSTRAINT_HANDLERS[error.code]
-    if (handler) throw handler(error)
-    throw new RefusalError('This write violates a database constraint.', { reason: 'constraint' })
-  }
-  throw error
+  SQLITE_CONSTRAINT_NOTNULL: NOT_NULL_HANDLER
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +246,7 @@ export function logActivity(db: Database.Database, input: unknown): Activity {
         timestamp
       )
     } catch (error) {
-      translateWriteError(error)
+      translateWriteError(CONSTRAINT_HANDLERS, error)
     }
 
     if (parsed.companyId) advanceCompanyLastTouch(db, parsed.companyId, parsed.occurredAt)
