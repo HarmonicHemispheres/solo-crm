@@ -143,7 +143,8 @@ describe('LayerManager', () => {
     expect(within(dialog).getByLabelText('Name')).toBeTruthy()
   })
 
-  // The gate on T-260829-11's deletion of `sheetTitle`: every one of the four
+  // The gate on T-260829-11's deletion of the layer manager's dead sheet
+  // title and the `openSheet` argument that fed it: every one of the four
   // forms hardcodes its own `<Sheet title>` and `aria-label`, so none of them
   // takes its accessible name from anything the layer manager carries. If a
   // sheet ever did, this fails rather than a screen reader finding out.
