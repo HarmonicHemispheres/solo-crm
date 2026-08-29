@@ -1,0 +1,234 @@
+/*
+ * `/workspace/data` (T-260828-40). `.tblbar`, `.sqlbox`, `.sqlmeta`,
+ * `.sqlerr` and `.sqlout` are transcribed from
+ * planning/solo-crm-mockup.html (lines ~445-455) — the mockup's own Data
+ * view is their only user, so they live here rather than being promoted to
+ * a shared stylesheet for one caller (WorkspaceSettings.css's own reasoning
+ * for `.switch`).
+ *
+ * `.field`/`.k`/`.v` and `.chiprow`/`.chip` are NOT redeclared: the first
+ * pair comes from CompanyDetail.css and the second from
+ * components/sheets/fields.css, both of which `routes.tsx` pulls in
+ * eagerly alongside this view — the same dependency WorkspaceSettings.css
+ * already documents and takes.
+ *
+ * The results table is `.sqltbl`, not the global `.tbl` (Companies.css):
+ * `.tbl tbody tr` is a clickable row — cursor: pointer, hover highlight —
+ * and a result row here is not clickable. Borrowing that rule would promise
+ * an interaction this table does not have, which is worse than eight lines
+ * of its own.
+ */
+
+.data-stats {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  margin-bottom: 14px;
+}
+
+/* ── the two-column body: tables on the left, console on the right, matching
+   the mockup's own `grid-template-columns` for this view (line ~1341). Both
+   tracks collapse to one column below the shell's narrow breakpoint rather
+   than squeezing a SQL textarea into 280px. ── */
+
+.data-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(280px, 1fr) minmax(420px, 2.2fr);
+  align-items: start;
+  margin-top: 14px;
+}
+
+@media (max-width: 980px) {
+  .data-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── location ─────────────────────────── */
+
+/* The path wraps rather than truncating: this is the one string on the page
+   a person has to be able to read in full and select by hand (the copy
+   button can fail — no clipboard permission, no secure context — and the
+   Acceptance is that the path is usable, not that a button exists). */
+.data-path {
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.data-note {
+  padding: 11px 15px 14px;
+  border-top: 1px solid var(--border);
+  line-height: 1.6;
+}
+
+/* ── tables ───────────────────────────── */
+
+.data-table-name {
+  font-size: 12.5px;
+}
+
+.data-table-count {
+  font-size: 11.5px;
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+}
+
+/* mockup line ~445 */
+.tblbar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+  flex: none;
+}
+
+.tblbar i {
+  display: block;
+  height: 100%;
+  background: var(--verdigris);
+}
+
+/* ── console ──────────────────────────── */
+
+.data-snippets {
+  padding: 12px 15px 0;
+  display: grid;
+  gap: 8px;
+}
+
+.data-console-body {
+  padding: 12px 15px;
+  display: grid;
+  gap: 8px;
+}
+
+.data-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.data-save-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.data-save-row .inp {
+  flex: 1;
+  min-width: 160px;
+  padding: 5px 9px;
+}
+
+.data-save-error {
+  color: var(--red);
+}
+
+.data-console-hint {
+  padding: 0 15px 14px;
+}
+
+/* mockup lines ~447-449 */
+.sqlbox {
+  width: 100%;
+  min-height: 112px;
+  background: var(--obsidian);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 13px;
+  color: var(--papyrus);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  outline: none;
+  resize: vertical;
+}
+
+.sqlbox:focus {
+  border-color: var(--verdigris);
+}
+
+/* mockup line ~450 */
+.sqlmeta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  padding: 0 15px 8px;
+  letter-spacing: 0.6px;
+}
+
+/* mockup lines ~451-452 — a refusal from `db:query` carries its own reason,
+   so this box has to hold a full sentence or three, not a one-line code. */
+.sqlerr {
+  margin: 0 15px 15px;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 34%, transparent);
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* mockup lines ~453-455 */
+.sqlout {
+  max-height: 340px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+
+.sqltbl {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sqltbl th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.sqltbl td {
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.sqltbl tr:last-child td {
+  border-bottom: 0;
+}
+
+.data-cell {
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.data-cell-null {
+  color: var(--faint);
+}
+
+.data-no-rows {
+  text-align: center;
+  color: var(--slate);
+  font-size: 12.5px;
+  padding: 22px 15px;
+}

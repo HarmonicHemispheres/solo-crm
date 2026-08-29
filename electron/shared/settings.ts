@@ -138,7 +138,26 @@ export const SETTINGS_REGISTRY = {
   // T-260828-33's Scope: "The grouping choice in the ViewHeader, persisted
   // per view." 'date' is the default — "what's owed now" (Overdue/Today)
   // is the more common way to open the list than "who do I owe".
-  'view.todos.groupBy': spec(z.enum(TODO_GROUP_BY_MODES), 'date')
+  'view.todos.groupBy': spec(z.enum(TODO_GROUP_BY_MODES), 'date'),
+
+  // T-260828-40 / X-03: the Data view's saved query snippets. A saved
+  // snippet has to survive a restart (that task's Acceptance), and ADR-002's
+  // settings table is the store this app already has — a second one for a
+  // handful of strings would be a schema change to avoid a key.
+  //
+  // Only the *statements the operator wrote* live here. The starter set the
+  // console offers is a constant in the view (`WorkspaceData.tsx`), not
+  // seeded into this default: a default the user can edit but never restore
+  // is worse than a built-in list that is always there, and an empty array
+  // is the honest "you have saved nothing yet".
+  //
+  // ADR-004's guard applies here like everywhere: a snippet is a SELECT the
+  // operator typed against their own local file, not a credential — and the
+  // console it feeds is read-only either way (T-260828-39).
+  'view.data.snippets': spec(
+    z.array(z.object({ name: z.string().min(1), statement: z.string().min(1) }).strict()),
+    [] as { name: string; statement: string }[]
+  )
 } as const
 
 export type SettingKey = keyof typeof SETTINGS_REGISTRY

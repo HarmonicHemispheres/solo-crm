@@ -8,6 +8,7 @@ import { PersonDetail } from './views/PersonDetail'
 import { Engagements } from './views/Engagements'
 import { Todos } from './views/Todos'
 import { WorkspaceSettings } from './views/WorkspaceSettings'
+import { WorkspaceData } from './views/WorkspaceData'
 
 /**
  * A minimal stand-in for a view body — this task's scope is the shell, not
@@ -41,7 +42,7 @@ export function AppRoutes() {
         <Route path="workspace" element={<Outlet />}>
           <Route index element={<Navigate to="settings" replace />} />
           <Route path="settings" element={<WorkspaceSettings />} />
-          <Route path="data" element={<ViewPlaceholder title="Data" />} />
+          <Route path="data" element={<WorkspaceData />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
