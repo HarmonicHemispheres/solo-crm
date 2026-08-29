@@ -98,6 +98,15 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     // honest answer for a test that never seeded anything to match.
     'search:query': vi.fn(async () => ({ ok: true as const, data: [] })),
 
+    // T-260828-48's links, reached from a view by T-260828-50. Empty list
+    // for the read, successful envelopes for the three writes — the same
+    // "nothing seeded here yet" default every other entity above answers
+    // with.
+    'links:list': vi.fn(async () => ({ ok: true as const, data: [] })),
+    'links:add': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_LINK } })),
+    'links:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_LINK } })),
+    'links:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
+
     // T-260828-49's favicon cache read. The default is the honest
     // no-override answer for a test that seeded no cache — and, deliberately,
     // an *answer*: `state: 'none'` with a reason, never a promise left
@@ -198,6 +207,18 @@ const STUB_TASK = {
   companyId: null,
   engagementId: null,
   personId: null,
+  createdAt: STUB_TIMESTAMP,
+  updatedAt: STUB_TIMESTAMP
+}
+
+const STUB_LINK = {
+  id: 'stub-link-id',
+  entityType: 'company' as const,
+  entityId: 'stub-company-id',
+  url: 'https://example.com/',
+  title: 'example.com',
+  kind: 'web' as const,
+  addedAt: STUB_TIMESTAMP,
   createdAt: STUB_TIMESTAMP,
   updatedAt: STUB_TIMESTAMP
 }

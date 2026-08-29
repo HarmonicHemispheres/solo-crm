@@ -184,6 +184,33 @@ describe('registerNavigationGuards', () => {
     expect(openExternal).not.toHaveBeenCalled()
   })
 
+  /**
+   * T-260828-50's link rows are the first UI that leans on this guard by
+   * design rather than by accident: every row's title is an
+   * `<a target="_blank">`, so clicking one arrives here as a window-open and
+   * leaves as a `shell.openExternal`. §6.10's whole point is that these URLs
+   * come from imported third-party data, so the packaged app's behaviour on
+   * a hostile one is the thing under test, not an edge case.
+   */
+  it('opens a pasted link row externally, and never lets one navigate the app window', () => {
+    const webContents = fakeWebContents()
+    const openExternal = vi.fn()
+    registerNavigationGuards(webContents, 'app://-/index.html', openExternal)
+
+    const driveLink = 'https://drive.google.com/drive/folders/rinvii'
+    const response = webContents.openWindow(driveLink)
+
+    expect(response).toEqual({ action: 'deny' })
+    expect(openExternal).toHaveBeenCalledWith(driveLink)
+
+    // The same row, clicked in a way that would navigate the app document
+    // instead: prevented, and still handed to the system browser.
+    const preventDefault = vi.fn()
+    webContents.emitWillNavigate({ url: driveLink, preventDefault })
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(openExternal).toHaveBeenCalledTimes(2)
+  })
+
   it('drops an external URL whose scheme the shell could execute, opening nothing', () => {
     const webContents = fakeWebContents()
     const openExternal = vi.fn()

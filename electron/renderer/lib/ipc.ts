@@ -6,6 +6,7 @@ import type {
   ChannelResponse,
   IpcErrorCode,
   MutationResult,
+  RepositoryErrorBlocker,
   RepositoryErrorCode
 } from '../../shared/ipc-types'
 
@@ -40,10 +41,24 @@ export type IpcCallErrorCode = IpcErrorCode | RepositoryErrorCode | 'bridge-unav
 export class IpcCallError extends Error {
   readonly code: IpcCallErrorCode
 
-  constructor(code: IpcCallErrorCode, message: string) {
+  /**
+   * A `RefusalError`'s structured `{ reason, count? }`, carried the whole way
+   * to the call site instead of stopping at the envelope. `registry.ts`'s
+   * `runMutation` already puts it on the wire (`ipc-types.ts`'s
+   * `repositoryErrorBlockerSchema`) precisely so a renderer does not have to
+   * string-match the prose sentence to tell one refusal from another —
+   * dropping it here would have re-created that problem one layer further in.
+   *
+   * Present only on a `refused` error; `undefined` for every other code, and
+   * for the bridge-level failures that have no repository behind them at all.
+   */
+  readonly blocker: RepositoryErrorBlocker | undefined
+
+  constructor(code: IpcCallErrorCode, message: string, blocker?: RepositoryErrorBlocker) {
     super(message)
     this.name = 'IpcCallError'
     this.code = code
+    this.blocker = blocker
   }
 }
 
@@ -123,7 +138,7 @@ export async function callCrm<K extends ChannelName>(channel: K, ...args: CallAr
  */
 export function unwrapMutationResult<Data>(result: MutationResult<Data>): Data {
   if (!result.ok) {
-    throw new IpcCallError(result.error.code, result.error.message)
+    throw new IpcCallError(result.error.code, result.error.message, result.error.blocker)
   }
   return result.data
 }

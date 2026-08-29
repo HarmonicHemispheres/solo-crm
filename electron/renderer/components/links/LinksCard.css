@@ -1,0 +1,138 @@
+/* .lrow — planning/solo-crm-mockup.html (the "links" block, line ~390) */
+
+.lrow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  color: var(--papyrus);
+  transition: background var(--motion-hover);
+}
+
+.lrow:last-of-type {
+  border-bottom: 0;
+}
+
+.lrow:hover {
+  background: var(--surface-2);
+}
+
+/* The layout-shift guarantee's other half. The box's *size* is set inline by
+   LinksCard.tsx (see FAVICON_BOX_STYLE there and the test that pins it), so
+   that a cached icon and a fallback icon occupy the same space whether or
+   not this stylesheet loaded. What lives here is only how the box draws. */
+.favi {
+  flex: none;
+  display: block;
+  border-radius: var(--radius-4);
+  overflow: hidden;
+  color: var(--slate);
+}
+
+/* Both branches — the cached <img> and the inline fallback <svg>'s wrapper —
+   fill the box exactly, so neither can push the row taller than the other. */
+.favi-img,
+.favi-img > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lrow-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.lrow-title {
+  display: block;
+  font-size: 12.5px;
+  color: var(--papyrus);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lrow:hover .lrow-title {
+  color: var(--verdigris);
+}
+
+.lrow-meta {
+  display: block;
+  font-size: 9.5px;
+  margin-top: 2px;
+}
+
+/* Sized and spaced like the title it replaces, so switching into edit mode
+   does not move the row either. */
+.lrow-title-input {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+.lrow .arrow {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.lrow:hover .arrow {
+  color: var(--verdigris);
+}
+
+/* .quickadd's layout, under this feature's own class rather than by reusing
+   it: `.quickadd input { outline: none }` (QuickAdd.css) would suppress the
+   global keyboard focus ring on this field, which is the exact X-06
+   regression T-260828-53 was written to undo in the sheets. This field keeps
+   base.css's :focus-visible ring. */
+.linkadd {
+  border-top: 1px solid var(--border);
+}
+
+.linkadd-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+}
+
+.linkadd-field > svg {
+  width: 13px;
+  height: 13px;
+  color: var(--faint);
+  flex-shrink: 0;
+}
+
+.linkadd-input {
+  flex: 1;
+  background: none;
+  border: 0;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.linkadd-input::placeholder {
+  color: var(--faint);
+}
+
+/* A refusal that stays on screen next to the field that caused it — the
+   acceptance criterion is "refused visibly", and a toast that clears itself
+   after two and a half seconds is not that. */
+.linkadd-error {
+  margin: 0;
+  padding: 0 15px 10px;
+  color: var(--red);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.linkadd-error-row {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}

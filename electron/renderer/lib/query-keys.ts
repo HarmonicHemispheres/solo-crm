@@ -176,6 +176,36 @@ export const queryKeys = {
     all: () => ['search'] as const,
     query: (query: string, limit: number) => ['search', 'query', { query, limit }] as const
   },
+  /**
+   * `links:list({ entityType, entityId })` (T-260828-50's link rows). A link
+   * is polymorphic — it hangs off a company, a person or an engagement
+   * (ADR-007, T-260828-48) — and there is no unfiltered read to give a bare
+   * `list()` scope any meaning, so `forEntity` is the only read scope here.
+   * Both halves of the polymorphic key are in the tuple because both are in
+   * the request: keying on `entityId` alone would collide a company and an
+   * engagement that happened to share an id, which is exactly the confusion
+   * an FK-less `entity_type`/`entity_id` pair invites.
+   */
+  links: {
+    all: () => ['links'] as const,
+    forEntity: (entityType: string, entityId: string) => ['links', 'forEntity', { entityType, entityId }] as const
+  },
+  /**
+   * `favicons:get({ url })` (T-260828-49). Keyed by the link's own URL, in
+   * the `id` position, because that is precisely what the answer addresses.
+   *
+   * There is no invalidation path worth having and `invalidate.favicons`
+   * below says so: main owns the cache and decides when a host is re-fetched,
+   * and the read answers *immediately* either way — a `data:` URL or a named
+   * absence, never a pending state (see `electron/shared/favicons.ts`'s
+   * header). A row therefore draws once from whichever branch it gets. What
+   * makes a later `ready` show up is a remount or a natural refetch, not a
+   * renderer deciding the cache should be warmer than it is.
+   */
+  favicons: {
+    all: () => ['favicons'] as const,
+    forUrl: (url: string) => ['favicons', 'forUrl', url] as const
+  },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
   settings: {
     all: () => ['settings'] as const,
@@ -223,6 +253,24 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
    * pointed at the whole prefix, per this file's header.
    */
   search: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.search.all() }),
+  /**
+   * Every entity's links at once. Narrower would be possible — the key
+   * carries `entityType`/`entityId` — but a mutation's own call site is the
+   * wrong place to re-derive which entity it just wrote to, and this file's
+   * header is explicit that the entity helper covers the whole prefix so a
+   * later sibling key is picked up with no call site edited.
+   */
+  links: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.links.all() }),
+  /**
+   * Deliberately a no-op beyond the mechanical prefix invalidation, and
+   * called by nothing. Main owns the favicon cache and decides when a host
+   * is re-fetched (T-260828-49); a renderer that invalidated this on a link
+   * mutation would re-ask for a dozen icons every time a title was renamed,
+   * for an answer that cannot have changed. It exists so the entity has its
+   * helper pointed at the whole prefix — the same reason `search` above
+   * does — not because anything should call it.
+   */
+  favicons: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.favicons.all() }),
   settings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
 }
 
