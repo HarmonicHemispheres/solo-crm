@@ -8,6 +8,58 @@ import { NAV_ITEMS } from '../../nav'
 import { createQueryClient } from '../../lib/query-client'
 import { stubCrm } from '../../lib/test-support/stub-crm'
 import type { CrmApi } from '../../../shared/ipc-types'
+import type { SettingsSnapshot } from '../../../shared/settings'
+import type { BrandingSlot, BrandingSlotState } from '../../../shared/branding'
+
+/** A whole snapshot, since `settings:getAll` answers with one — the rail reads
+ * `workspace.name` off it for the brand block's accessible name (T-260829-07).
+ * Declared here rather than exported out of `stub-crm.ts` for the same reason
+ * WorkspaceSettings.test.tsx declares its own: a test that wants a different
+ * value wants to say so in the test, next to the assertion it explains. */
+const SETTINGS_SNAPSHOT: SettingsSnapshot = {
+  'workspace.name': '',
+  'workspace.operator': '',
+  'workspace.currency': 'USD',
+  'workspace.fiscalYearStartMonth': 1,
+  'cadence.defaultDays.client': 7,
+  'cadence.defaultDays.end_client': 14,
+  'cadence.defaultDays.prospect': 14,
+  'cadence.defaultDays.advisory': 21,
+  'cadence.defaultDays.channel': 30,
+  'integrations.stripe.enabled': true,
+  'integrations.googleCalendar.enabled': true,
+  'integrations.gmail.enabled': false,
+  'backup.enabled': true,
+  'backup.folder': '',
+  'appearance.motion': true,
+  'appearance.density': 'comfortable',
+  'view.companies.mode': 'card',
+  'view.people.mode': 'card',
+  'view.todos.groupBy': 'date',
+  'view.data.snippets': []
+}
+
+/** A stored slot as `branding:get` would answer with it. The `data:` prefix is
+ * the assertion in more than one test below: it is the only image transport
+ * the renderer's CSP admits (`electron/shared/branding.ts`). */
+function presentSlot(slot: BrandingSlot): BrandingSlotState {
+  return {
+    state: 'present',
+    slot,
+    contentType: 'image/png',
+    dataUrl: `data:image/png;base64,${slot === 'icon' ? 'aWNvbg==' : 'bG9nbw=='}`,
+    byteLength: 34816,
+    updatedAt: '2026-08-29T00:00:00.000Z'
+  }
+}
+
+function absentSlot(slot: BrandingSlot): BrandingSlotState {
+  return { state: 'absent', slot }
+}
+
+function brandingGet(icon: BrandingSlotState, logo: BrandingSlotState) {
+  return { 'branding:get': vi.fn(async () => ({ ok: true as const, data: { icon, logo } })) }
+}
 
 // T-260829-06: the version chip is a live `app:version` read now, so the rail
 // needs a QueryClientProvider and a `window.crm` the same way Shell.test.tsx's
@@ -112,21 +164,110 @@ describe('Rail', () => {
     expect(document.getElementById('rail')?.className).toContain('open')
   })
 
-  it('names the product through the wordmark itself, not a text row repeating it', () => {
+  it('names the brand block once, and not from a text row repeating it', () => {
     renderRail('/')
-    // One accessible "Solo CRM" in the brand block, and it is the wordmark —
-    // the mark beside it is decorative, and the `.rail-app` name span the
-    // mockup carried is gone (T-260829-06).
-    const wordmarks = screen.getAllByRole('img', { name: 'Solo CRM' })
-    expect(wordmarks).toHaveLength(1)
-    expect(wordmarks[0].classList.contains('wordmark')).toBe(true)
+    // Still exactly one accessible name in the brand block, and still not the
+    // `.rail-app` name span the mockup carried (T-260829-06). What changed in
+    // T-260829-07 is *which element owns it*: the wordmark can now be replaced
+    // by an operator's own image, so a name attached to the wordmark would go
+    // on announcing "Solo CRM" over a picture that no longer says it. The
+    // block that contains both images carries the name instead, and both
+    // images inside it are decorative.
+    const named = screen.getAllByRole('img', { name: 'Solo CRM' })
+    expect(named).toHaveLength(1)
+    expect(named[0].classList.contains('brand')).toBe(true)
     expect(document.querySelector('.rail-app .name')).toBeNull()
+  })
+
+  it('names the brand block from the workspace once one is named', async () => {
+    renderRail('/', vi.fn(), {
+      'settings:getAll': vi.fn(async () => ({
+        ok: true as const,
+        data: { ...SETTINGS_SNAPSHOT, 'workspace.name': 'MagicPill Labs' }
+      }))
+    })
+    await waitFor(() => expect(screen.getByRole('img', { name: 'MagicPill Labs' })).toBeTruthy())
+    expect(screen.queryByRole('img', { name: 'Solo CRM' })).toBeNull()
+  })
+
+  it('falls back to the product name when the workspace has none, rather than an unnamed image', async () => {
+    renderRail('/', vi.fn(), {
+      'settings:getAll': vi.fn(async () => ({ ok: true as const, data: { ...SETTINGS_SNAPSHOT, 'workspace.name': '   ' } }))
+    })
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Solo CRM' })).toBeTruthy())
   })
 
   it('renders the database chip linking to Workspace / Data', () => {
     renderRail('/')
     const dbLink = screen.getByRole('link', { name: /solocrm\.db/ })
     expect(dbLink.getAttribute('href')).toBe('/workspace/data')
+  })
+
+  describe('the brand block (T-260829-07)', () => {
+    it('draws the built-in mark and wordmark when the operator has set neither', async () => {
+      renderRail('/')
+      // The stub answers `absent`/`absent`, so this is the ordinary install.
+      await waitFor(() => expect(document.querySelector('.mark > svg')).toBeTruthy())
+      expect(document.querySelector('svg.wordmark')).toBeTruthy()
+      expect(document.querySelectorAll('.brand img')).toHaveLength(0)
+    })
+
+    it("draws the operator's own images once both slots are set", async () => {
+      renderRail('/', vi.fn(), brandingGet(presentSlot('icon'), presentSlot('logo')))
+      await waitFor(() => expect(document.querySelectorAll('.brand img')).toHaveLength(2))
+
+      for (const img of document.querySelectorAll('.brand img')) {
+        expect(img.getAttribute('src')?.startsWith('data:image/')).toBe(true)
+        // Decorative: the block around them carries the accessible name.
+        expect(img.getAttribute('alt')).toBe('')
+      }
+      expect(document.querySelector('.mark > svg')).toBeNull()
+      expect(document.querySelector('svg.wordmark')).toBeNull()
+    })
+
+    it('keeps the two slots independent — a custom icon leaves the built-in wordmark alone', async () => {
+      renderRail('/', vi.fn(), brandingGet(presentSlot('icon'), absentSlot('logo')))
+      await waitFor(() => expect(document.querySelector('.mark > img')).toBeTruthy())
+
+      expect(document.querySelectorAll('.brand img')).toHaveLength(1)
+      expect(document.querySelector('svg.wordmark')).toBeTruthy()
+      expect(document.querySelector('.mark > svg')).toBeNull()
+    })
+
+    it('and the reverse — a custom wordmark leaves the built-in mark alone', async () => {
+      renderRail('/', vi.fn(), brandingGet(absentSlot('icon'), presentSlot('logo')))
+      await waitFor(() => expect(document.querySelector('img.wordmark')).toBeTruthy())
+
+      expect(document.querySelectorAll('.brand img')).toHaveLength(1)
+      expect(document.querySelector('.mark > svg')).toBeTruthy()
+      expect(document.querySelector('svg.wordmark')).toBeNull()
+    })
+
+    it('draws the default while branding:get is still in flight — never a blank box', () => {
+      renderRail('/', vi.fn(), {
+        // Never resolves: the first paint is the whole assertion. The layout
+        // shift this task's Risks name starts with a brand block that renders
+        // empty and then fills, so "the default is already there" is the fix
+        // being pinned — the fixed box sizes that stop the *second* half of
+        // the shift are pinned in Rail.test.ts, which can read the stylesheet.
+        'branding:get': vi.fn(() => new Promise<never>(() => {}))
+      })
+      expect(document.querySelector('.mark > svg')).toBeTruthy()
+      expect(document.querySelector('svg.wordmark')).toBeTruthy()
+      expect(document.querySelector('.brand')?.children).toHaveLength(2)
+    })
+
+    it('keeps the built-in default when branding:get fails, rather than an empty brand block', async () => {
+      renderRail('/', vi.fn(), {
+        'branding:get': vi.fn(async () => ({
+          ok: false as const,
+          error: { code: 'handler-error' as const, message: 'boom' }
+        }))
+      })
+      await waitFor(() => expect(document.querySelector('.mark > svg')).toBeTruthy())
+      expect(document.querySelector('svg.wordmark')).toBeTruthy()
+      expect(document.querySelectorAll('.brand img')).toHaveLength(0)
+    })
   })
 
   describe('the version chip', () => {

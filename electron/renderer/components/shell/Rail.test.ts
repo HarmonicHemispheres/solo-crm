@@ -79,6 +79,53 @@ function rule(selector: string): string {
   return block.slice(at, block.indexOf('}', at))
 }
 
+/** Declarations inside one selector's rule at the top level of the file. */
+function topRule(selector: string): string {
+  const at = RAIL_CSS.indexOf(`${selector} {`)
+  expect(at, `${selector} is not declared in Rail.css`).toBeGreaterThan(-1)
+  return RAIL_CSS.slice(at, RAIL_CSS.indexOf('}', at))
+}
+
+/**
+ * The brand block's two boxes (T-260829-07). An operator can replace the mark
+ * and the wordmark with images of their own, and an operator's logo is not the
+ * built-in one's aspect ratio — so without a box fixed in *both* dimensions the
+ * nav below steps down the moment `branding:get` resolves, and the app looks
+ * broken for a frame on every start. That is the likeliest defect in the whole
+ * feature and it is a stylesheet fact, invisible to jsdom (see this file's
+ * header), so it is pinned here.
+ */
+describe('the brand block holds its size when a custom image arrives', () => {
+  it('fixes the mark box in both dimensions', () => {
+    const mark = topRule('.mark')
+    expect(mark).toMatch(/width:\s*25px/)
+    expect(mark).toMatch(/height:\s*25px/)
+  })
+
+  it('fixes the wordmark box in both dimensions — a width alone resizes with whatever image is in it', () => {
+    const wordmark = topRule('.wordmark')
+    expect(wordmark).toMatch(/width:\s*104px/)
+    // Not a second literal height: 183/33 is the built-in wordmark's own
+    // viewBox ratio, so the box is exactly the height it already rendered at.
+    expect(wordmark).toMatch(/aspect-ratio:\s*183\s*\/\s*33/)
+  })
+
+  it('letterboxes what fills each box rather than stretching or cropping it', () => {
+    const markFill = RAIL_CSS.match(/\.mark > svg,\s*\.mark > img \{([^}]*)\}/)
+    expect(markFill, 'nothing sizes the contents of the mark box').not.toBeNull()
+    expect(markFill?.[1]).toMatch(/object-fit:\s*contain/)
+    expect(topRule('.wordmark')).toMatch(/object-fit:\s*contain/)
+  })
+
+  it('declares both boxes unscoped, so the settings preview is the same box and not a copy of it', () => {
+    // `.mark` was `.brand .mark`. The Branding card in /workspace/settings
+    // reuses these two rules to show the operator what the rail will draw; a
+    // descendant selector would have forced a second copy of 25px and 104px
+    // into WorkspaceSettings.css, free to drift from these.
+    expect(RAIL_CSS).not.toMatch(/\.brand\s+\.mark\s*\{/)
+  })
+})
+
 describe('the off-canvas rail is not in the tab order while it is off-screen', () => {
   it('hides the closed rail from focus and assistive technology, not just from view', () => {
     // `visibility: hidden` is what removes a subtree from the tab order. Moving

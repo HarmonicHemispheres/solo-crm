@@ -111,6 +111,47 @@
   background: color-mix(in srgb, var(--verdigris) 10%, transparent);
 }
 
+/* ── branding rows — T-260829-07 ──────────────────────────────────────────
+   No mockup source: the mockup has no branding card. Built from the same
+   `.field`/`.k`/`.v` row every other panel here uses, plus the layout the two
+   previews need beside their state line.
+
+   The preview boxes themselves are NOT declared here. `.mark` and `.wordmark`
+   come from Rail.css, on purpose: this card's whole job is to show what the
+   rail will draw, and one declaration is the only way the two cannot disagree
+   about 25px and 104px. Rail is mounted on every route, so those rules are
+   always present — the same argument this file's header already makes for
+   borrowing `.field` from CompanyDetail.css. ── */
+
+.brandrow-v {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Both rows reserve the wider of the two boxes, so the icon row's state line
+   starts on the same left edge as the logo row's rather than stepping in. */
+.brandrow-prev {
+  display: flex;
+  align-items: center;
+  flex: 0 0 104px;
+  width: 104px;
+}
+
+.brandrow-text {
+  min-width: 0;
+}
+
+.brandrow-text > * {
+  display: block;
+}
+
+.brandrow-error {
+  color: var(--red);
+  margin-top: 2px;
+}
+
 /* ── shortcut keys — mockup line ~443 ── */
 
 .kbdx {

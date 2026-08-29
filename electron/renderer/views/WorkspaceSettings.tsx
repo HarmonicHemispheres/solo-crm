@@ -5,11 +5,20 @@ import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { Button } from '../components/primitives/Button'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { EmptyState } from '../components/primitives/EmptyState'
+import { SoloCrmMark, SoloCrmWordmark } from '../components/shell/BrandMarks'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { GLOBAL_SHORTCUTS } from '../hooks/useGlobalShortcuts'
 import { useMotionAttribute } from '../hooks/useMotionAttribute'
 import { formatShortcut } from '../lib/platform'
+import {
+  BRANDING_CONTENT_TYPES,
+  BRANDING_MAX_BYTES,
+  BRANDING_SLOTS,
+  type BrandingContentType,
+  type BrandingSlot,
+  type BrandingSlotState
+} from '../../shared/branding'
 import { COMPANY_KINDS, type CompanyKind } from '../../shared/companies'
 import {
   CURRENCY_CODES,
@@ -27,7 +36,10 @@ import './WorkspaceSettings.css'
 /**
  * `/workspace/settings` (T-260828-38) — the first of the two blank pages the
  * user hit in the installed build. Five cards, one per §6.11 bullet:
- * Identity, Default cadence, Integrations, Backup & appearance, Shortcuts.
+ * Identity, Default cadence, Integrations, Backup & appearance, Shortcuts —
+ * plus Branding (T-260829-07), the one card here that does not read or write
+ * `settings` at all: an image is not a setting value, it lives in its own
+ * table behind its own channels (`electron/shared/branding.ts`).
  *
  * Every value shown reads and writes through T-260828-25's settings
  * repository (`settings:getAll` / `settings:set`) — there is no second
@@ -221,6 +233,181 @@ function IdentityCard({
           </select>
         </span>
       </div>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Branding — the operator's own icon and wordmark (T-260829-07). The two slots
+// are independent: replacing the icon leaves the logo alone, and either can go
+// back to the built-in default on its own.
+//
+// Nothing here is optimistic. What a pick produces depends on a native dialog
+// the renderer cannot predict — the operator may cancel — and on a refusal it
+// cannot anticipate, since the format is decided in main by the bytes' own
+// magic number rather than by anything this side says the file is. So the only
+// image shown is the one a channel actually came back with.
+// ---------------------------------------------------------------------------
+
+const SLOT_LABEL: Record<BrandingSlot, string> = { icon: 'Icon', logo: 'Logo' }
+
+/**
+ * `image/png` → `PNG`. A declared map over the shared list rather than
+ * `contentType.split('/')[1].toUpperCase()`, for the same reason
+ * `CADENCE_SETTING_KEY` below is a literal: a format added to
+ * `BRANDING_CONTENT_TYPES` fails `tsc` here instead of quietly rendering
+ * `X-ICON` in a state line.
+ */
+const CONTENT_TYPE_LABEL: Record<BrandingContentType, string> = {
+  'image/png': 'PNG',
+  'image/jpeg': 'JPEG',
+  'image/webp': 'WebP',
+  'image/gif': 'GIF',
+  'image/bmp': 'BMP',
+  'image/x-icon': 'ICO'
+}
+
+/** The accepted set as the caption says it, composed from the shared list so the sentence cannot drift from what main will take. */
+const ACCEPTED_FORMATS = BRANDING_CONTENT_TYPES.map((type) => CONTENT_TYPE_LABEL[type])
+const ACCEPTED_FORMAT_LIST = `${ACCEPTED_FORMATS.slice(0, -1).join(', ')} or ${ACCEPTED_FORMATS[ACCEPTED_FORMATS.length - 1]}`
+
+/** Bytes as the operator reads them. The cap is 512 KB, so there is no megabyte branch to get wrong. */
+function formatByteLength(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} KB`
+}
+
+/**
+ * The state line under each preview. "Custom" and "Solo CRM default" are the
+ * operator's words for the two branches — the discriminant itself is
+ * `present`/`absent`, and no filename appears in either: the channel does not
+ * return one and must not start (`electron/main/branding/picker.ts`).
+ */
+function slotStateLine(state: BrandingSlotState): string {
+  return state.state === 'present'
+    ? `Custom · ${CONTENT_TYPE_LABEL[state.contentType]} · ${formatByteLength(state.byteLength)}`
+    : 'Solo CRM default'
+}
+
+/**
+ * One slot's row. The preview is drawn from the *same* two components the rail
+ * draws (`components/shell/BrandMarks.tsx`) into the *same* two boxes
+ * (`.mark`, `.wordmark`, declared once in Rail.css), so what the operator sees
+ * here is what the rail will do — including a near-square image rendering
+ * small inside the 104px wordmark slot, which is correct behaviour and better
+ * learned in the card than afterwards.
+ *
+ * `role="group"` with the slot's own label is what gives the two buttons their
+ * context: two rows both offering "Upload…" are ambiguous read out on their
+ * own, and an `aria-label` on the button would have replaced its visible text
+ * rather than qualified it.
+ */
+function BrandingRow({
+  state,
+  message,
+  onChoose,
+  onClear
+}: {
+  state: BrandingSlotState
+  message?: string
+  onChoose: () => void
+  onClear: () => void
+}) {
+  const label = SLOT_LABEL[state.slot]
+  return (
+    <div className="field brandrow" role="group" aria-label={label}>
+      <span className="k">{label}</span>
+      <span className="v brandrow-v">
+        <span className="brandrow-prev">
+          {state.slot === 'icon' ? (
+            <span className="mark">
+              {state.state === 'present' ? (
+                <img src={state.dataUrl} alt="" />
+              ) : (
+                <SoloCrmMark gradientId="branding-preview-mark" />
+              )}
+            </span>
+          ) : state.state === 'present' ? (
+            <img className="wordmark" src={state.dataUrl} alt="" />
+          ) : (
+            <SoloCrmWordmark className="wordmark" />
+          )}
+        </span>
+        <span className="brandrow-text">
+          <span className="meta">{slotStateLine(state)}</span>
+          {message != null && (
+            <span className="meta brandrow-error" role="alert">
+              {message}
+            </span>
+          )}
+        </span>
+      </span>
+      <Button variant="ghost" onClick={onChoose}>
+        {state.state === 'present' ? 'Replace…' : 'Upload…'}
+      </Button>
+      {state.state === 'present' && (
+        <Button variant="ghost" onClick={onClear}>
+          Remove
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function BrandingCard() {
+  const queryClient = useQueryClient()
+  // The key `Rail.tsx` reads on too — that sharing is why opening this page
+  // issues no second `branding:get`.
+  const brandingQuery = useQuery({ queryKey: queryKeys.branding.current(), queryFn: ipcQueryFn('branding:get') })
+
+  // One refusal at a time, remembered with the slot it belongs to so the
+  // message lands beside the row that failed rather than under the card.
+  const [failure, setFailure] = useState<{ slot: BrandingSlot; message: string } | null>(null)
+
+  const chooseImage = useMutation({
+    mutationFn: (slot: BrandingSlot) => callCrm('branding:choose', { slot }).then(unwrapMutationResult),
+    onSuccess: async (choice) => {
+      // Cancelling is a success that changed nothing (`brandingChoiceSchema`),
+      // so it shows nothing: no error raised, and no standing message cleared
+      // either — the operator changed their mind, they did not fix anything.
+      if (choice.outcome === 'cancelled') return
+      setFailure(null)
+      await invalidate.branding(queryClient)
+    },
+    onError: (error, slot) => setFailure({ slot, message: error.message })
+  })
+
+  const clearImage = useMutation({
+    mutationFn: (slot: BrandingSlot) => callCrm('branding:clear', { slot }).then(unwrapMutationResult),
+    onSuccess: async () => {
+      setFailure(null)
+      await invalidate.branding(queryClient)
+    },
+    onError: (error, slot) => setFailure({ slot, message: error.message })
+  })
+
+  const snapshot = brandingQuery.data
+
+  return (
+    <Card>
+      <Card.Header title="Branding" />
+      {BRANDING_SLOTS.map((slot) => (
+        <BrandingRow
+          key={slot}
+          // `absent` is an answer, not a pending read — and so is the
+          // `undefined` here while the query is in flight. Both render the
+          // built-in default, which is what the rail is showing meanwhile.
+          state={snapshot?.[slot] ?? { state: 'absent', slot }}
+          message={failure?.slot === slot ? failure.message : undefined}
+          onChoose={() => chooseImage.mutate(slot)}
+          onClear={() => clearImage.mutate(slot)}
+        />
+      ))}
+      <p className="meta settings-foot">
+        {ACCEPTED_FORMAT_LIST}, up to {BRANDING_MAX_BYTES / 1024} KB per slot. SVG is not one of them: it is a
+        document format that can carry script, and these two images render inside the app&rsquo;s own chrome on
+        every view — so Solo CRM stores an image&rsquo;s pixels here, never a document. Choosing one says so
+        rather than failing quietly. The format is decided by the file&rsquo;s own bytes, not its extension.
+      </p>
     </Card>
   )
 }
@@ -488,6 +675,7 @@ export function WorkspaceSettings() {
       {header}
       <div className="settings-grid">
         <IdentityCard snapshot={snapshot} setSetting={setSetting} />
+        <BrandingCard />
         <CadenceCard snapshot={snapshot} setSetting={setSetting} />
         <IntegrationsCard snapshot={snapshot} setSetting={setSetting} />
         <BackupAppearanceCard snapshot={snapshot} setSetting={setSetting} />
