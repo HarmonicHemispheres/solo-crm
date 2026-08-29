@@ -79,6 +79,27 @@ export const queryKeys = {
     all: () => ['tasks'] as const,
     list: () => ['tasks', 'list'] as const,
     detail: (id: string) => ['tasks', 'detail', id] as const,
+    /**
+     * `tasks:list({ open: true })` — the Todos view's (T-260828-33) working
+     * set, built on the one exported "open" definition
+     * (`OPEN_STATUS_SQL`/`isTaskOpen`, `electron/main/db/repositories/tasks.ts`)
+     * rather than a filter this view writes itself. A distinct key from the
+     * bare `list()` above (unfiltered) so the two caches never collide —
+     * same reasoning as `engagements.byBillingCompany`/`byClientCompany`
+     * below: a filtered variant earns its own named scope rather than
+     * overloading `'list'`.
+     */
+    openList: () => ['tasks', 'openList'] as const,
+    /**
+     * `tasks:list({ status: 'waiting' })` — the Todos view's Waiting group.
+     * Kept separate from `openList()` deliberately: `OPEN_STATUS_SQL`
+     * already excludes `waiting` from "open" (T-260828-23), so a waiting
+     * task is invisible to `openList()` and needs its own query to be shown
+     * at all. Asking for the exact status `'waiting'` is not the same thing
+     * as this view inventing its own approximation of "open" — it names one
+     * literal status, not a second open/closed boundary.
+     */
+    waitingList: () => ['tasks', 'waitingList'] as const,
     /** `tasks:countOpen` — a summary, not a single record, so no id (this file's header: "id is present only when scope addresses one record"). */
     countOpen: () => ['tasks', 'countOpen'] as const
   },

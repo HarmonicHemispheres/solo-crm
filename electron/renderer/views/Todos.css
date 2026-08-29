@@ -1,0 +1,147 @@
+/*
+ * Todos view — planning/solo-crm-mockup.html.
+ *
+ * `.card`/`.card-h` (Card.css), `.stat` (Stat.css) and `.quickadd`
+ * (QuickAdd.css) are already styled by their own primitives; this file only
+ * ports the mockup rules those don't cover — the stat/group grids and the
+ * `.todo` row itself (T-260828-11's closed primitive list has no row shape
+ * that fits a checkbox plus several independent links, see Todos.tsx's
+ * TodoRow comment). Selectors and values are copied from the mockup
+ * verbatim, `.grid`/`.stats` duplicated from Companies.css exactly as that
+ * file duplicated them from the mockup — a shared layout-utilities module
+ * would be the better home for both, but promoting it is not this task's
+ * scope.
+ */
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.stats {
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+}
+
+.todos-stats {
+  margin-bottom: 14px;
+}
+
+.todo-groups {
+  grid-template-columns: repeat(auto-fit, minmax(370px, 1fr));
+  align-items: start;
+}
+
+/* ── todo row ── */
+.todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+
+.todo:last-child {
+  border-bottom: 0;
+}
+
+.todo:hover {
+  background: var(--surface-2);
+}
+
+.check {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-bright);
+  background: none;
+  padding: 0;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  transition: .15s;
+}
+
+.check:hover {
+  border-color: var(--verdigris);
+}
+
+.check svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--obsidian);
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity .15s;
+}
+
+.check:hover svg {
+  opacity: .5;
+}
+
+/* Waiting rows are distinguished by more than colour — a dashed border, not
+   just a different border colour (ui-design.md / this task's Risks: "colour
+   as the only overdue signal"). */
+.check.wait {
+  border-color: var(--lapis);
+  border-style: dashed;
+}
+
+.todo .tx {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.todo .sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.due {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .6px;
+  white-space: nowrap;
+}
+
+.due.over {
+  color: var(--red);
+}
+
+.due.soon {
+  color: var(--orange);
+}
+
+.due.later {
+  color: var(--faint);
+}
+
+.due.wait {
+  color: var(--lapis);
+}
+
+/* Row-level links to a task's company/engagement/person — plain buttons
+   (never nested inside another button, see Todos.tsx's TodoRow comment),
+   styled to read as links, matching the mockup's inline `<a class="meta">`. */
+.metalink {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .4px;
+  color: var(--verdigris);
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.metalink:hover {
+  text-decoration: underline;
+}
