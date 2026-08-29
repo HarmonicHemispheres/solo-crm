@@ -2,6 +2,7 @@ import { app } from 'electron'
 import type { z } from 'zod'
 import { getDatabase } from '../db/connection'
 import { getSchemaVersion } from '../db/migrate'
+import { runReadOnlyQuery } from '../db/readonly-connection'
 import {
   addAffiliation,
   createPerson,
@@ -154,6 +155,28 @@ export const registry = {
   'db:schemaVersion': defineChannel({
     ...CHANNEL_CONTRACTS['db:schemaVersion'],
     handler: () => getSchemaVersion(getDatabase())
+  }),
+
+  /**
+   * X-02's read-only query channel (T-260828-39) — the single most
+   * dangerous channel in the app, because it takes SQL from the renderer.
+   *
+   * Note what this handler does *not* do: it never calls `getDatabase()`.
+   * `runReadOnlyQuery` owns its own connection — a second one, opened
+   * readonly against the same file — so the write handle every other
+   * handler in this file reaches for is out of this channel's reach by
+   * construction rather than by anybody remembering not to pass it.
+   * `readonly-connection.test.ts` asserts that structurally.
+   *
+   * Refusals come back inside the response as `{ ok: false, error }`, the
+   * same shape and for the same reason as `runMutation`'s above: `index.ts`
+   * would otherwise replace "this statement modifies the database" with a
+   * generic sentence, and §6.12 requires a refusal to name its grounds.
+   * Nothing is thrown here, so nothing reaches that path.
+   */
+  'db:query': defineChannel({
+    ...CHANNEL_CONTRACTS['db:query'],
+    handler: ({ statement, params }) => runReadOnlyQuery(statement, params)
   }),
 
   // ---------------------------------------------------------------------

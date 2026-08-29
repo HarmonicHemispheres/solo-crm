@@ -68,6 +68,92 @@ const schemaVersionResponseSchema = z.object({
 })
 
 // ---------------------------------------------------------------------------
+// db:query — the read-only query channel (T-260828-39, plan item X-02).
+//
+// The one channel that takes SQL from the renderer. Everything that makes
+// that safe lives in `electron/main/db/readonly-connection.ts` (a second
+// connection opened readonly, plus a `stmt.readonly` and a `stmt.reader`
+// check on the *compiled* statement — read that file's header before
+// changing anything here). This file only describes the wire.
+//
+// Two things are deliberately absent from the request shape: a timeout and
+// a row cap. Both exist, both are enforced, and both are main-side
+// constants — a renderer that could name its own ceiling could name a
+// useless one, and the cap is what stops a cartesian join freezing the main
+// process.
+// ---------------------------------------------------------------------------
+
+/** Mirrors `electron/main/db/readonly-connection.ts`'s `QueryRefusalCode` — that file is main-only and cannot be imported here (TS6307, this file's own header), the same way `REPOSITORY_ERROR_CODES` below mirrors `db/repositories/errors.ts`. */
+const QUERY_REFUSAL_CODES = [
+  'empty-statement',
+  'invalid-statement',
+  'writes-data',
+  'no-result-set',
+  'bad-parameters',
+  'timeout'
+] as const
+export type QueryRefusalCode = (typeof QUERY_REFUSAL_CODES)[number]
+
+/** One SQLite value, in and out: text, a number, `NULL`, or a BLOB. Everything here survives Electron's structured clone unchanged. */
+const queryCellSchema = z.union([
+  z.string(),
+  z.number(),
+  z.bigint(),
+  z.boolean(),
+  z.null(),
+  // `z.custom<Uint8Array>` rather than `z.instanceof(Uint8Array)`: the
+  // latter infers `Uint8Array<ArrayBuffer>`, and better-sqlite3 hands back a
+  // Node `Buffer`, which is `Uint8Array<ArrayBufferLike>` and not assignable
+  // to it — the handler's return type stops matching this contract for a
+  // reason that has nothing to do with the wire. The runtime check is the
+  // same `instanceof` either way.
+  z.custom<Uint8Array>((value) => value instanceof Uint8Array, { message: 'Expected a BLOB (Uint8Array)' })
+])
+
+const queryRequestSchema = z
+  .object({
+    statement: z.string().min(1).max(20_000),
+    /** Positional (`?`) or named (`:name`) bind values. Optional — most console statements have none. */
+    params: z.union([z.array(queryCellSchema), z.record(z.string(), queryCellSchema)]).optional()
+  })
+  .strict()
+
+const queryResultSchema = z
+  .object({
+    /**
+     * Rows are positional arrays keyed by `columns`, not objects: a
+     * four-table join names `id` four times and an object row would keep
+     * one of them, silently losing data in exactly the query this channel
+     * exists to make possible.
+     */
+    columns: z.array(z.string()).readonly(),
+    rows: z.array(z.array(queryCellSchema).readonly()).readonly(),
+    rowCount: z.number().int().nonnegative(),
+    /** True when the result was cut off at `rowLimit`. Stated, never silent. */
+    truncated: z.boolean(),
+    rowLimit: z.number().int().positive(),
+    durationMs: z.number().nonnegative()
+  })
+  .strict()
+
+/**
+ * A refusal is *data*, exactly like `mutationResultSchema`'s and for
+ * exactly the same reason (see the section below): `index.ts` discards a
+ * thrown error's message, and §6.12 requires a refused statement to say
+ * what was refused and on what grounds.
+ */
+const queryResponseSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), data: queryResultSchema }),
+  z.object({
+    ok: z.literal(false),
+    error: z.object({ code: z.enum(QUERY_REFUSAL_CODES), message: z.string() })
+  })
+])
+
+/** The `db:query` result as the renderer sees it, exported so a caller can name the type without re-deriving it from the schema. */
+export type QueryChannelResponse = z.infer<typeof queryResponseSchema>
+
+// ---------------------------------------------------------------------------
 // Repository refusals, as data.
 //
 // `electron/main/ipc/index.ts` (out of this task's scope — see AGENTS.md/the
@@ -227,6 +313,16 @@ export const CHANNEL_CONTRACTS = {
   'db:schemaVersion': {
     request: z.undefined(),
     response: schemaVersionResponseSchema
+  },
+  /**
+   * X-02's read-only query channel — a statement plus optional bind values
+   * in, rows or a named refusal out. See the `db:query` section above, and
+   * `electron/main/db/readonly-connection.ts` for the three mechanisms that
+   * make taking SQL from the renderer defensible at all.
+   */
+  'db:query': {
+    request: queryRequestSchema,
+    response: queryResponseSchema
   },
 
   // -- companies --------------------------------------------------------

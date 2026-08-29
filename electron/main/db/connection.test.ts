@@ -485,8 +485,44 @@ describe('openDatabase and the migration runner (T-260828-07)', () => {
   })
 })
 
+/**
+ * The two modules allowed to construct a `better-sqlite3` `Database`
+ * directly. (Named that way rather than written out: the walk below scans
+ * every file under `electron/`, this one included, so spelling the
+ * constructor call here would make this comment an offender.)
+ *
+ * `connection.ts` owns the write connection and always has. T-260828-39
+ * (plan item X-02) adds the second entry: the read-only connection the
+ * `db:query` channel runs on, which by definition cannot be the same handle
+ * — the whole safety argument for taking SQL from the renderer is that the
+ * statement is stepped against a connection that cannot write. So this list
+ * grows by exactly one, and the test below it pins down what that one is
+ * allowed to open with, so "there is a second connection now" cannot become
+ * "there is a second, unconstrained way to open the database" — the
+ * AGENTS.md sync-folder gotcha's exact failure mode.
+ */
+const DATABASE_OWNERS = ['main/db/connection.ts', 'main/db/readonly-connection.ts']
+
 describe('single owner of the SQLite connection', () => {
-  it('no module under electron/ other than db/connection.ts constructs a Database directly', () => {
+  it('the read-only connection is the only other opener, and it can neither write nor create the file', () => {
+    const source = readFileSync(join(electronRoot, 'main', 'db', 'readonly-connection.ts'), 'utf-8')
+    // Assembled the same way as the walk below so this check does not match
+    // itself, and asserted on the options object rather than on a comment.
+    const constructorCall = new RegExp(['new', String.raw`Database\s*\(`].join(String.raw`\s+`), 'g')
+    // Exactly one construction in the file — a second one could carry
+    // different options and this test would never see it.
+    expect(source.match(constructorCall) ?? []).toHaveLength(1)
+
+    const start = source.search(constructorCall)
+    const options = source.slice(start, source.indexOf('})', start))
+    expect(options).toContain('readonly: true')
+    // Never the module that brings solocrm.db into existence: the write
+    // connection is opened at boot behind the sync-folder guard, and this
+    // one only ever attaches to what that already created.
+    expect(options).toContain('fileMustExist: true')
+  })
+
+  it('no module under electron/ other than the two declared owners constructs a Database directly', () => {
     // Assembled from parts rather than written as one contiguous literal so
     // that this check does not match itself.
     const constructorCall = new RegExp(['new', String.raw`Database\s*\(`].join(String.raw`\s+`))
@@ -502,7 +538,7 @@ describe('single owner of the SQLite connection', () => {
         if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue
 
         const rel = relative(electronRoot, full).split(sep).join('/')
-        if (rel === 'main/db/connection.ts') continue
+        if (DATABASE_OWNERS.includes(rel)) continue
 
         const contents = readFileSync(full, 'utf-8')
         if (constructorCall.test(contents)) {

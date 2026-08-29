@@ -24,6 +24,17 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
   return {
     'app:version': vi.fn(async () => ({ ok: true as const, data: { version: '0.1.0' } })),
     'db:schemaVersion': vi.fn(async () => ({ ok: true as const, data: { version: 1, lastMigrationAt: null } })),
+    // T-260828-39's read-only query channel. The default is a successful
+    // empty result rather than a refusal: "nothing here yet" is the
+    // realistic no-override response for every other channel above, and a
+    // test that wants a refusal is testing refusals and will override.
+    'db:query': vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        ok: true as const,
+        data: { columns: [], rows: [], rowCount: 0, truncated: false, rowLimit: 1000, durationMs: 0 }
+      }
+    })),
 
     'companies:list': vi.fn(async () => ({ ok: true as const, data: [] })),
     'companies:get': vi.fn(async () => ({ ok: true as const, data: null })),
