@@ -39,6 +39,39 @@ out to Notion, Drive and Stripe rather than becoming a fourth copy of them.
 | Server state | TanStack Query over a typed IPC bridge |
 | Search | SQLite FTS5 |
 
+## Cutting a release
+
+The version in `package.json` is hand-bumped, and it is the only place a
+release gets its number. Nothing derives it from the commit, the date or the
+tag count — so the bump is a deliberate step, and forgetting it fails the build
+rather than overwriting the last installer.
+
+1. Run the checks — `npm run typecheck`, `npm run lint`, `npm test`, and
+   `npm run check:index` last. The `verify` skill in `.claude/skills/` runs
+   exactly these and reports what actually passed. `npm run dist` runs none of
+   them, so nothing else stops an unbuildable tree from being packaged, or a
+   month `INDEX.md` that disagrees with its task files from shipping.
+2. Bump `version` in `package.json` and commit. Semver, three numeric parts —
+   NSIS needs a numeric `FileVersion`, so no `-rc.1` or `+sha` suffixes.
+3. `npm run dist`.
+
+That writes `release/Solo CRM-Setup-<version>.exe`, which is also the version
+Windows shows in **Apps and features**, and which the installer's maintenance
+page compares against an existing install to offer *Update* rather than
+*Repair*.
+
+**The overwrite guard.** `npm run dist` runs `scripts/release-version.mjs check`
+before packaging and `… record` after. `record` stamps
+`release/build-manifest.json` with the version, the commit and the timestamp;
+`check` refuses to build when the artifact for the current version is already
+there and was built from a *different* commit. Rebuilding the same commit is
+allowed and overwrites its own output. If the guard stops you, the fix is step 2
+— not deleting the file.
+
+**`release/latest.yml` is not an update feed.** electron-builder writes it on
+every build and there is no auto-update wired to read it; treat it as build
+output, not as a published manifest.
+
 ## Brand assets
 
 | File | Use |
