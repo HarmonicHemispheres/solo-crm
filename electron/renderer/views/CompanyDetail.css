@@ -400,6 +400,17 @@ textarea.field-input {
   font-weight: 600;
 }
 
+/* Review fix (item 2): the next-step block's own checkbox/due/promote row —
+   not nested inside a `.todo`, so `.todo .sub`'s scoped layout above doesn't
+   reach it; mirrored here rather than widened into a bare `.sub` selector
+   that would also restyle unrelated `.sub` usage elsewhere. */
+.next-step-block .sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ── timeline (T-260828-30) ──────────── */
 
 .tl {

@@ -251,10 +251,39 @@ function formatMonthDay(dateOnly: string): string {
   return MONTH_DAY_FORMAT.format(parseDateOnly(dateOnly))
 }
 
-/** A `dateOnly` value's age in days as of `now` — positive once it's in the
- * past, matching `cadenceState`'s own `Math.floor` day math above. */
+/**
+ * Today's date as a LOCAL calendar `YYYY-MM-DD` string — deliberately the
+ * one place in this file that reads local `Date` accessors rather than
+ * UTC ones. "Today" is inherently the viewer's local calendar day, the
+ * same way `dueOn` itself is calendar-date data with no time zone
+ * attached — see `daysSinceDateOnly` below for why comparing it this way
+ * matters.
+ */
+function localDateOnly(now: number): string {
+  const date = new Date(now)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * A `dateOnly` value's age in days as of `now` — positive once it's in the
+ * past. Review fix: this used to be `Math.floor((now -
+ * parseDateOnly(dateOnly).getTime()) / DAY_MS)`, subtracting a
+ * UTC-midnight instant (`dueOn`) from a raw epoch-millis wall-clock
+ * instant (`now`) — two different time frames. For any viewer west of
+ * UTC, once local time crosses into the next UTC calendar day (~17:00
+ * local at UTC-7), that mixing reads every due date one day later than
+ * the viewer's actual local calendar day. Comparing calendar date to
+ * calendar date instead — `today` derived locally via `localDateOnly`,
+ * both sides then parsed to a UTC-midnight instant via `parseDateOnly` —
+ * keeps the difference a whole number of calendar days regardless of
+ * what hour it currently is.
+ */
 function daysSinceDateOnly(dateOnly: string, now: number): number {
-  return Math.floor((now - parseDateOnly(dateOnly).getTime()) / DAY_MS)
+  const todayMs = parseDateOnly(localDateOnly(now)).getTime()
+  return Math.round((todayMs - parseDateOnly(dateOnly).getTime()) / DAY_MS)
 }
 
 /** A full timestamp's age in days as of `now` — `waitingSince` is a
@@ -302,6 +331,22 @@ const ACTIVITY_DATE_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'short', 
 
 function formatActivityDate(occurredAt: string): string {
   return ACTIVITY_DATE_FORMAT.format(parseTimestamp(occurredAt))
+}
+
+/**
+ * Review fix (item 3): true when `occurredAt` falls inside the affiliation's
+ * own window — `started` through `ended` inclusive, or open-ended for a
+ * still-current affiliation. Without this bound, `relevantPersonIds` pulled
+ * in EVERY activity row tied to a person once they had ever been affiliated
+ * with this company — including a *former* contact's activity from after
+ * they left, logged against whatever company they moved to next, leaking
+ * it onto their old company's timeline. `ended` is a calendar date, so its
+ * whole day still counts as affiliated.
+ */
+function withinAffiliationWindow(occurredAt: string, affiliation: PersonAffiliation): boolean {
+  const occurred = parseTimestamp(occurredAt).getTime()
+  if (occurred < parseDateOnly(affiliation.started).getTime()) return false
+  return affiliation.ended == null || occurred < parseDateOnly(affiliation.ended).getTime() + DAY_MS
 }
 
 // ---------------------------------------------------------------------------
@@ -642,14 +687,45 @@ function EndClientsCard({ companyName, endClients }: { companyName: string; endC
 // rule this task's Risks section names explicitly.
 // ---------------------------------------------------------------------------
 
-function NextStepBlock({ task, now }: { task: Task; now: number }) {
+/**
+ * Review fix (item 2): this block used to render only the badge, title and
+ * due label — the one todo the page exists to draw attention to was the
+ * only one with no way to tick it off or hand the marker to another task.
+ * `onComplete`/`onPromote` give it the exact same inline controls
+ * `TodoRow` below renders, wrapped in the same `.sub` layout that row uses
+ * for its checkbox/due/promote trio (`.next-step-block .sub` in
+ * CompanyDetail.css mirrors `.todo .sub`, since this block isn't a `.todo`
+ * row itself).
+ */
+function NextStepBlock({
+  task,
+  now,
+  onComplete,
+  onPromote
+}: {
+  task: Task
+  now: number
+  onComplete: (id: string) => void
+  onPromote: (id: string) => void
+}) {
   const due = taskDueInfo(task, now)
   return (
     <div className="next-step-block">
       <span className="nextbadge">next step</span>
       <div className="next-step-title">{task.title}</div>
-      <div className={`due ${due.cls}`} style={{ marginTop: 4 }}>
-        {due.label}
+      <div className="sub" style={{ marginTop: 6 }}>
+        <button
+          type="button"
+          className={task.status === 'waiting' ? 'check wait' : 'check'}
+          onClick={() => onComplete(task.id)}
+          aria-label={`Mark "${task.title}" done`}
+        >
+          <CheckIcon />
+        </button>
+        <span className={`due ${due.cls}`}>{due.label}</span>
+        <IconButton aria-label={`Set "${task.title}" as next step`} onClick={() => onPromote(task.id)}>
+          <NextStepIcon />
+        </IconButton>
       </div>
     </div>
   )
@@ -721,7 +797,9 @@ function TodosCard({ companyId, companyName, tasks, now }: { companyId: string; 
   return (
     <Card>
       <Card.Header title="Todos" count={openTasks.length} />
-      {nextStep != null && <NextStepBlock task={nextStep} now={now} />}
+      {nextStep != null && (
+        <NextStepBlock task={nextStep} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
+      )}
       {otherTasks.length === 0 && nextStep == null ? (
         <EmptyState>Nothing open.</EmptyState>
       ) : (
@@ -937,7 +1015,9 @@ export function CompanyDetail() {
   // Every person this company has ever had an affiliation with — current and
   // historical alike, matching the Activity section's own "this company's
   // people" scope (this task's Scope), not only its present-day contacts.
-  const relevantPersonIds = [...currentContacts, ...historicalContacts].map((entry) => entry.person.id)
+  // Each entry carries the affiliation `withinAffiliationWindow` bounds that
+  // person's merged-in activity to below (review fix item 3).
+  const relevantContacts: readonly ContactEntry[] = [...currentContacts, ...historicalContacts]
 
   // -- Activity (T-260828-30): merged from three independently-filtered
   // `activity:list` calls — companyId directly, this company's people, this
@@ -957,9 +1037,9 @@ export function CompanyDetail() {
     enabled: companyId !== ''
   })
   const personActivityQueries = useQueries({
-    queries: relevantPersonIds.map((personId) => ({
-      queryKey: queryKeys.activity.byPerson(personId),
-      queryFn: ipcQueryFn('activity:list', { personId })
+    queries: relevantContacts.map((entry) => ({
+      queryKey: queryKeys.activity.byPerson(entry.person.id),
+      queryFn: ipcQueryFn('activity:list', { personId: entry.person.id })
     }))
   })
   const engagementActivityQueries = useQueries({
@@ -1008,7 +1088,16 @@ export function CompanyDetail() {
   // one pass, and ISO-8601 UTC timestamps sort correctly as plain strings.
   const activityById = new Map<string, Activity>()
   for (const activity of companyActivityQuery.data ?? []) activityById.set(activity.id, activity)
-  for (const result of personActivityQueries) for (const activity of result.data ?? []) activityById.set(activity.id, activity)
+  // Bounded per contact by their affiliation window (review fix item 3) — a
+  // historical contact's activity from after they left, at whatever company
+  // they moved to next, must not leak onto this one just because their
+  // `activity:list({ personId })` query itself returns every row they've
+  // ever been party to.
+  relevantContacts.forEach((entry, index) => {
+    for (const activity of personActivityQueries[index]?.data ?? []) {
+      if (withinAffiliationWindow(activity.occurredAt, entry.affiliation)) activityById.set(activity.id, activity)
+    }
+  })
   for (const result of engagementActivityQueries) for (const activity of result.data ?? []) activityById.set(activity.id, activity)
   const activityItems = Array.from(activityById.values()).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
 

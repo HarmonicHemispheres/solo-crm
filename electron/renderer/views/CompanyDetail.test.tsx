@@ -12,6 +12,16 @@ import type { Activity } from '../../shared/activity'
 import type { Person, PersonAffiliation } from '../../shared/people'
 import { CompanyDetail } from './CompanyDetail'
 
+// This file is typechecked under tsconfig.web.json (no `@types/node`), but a
+// few tests below deliberately flip `process.env.TZ` to exercise a genuine
+// non-UTC local timezone — the same technique electron/main/shared-
+// conventions.test.ts uses under tsconfig.node.json, where `process` is
+// already typed. Vitest itself always runs in a real Node process
+// regardless of the jsdom `environment` a test project sets, so this global
+// exists at runtime; it just isn't declared for this tsconfig, hence the
+// narrow ambient type below rather than pulling in Node's full type surface.
+declare const process: { env: Record<string, string | undefined> }
+
 /**
  * The directional-split assertions this task's own Risks section asks for
  * first, before any rendering code: rendering "billed here" and "delivered
@@ -541,6 +551,130 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       await waitFor(() => expect(within(todosCard).getByText('Call about renewal terms')).toBeTruthy())
       expect(within(todosCard).getByText('3')).toBeTruthy()
     })
+
+    // Review fix (item 2): the next-step block used to render only the
+    // badge, title and due label — no way to tick off or hand off the one
+    // todo the page exists to draw attention to.
+    it('the next-step block carries the same completion checkbox and promote control an ordinary row has', async () => {
+      const crm = buildFullCrm()
+      renderCompanyDetail('co-ezdeploy', crm)
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+
+      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+      // "Send invoice" is the seeded next step (sendInvoice.isNextStep).
+      fireEvent.click(within(todosCard).getByRole('button', { name: 'Mark "Send invoice" done' }))
+
+      await waitFor(() => expect(crm['tasks:update']).toHaveBeenCalledWith({ id: 'task-invoice', patch: { status: 'done' } }))
+      // Ticking off the next step clears the whole block — there is no
+      // longer an open next step to show.
+      await waitFor(() => expect(within(todosCard).queryByText('next step')).toBeNull())
+    })
+
+    it('the next-step block still shows its promote control, reachable without a mouse (X-06)', async () => {
+      renderCompanyDetail('co-ezdeploy', buildFullCrm())
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+
+      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+      const promote = within(todosCard).getByRole('button', { name: 'Set "Send invoice" as next step' })
+      // A real `<button>`, not a div with a click handler — reachable by Tab
+      // and activated with Enter/Space with no extra keyboard wiring.
+      expect(promote.tagName).toBe('BUTTON')
+    })
+
+    // Review fix (item 4): the `taskDueInfo` label chain, its parallel `cls`
+    // chain, and the waiting-since age were all uncovered — every fixture
+    // above leaves `dueOn` null (the "no date" branch) or uses `status:
+    // 'todo'`, never `'waiting'`. These pin every remaining branch of both
+    // ternary chains to a known `now`, so a mutated boundary or a swapped
+    // label actually fails.
+    it('labels every due-date band correctly: overdue, today, tomorrow, the 7-day boundary, later, and waiting', async () => {
+      // `Date.now()` alone is mocked (not the timers) so React Testing
+      // Library's own setTimeout-based `waitFor`/`findBy` polling keeps
+      // running normally underneath — `vi.useFakeTimers()` would freeze that
+      // polling too and hang every await below. `TZ` is pinned to remove any
+      // dependence on the host machine's own local timezone for what "today"
+      // resolves to; item 1's dedicated test below is what exercises a
+      // genuinely non-UTC local timezone.
+      const originalTz = process.env.TZ
+      process.env.TZ = 'UTC'
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-08-28T12:00:00.000Z').getTime())
+      try {
+        const overdue = makeTask({ id: 'task-overdue', title: 'Overdue task', companyId: 'co-ezdeploy', dueOn: '2026-08-20' })
+        const dueToday = makeTask({ id: 'task-today', title: 'Due today task', companyId: 'co-ezdeploy', dueOn: '2026-08-28' })
+        const dueTomorrow = makeTask({ id: 'task-tomorrow', title: 'Due tomorrow task', companyId: 'co-ezdeploy', dueOn: '2026-08-29' })
+        // Exactly 7 days out — still the "soon" band's far edge.
+        const dueSoonEdge = makeTask({ id: 'task-soon-edge', title: 'Due soon-edge task', companyId: 'co-ezdeploy', dueOn: '2026-09-04' })
+        // 8 days out — one past the edge, now "later".
+        const dueLater = makeTask({ id: 'task-later', title: 'Due later task', companyId: 'co-ezdeploy', dueOn: '2026-09-05' })
+        const waiting = makeTask({
+          id: 'task-waiting',
+          title: 'Waiting task',
+          companyId: 'co-ezdeploy',
+          status: 'waiting',
+          waitingSince: '2026-08-25T12:00:00.000Z'
+        })
+
+        renderCompanyDetail(
+          'co-ezdeploy',
+          buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { tasks: [overdue, dueToday, dueTomorrow, dueSoonEdge, dueLater, waiting] })
+        )
+        await screen.findByRole('heading', { name: 'EZDeploy' })
+        const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+
+        const overdueDue = within(todosCard).getByText('8d overdue')
+        expect(overdueDue.className).toBe('due over')
+
+        const todayDue = within(todosCard).getByText('today')
+        expect(todayDue.className).toBe('due soon')
+
+        const tomorrowDue = within(todosCard).getByText('tomorrow')
+        expect(tomorrowDue.className).toBe('due soon')
+
+        const soonEdgeDue = within(todosCard).getByText('Sep 4')
+        expect(soonEdgeDue.className).toBe('due soon')
+
+        const laterDue = within(todosCard).getByText('Sep 5')
+        expect(laterDue.className).toBe('due later')
+
+        const waitingDue = within(todosCard).getByText('waiting 3d')
+        expect(waitingDue.className).toBe('due wait')
+        expect(within(todosCard).getByRole('button', { name: 'Mark "Waiting task" done' }).className).toContain('wait')
+      } finally {
+        nowSpy.mockRestore()
+        if (originalTz === undefined) delete process.env.TZ
+        else process.env.TZ = originalTz
+      }
+    })
+
+    // Review fix (item 1): a due-date label used to mix a UTC-midnight
+    // `dueOn` instant against `now`'s raw wall-clock instant, reading one
+    // calendar day later than a viewer's actual local day for anyone west of
+    // UTC once local time crosses into the UTC-next-day — from ~17:00 local
+    // at UTC-7. A test at midday passes whether or not that bug exists,
+    // which is why it survived; this one pins the clock to a late local
+    // evening specifically to catch it.
+    it('labels a todo due "today" correctly at a late local evening hour west of UTC, after the UTC calendar day has already advanced', async () => {
+      const originalTz = process.env.TZ
+      process.env.TZ = 'America/Los_Angeles' // UTC-7 in late August (PDT)
+      // 8:00pm PDT on Aug 28 is already 3:00am UTC on Aug 29 — dueOn's
+      // UTC-midnight instant for "2026-08-28" now sits a full day behind a
+      // raw `now - dueOn` subtraction, which is exactly the bug: it would
+      // report this task "1d overdue" while it is still due today locally.
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-08-29T03:00:00.000Z').getTime())
+      try {
+        const dueTonight = makeTask({ id: 'task-due-tonight', title: 'Renew SSL cert', companyId: 'co-ezdeploy', dueOn: '2026-08-28' })
+        renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { tasks: [dueTonight] }))
+        await screen.findByRole('heading', { name: 'EZDeploy' })
+
+        const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+        expect(within(todosCard).getByText('today')).toBeTruthy()
+        expect(within(todosCard).queryByText('1d overdue')).toBeNull()
+      } finally {
+        nowSpy.mockRestore()
+        if (originalTz === undefined) delete process.env.TZ
+        else process.env.TZ = originalTz
+      }
+    })
   })
 
   describe('activity', () => {
@@ -587,6 +721,92 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
       await waitFor(() => expect(within(activityCard).getByText('Left a voicemail')).toBeTruthy())
     })
+
+    // Review fix (item 3): `relevantPersonIds` used to pull in EVERY
+    // activity row tied to a person once they'd ever been affiliated with
+    // this company — unbounded by the affiliation's own date range. Casey
+    // left EZDeploy for W+K; her post-move activity must not leak onto
+    // EZDeploy's timeline just because she is still fetched here as a
+    // historical contact.
+    it("bounds a former contact's activity to the time they were actually affiliated here, not their activity everywhere", async () => {
+      const postMove = makeActivity({
+        id: 'act-casey-wk',
+        title: 'Kickoff call at W+K',
+        kind: 'call',
+        personId: 'per-casey',
+        occurredAt: '2026-07-01T00:00:00.000Z'
+      })
+      const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, {
+        activity: [directTouch, danaEmail, samayNote, postMove],
+        people: ALL_PEOPLE,
+        affiliations: AFFILIATIONS
+      })
+
+      renderCompanyDetail('co-ezdeploy', crm)
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+      const ezActivityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      await within(ezActivityCard).findByText('Quarterly check-in call')
+      expect(within(ezActivityCard).queryByText('Kickoff call at W+K')).toBeNull()
+    })
+
+    it("shows that same post-move activity at the company Casey is now affiliated with", async () => {
+      const postMove = makeActivity({
+        id: 'act-casey-wk',
+        title: 'Kickoff call at W+K',
+        kind: 'call',
+        personId: 'per-casey',
+        occurredAt: '2026-07-01T00:00:00.000Z'
+      })
+      renderCompanyDetail(
+        'co-wk',
+        buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { activity: [postMove], people: ALL_PEOPLE, affiliations: AFFILIATIONS })
+      )
+      await screen.findByRole('heading', { name: 'W+K' })
+      const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      await within(activityCard).findByText('Kickoff call at W+K')
+    })
+
+    // Review fix (item 4): `ACTIVITY_KIND_LABEL` and `ACTIVITY_KIND_PATHS`
+    // were both uncovered — no existing fixture asserted the rendered kind
+    // label text or the icon markup itself, only row titles/ordering.
+    it('labels and draws a distinct icon for each activity kind', async () => {
+      const meetingActivity = makeActivity({
+        id: 'act-meeting',
+        title: 'Kickoff meeting',
+        kind: 'meeting',
+        companyId: 'co-ezdeploy',
+        occurredAt: '2026-08-05T00:00:00.000Z'
+      })
+      const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, {
+        activity: [directTouch, danaEmail, samayNote, meetingActivity],
+        people: ALL_PEOPLE,
+        affiliations: AFFILIATIONS
+      })
+      renderCompanyDetail('co-ezdeploy', crm)
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+      const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      await within(activityCard).findByText('Kickoff meeting')
+
+      function rowFor(title: string): HTMLElement {
+        return within(activityCard).getByText(title).closest('.tli') as HTMLElement
+      }
+
+      // Label text — a mutated ACTIVITY_KIND_LABEL entry fails these.
+      expect(within(rowFor('Quarterly check-in call')).getByText(/^Call ·/)).toBeTruthy()
+      expect(within(rowFor('Emailed Dana re: renewal')).getByText(/^Email ·/)).toBeTruthy()
+      expect(within(rowFor('Samay kickoff notes')).getByText(/^Note ·/)).toBeTruthy()
+      expect(within(rowFor('Kickoff meeting')).getByText(/^Meeting ·/)).toBeTruthy()
+
+      // Icon glyph — a mutated ACTIVITY_KIND_PATHS entry fails these: each
+      // kind draws a different child element/path, not the same shape
+      // recoloured.
+      expect(rowFor('Quarterly check-in call').querySelector('.bul svg path')?.getAttribute('d')).toBe(
+        'M5 4h3l2 5-2 1a10 10 0 005 5l1-2 5 2v3a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z'
+      )
+      expect(rowFor('Samay kickoff notes').querySelector('.bul svg path')?.getAttribute('d')).toBe('M4 19l1-4 10-10 3 3L8 18z')
+      expect(rowFor('Emailed Dana re: renewal').querySelector('.bul svg rect')).toBeTruthy()
+      expect(rowFor('Kickoff meeting').querySelector('.bul svg circle')).toBeTruthy()
+    })
   })
 
   describe('contacts', () => {
@@ -619,6 +839,19 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       expect(within(contactsCard).getByText('Casey Ito')).toBeTruthy()
       expect(within(contactsCard).getByText('PM')).toBeTruthy()
       expect(within(contactsCard).queryByText(/former contact/)).toBeNull()
+    })
+
+    // Review fix (item 4): `ContactsCard`'s header count was uncovered — a
+    // mutant swapping `current.length` for `current.length + historical.length`
+    // (or `historical.length`) would still pass every other assertion here.
+    it('the header count reflects only current contacts, not current plus historical', async () => {
+      renderCompanyDetail('co-ezdeploy', buildFullCrm())
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+
+      const contactsCard = screen.getByText('Contacts').closest('.card') as HTMLElement
+      // Dana (current) plus Casey (historical) — the header count must read
+      // 1, the current-only count, not 2.
+      expect(contactsCard.querySelector('.card-h .c')?.textContent).toBe('1')
     })
   })
 
