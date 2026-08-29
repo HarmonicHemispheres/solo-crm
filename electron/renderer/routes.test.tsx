@@ -8,13 +8,23 @@ import { LayerManager } from './components/shell/LayerManager'
 import { createQueryClient } from './lib/query-client'
 import { stubCrm } from './lib/test-support/stub-crm'
 
-// T-260828-28: the Companies route is query-backed now (the first of the
-// ten views to be) — see Shell.test.tsx's identical comment.
+// T-260828-28 and -29: the Companies and CompanyDetail routes are query-backed
+// now (the first two of the ten views to be) — see Shell.test.tsx's identical
+// comment. One teardown covers both; the two branches each added their own.
 afterEach(() => {
-  // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assigns.
   delete window.crm
 })
 
+/**
+ * T-260828-29's CompanyDetail is the first real view on this tree — every
+ * other route here is still a `ViewPlaceholder` that renders with no
+ * provider at all, but a real view reads `window.crm` through TanStack
+ * Query the same way `App.tsx` sets up for the real app (T-260828-10), so
+ * every render here needs both a `QueryClientProvider` (a fresh client per
+ * call — no cache bleeding between the loop's iterations) and a `window.crm`
+ * stub, exactly like `App.tsx` itself provides in production.
+ */
 function renderAt(path: string) {
   window.crm = stubCrm()
   return render(
@@ -38,12 +48,16 @@ describe('AppRoutes', () => {
     }
   })
 
-  it('resolves company/:id and highlights Companies, not itself', () => {
+  it('resolves company/:id and highlights Companies, not itself', async () => {
     renderAt('/company/co_1')
     const companies = screen.getByRole('link', { name: 'Companies' })
     expect(companies.getAttribute('aria-current')).toBe('page')
-    // Confirms the detail route actually rendered (not a silent fallback).
-    expect(screen.getByRole('heading', { name: 'Company' })).toBeTruthy()
+    // Confirms the detail route actually rendered CompanyDetail (T-260828-29),
+    // not a silent fallback — an id nothing seeded resolves to the "not
+    // found" state that task's acceptance requires, not a crash or an
+    // infinite spinner. CompanyDetail.test.tsx covers that view's real
+    // content in depth; this only proves routing wired it in.
+    expect(await screen.findByText(/not found/i)).toBeTruthy()
   })
 
   it('resolves person/:id and highlights People, not itself', () => {
