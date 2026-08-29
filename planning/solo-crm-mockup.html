@@ -475,6 +475,17 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 <body>
 <div class="app">
   <aside class="rail" id="rail">
+    <!-- DIVERGENCE (T-260829-06): the shipped rail does not match this brand
+         block, deliberately. Here the mark and wordmark are MagicPill Labs'
+         and the product name is a text row underneath; in the app the brand
+         block carries Solo CRM's own mark and wordmark (assets/solocrm-mark.svg
+         and assets/solocrm-wordmark.svg, inlined on tokens), the duplicate name
+         row is gone, and the version chip reads the running version over
+         app:version instead of the literal v0.1 below. An operator can override
+         the mark and wordmark with their own (T-260829-07), which is why the
+         built-in default had to stop being one particular consultancy's.
+         Everything else in this block — .brand, .mark, .wordmark, .rail-app and
+         their sizes — is still the spec. Do not "fix" the rail back to this. -->
     <div class="brand">
       <div class="mark">
         <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="MagicPill Labs">

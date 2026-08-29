@@ -41,14 +41,10 @@
   gap: 7px;
 }
 
-.rail-app .name {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 2.4px;
-  text-transform: uppercase;
-  color: var(--verdigris);
-}
-
+/* The mockup pairs the version chip with a `.name` span spelling out "Solo
+ * CRM" — needed there because the brand block above it wore another company's
+ * wordmark. Ours states the product name itself (T-260829-06), so the name
+ * span and its rule are gone and only the version chip remains. */
 .rail-app .ver {
   font-family: var(--mono);
   font-size: 9.5px;
