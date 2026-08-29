@@ -1,11 +1,11 @@
 ---
 id: T-260828-40
 title: Build the Workspace Data view — live database facts, table counts, query console
-status: in-progress
+status: done
 category: ui
 plan_ref: X-01
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -89,3 +89,62 @@ this page shows when the last one ran.
   error.
 - **Growing this page into analytics.** Its purpose is to keep that pressure
   off the rest of the UI (§6.12); a chart here defeats it.
+
+
+---
+
+## Outcome
+
+Merged. Built by a subagent under the build-only process; reviewed and verified
+by the orchestrator at merge.
+
+**Changed:** `electron/main/db/stats.{ts,test.ts}` (new), `ipc/registry.{ts,test.ts}`,
+`shared/{ipc-types,settings}.ts`, `renderer/routes.tsx`,
+`views/WorkspaceData.{tsx,css,test.tsx}` (new),
+`views/workspace-data-facts.ts` (new), `WorkspaceSettings.test.tsx`,
+`components/shell/Shell.test.tsx`, `lib/test-support/stub-crm.ts`.
+
+### It uses the query channel as designed
+
+All three of the `db:query` contract's sharp edges were handled rather than
+assumed. Rows are rendered from the **positional arrays** keyed by the separate
+`columns` array, so a four-table join naming `id` four times keeps all four. The
+timeout and row limit stay **main-side constants** — the console cannot raise its
+own ceiling, and nothing was added to the request schema. Refusals surface their
+**own** message and code from `QUERY_REFUSAL_CODES`, rather than being replaced
+with a generic error, which is the whole point of `readonly-connection.ts`
+returning refusals as data instead of throwing.
+
+### Three things the scope did not name
+
+1. **Saved snippets needed a settings key.** `view.data.snippets` was added to
+   `SETTINGS_REGISTRY` (an array of `{ name, statement }`, default `[]`), which
+   forced three mechanical follow-ons in `SettingsSnapshot` literals and
+   `WorkspaceSettings.test.tsx`'s key-exhaustiveness list — whose own comment
+   already sanctions a key belonging to a view rather than to the settings page.
+2. **`db:stats` reads through a new `electron/main/db/stats.ts`,** not logic
+   inside `registry.ts`. The Touches list named only `registry.ts`, but that file
+   holds handlers, not queries — and the new module is where the "never cache
+   this" argument and the FTS shadow-table exclusion belong.
+3. **`Stat.tsx` needed no change at all** — it already carried hero/good/bad
+   tones and a meta slot. Reported rather than edited for the sake of matching
+   the Touches list.
+
+It stayed out of `lib/query-keys.ts` because T-260828-50 owned it concurrently,
+building the stats key inline as `[...queryKeys.db.all(), 'stats']` — still under
+`invalidate.db`'s `['db']` prefix, so a factory entry can move there later
+without changing invalidation behaviour.
+
+An `react-refresh/only-export-components` lint failure was fixed by splitting the
+pure helpers into `views/workspace-data-facts.ts`, following the `nav.ts`
+precedent — **not** by disabling the rule.
+
+**Verified at merge:** typecheck clean across all three passes, `node` +
+`renderer` projects green on the merged tree.
+
+## One thing left deliberately null
+
+Last backup and last integrity check cross the wire as `null` — nothing writes
+either until X-04/X-05 land. The view renders "never" and "unchecked" rather
+than inventing a figure, which is the right call: a Data view whose job is to
+state database facts must not be the first place in the app to make one up.

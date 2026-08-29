@@ -32,7 +32,6 @@ that surfaced them. Each names the review it came from.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | X-01 · X-03 |
 
 ## Closed this month
 
@@ -95,3 +94,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | R-260828-03 |
 | ● done | [T-260828-49](T-260828-49-favicon-fetch-cache.md) | Fetch and cache favicons in main, once per host, never through a third party | 🔗 integration | R-260828-03 |
 | ● done | [T-260829-02](T-260829-02-release-versioning.md) | Give each release a distinct version so two installers are never the same file name | 📦 build | R-260828-03 |
+| ● done | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | R-260828-03 |
