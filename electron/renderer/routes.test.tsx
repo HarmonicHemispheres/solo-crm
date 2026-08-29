@@ -89,7 +89,14 @@ describe('AppRoutes', () => {
     // proving the two children are real nested routes, not synonyms for a
     // single top-level /workspace route.
     renderAt('/workspace')
-    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy()
+    // 'Workspace', not 'Settings': T-260828-38 replaced the ViewPlaceholder
+    // with the real view, whose <h1> matches the mockup's own header for
+    // this route verbatim (planning/solo-crm-mockup.html: `H('Workspace',
+    // 'settings','')` — the mockup's breadcrumb for this route is
+    // 'Workspace' too, see nav.ts's ROUTE_META). The nav link's own label
+    // is still 'Settings' (nav.ts's NAV_ITEMS) — only the page's own
+    // heading changed when it stopped being a placeholder.
+    expect(screen.getByRole('heading', { name: 'Workspace' })).toBeTruthy()
   })
 
   it('redirects an unmatched path to Today rather than rendering nothing', () => {
