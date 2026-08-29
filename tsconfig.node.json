@@ -23,6 +23,7 @@
     "vitest.config.ts",
     "electron/renderer/styles/tokens.test.ts",
     "electron/renderer/styles/base.test.ts",
+    "electron/renderer/components/sheets/fields.test.ts",
     "scripts/**/*.ts"
   ]
 }

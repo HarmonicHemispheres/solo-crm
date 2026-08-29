@@ -213,3 +213,19 @@
 .sort-arrow {
   font-size: 9px;
 }
+
+/* ── presentation toggle ──
+ * `.vtog` (mockup:456): this toggle's buttons carry an icon rather than a
+ * word, so the glyph is sized and centred here. Scoped by the icon's own
+ * class rather than by a `.vtog` container class because `Toggle` is a
+ * shared primitive that takes no className — the mockup's two `.vtog button`
+ * rules are folded into the icon itself. */
+.vtog-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}

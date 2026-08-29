@@ -1,16 +1,28 @@
 import { useId, useRef, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Sheet } from '../primitives/Sheet'
 import { Button } from '../primitives/Button'
 import { Field } from './Field'
 import { useCompaniesList } from './queries'
 import { useSheetMutation } from './useSheetMutation'
 import { callCrm, unwrapMutationResult } from '../../lib/ipc'
+import { invalidate } from '../../lib/query-keys'
 import { formatDateOnly } from '../../../shared/format'
 import type { CreatePersonInput } from '../../../shared/people'
 
 export interface PersonSheetProps {
   onClose: () => void
 }
+
+/** See `CompanySheet`'s `FIELD_LABELS` for the rule this table follows. `people:addAffiliation`'s own keys are here too — the affiliation is written from this form's Company/Title fields, so its failures belong on them. */
+const FIELD_LABELS = {
+  name: 'Name',
+  email: 'Email',
+  phone: 'Phone',
+  notes: 'Notes',
+  companyId: 'Company',
+  title: 'Title'
+} as const
 
 /**
  * `.sheet` content for `FORMS.person` (planning/solo-crm-mockup.html) — the
@@ -36,6 +48,7 @@ export interface PersonSheetProps {
  */
 export function PersonSheet({ onClose }: PersonSheetProps) {
   const formId = useId()
+  const queryClient = useQueryClient()
   const companies = useCompaniesList()
   const createdPersonId = useRef<string | null>(null)
 
@@ -46,7 +59,7 @@ export function PersonSheet({ onClose }: PersonSheetProps) {
   const [companyId, setCompanyId] = useState('')
   const [title, setTitle] = useState('')
 
-  const { mutation, error, setError } = useSheetMutation(
+  const { mutation, error, setError, errorFor } = useSheetMutation(
     'people',
     async (vars: { person: CreatePersonInput; companyId: string; title: string }) => {
       let personId = createdPersonId.current
@@ -56,17 +69,31 @@ export function PersonSheet({ onClose }: PersonSheetProps) {
         createdPersonId.current = personId
       }
       if (vars.companyId) {
-        await callCrm('people:addAffiliation', {
-          personId,
-          companyId: vars.companyId,
-          title: vars.title.trim() || null,
-          started: formatDateOnly(new Date())
-        }).then(unwrapMutationResult)
+        try {
+          await callCrm('people:addAffiliation', {
+            personId,
+            companyId: vars.companyId,
+            title: vars.title.trim() || null,
+            started: formatDateOnly(new Date())
+          }).then(unwrapMutationResult)
+        } catch (err) {
+          // The person row is already committed — these are two IPC calls,
+          // not one transaction (this component's header). `useSheetMutation`
+          // only invalidates in `onSuccess`, so without this every list in
+          // the app would keep showing the pre-create data: retrying hides
+          // that, but cancelling leaves a real person invisible until a
+          // reload (T-260828-53 item 5). Invalidate for the half that
+          // succeeded, then rethrow so the failure still surfaces and the
+          // sheet still stays open.
+          await invalidate.people(queryClient)
+          throw err
+        }
       }
       return personId
     },
     onClose,
-    'Could not save this person.'
+    'Could not save this person.',
+    FIELD_LABELS
   )
 
   const handleSubmit = (event: FormEvent) => {
@@ -78,7 +105,7 @@ export function PersonSheet({ onClose }: PersonSheetProps) {
     if (mutation.isPending) return
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setError('name: name is required')
+      setError({ field: 'name', message: `${FIELD_LABELS.name} is required` })
       return
     }
     setError(null)
@@ -115,24 +142,25 @@ export function PersonSheet({ onClose }: PersonSheetProps) {
       }
     >
       <form id={formId} className="sheet-form" onSubmit={handleSubmit}>
-        {error && (
+        {/* Only a failure no field owns — see CompanySheet's identical banner. */}
+        {error?.field == null && error && (
           <div className="field-error" role="alert">
-            {error}
+            {error.message}
           </div>
         )}
         <div className="two">
-          <Field label="Name">
+          <Field label="Name" error={errorFor('name')}>
             <input className="inp" value={name} onChange={(event) => setName(event.target.value)} placeholder="Jane Doe" />
           </Field>
-          <Field label="Email">
+          <Field label="Email" error={errorFor('email')}>
             <input className="inp" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="jane@acme.com" />
           </Field>
         </div>
-        <Field label="Phone">
+        <Field label="Phone" error={errorFor('phone')}>
           <input className="inp" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+1 555 0100" />
         </Field>
         <div className="two">
-          <Field label="Company">
+          <Field label="Company" error={errorFor('companyId')}>
             <select className="inp" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>
               <option value="">— none —</option>
               {companies.map((company) => (
@@ -142,7 +170,7 @@ export function PersonSheet({ onClose }: PersonSheetProps) {
               ))}
             </select>
           </Field>
-          <Field label="Title">
+          <Field label="Title" error={errorFor('title')}>
             <input
               className="inp"
               value={title}
@@ -151,7 +179,7 @@ export function PersonSheet({ onClose }: PersonSheetProps) {
             />
           </Field>
         </div>
-        <Field label="Notes">
+        <Field label="Notes" error={errorFor('notes')}>
           <textarea className="inp" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
         </Field>
       </form>

@@ -238,18 +238,51 @@ describe('EngagementSheet', () => {
     expect((screen.getByLabelText('Hours included') as HTMLInputElement).value).toBe('10')
   })
 
-  it('names the field on an invalid amount and does not close the sheet', async () => {
+  it('renders an invalid amount against the Contract value field, named as the user sees it', async () => {
     const create = vi.fn()
     const { onClose } = renderSheet(vi.fn(), { 'engagements:create': create })
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bad amount' } })
     fireEvent.click(screen.getByRole('button', { name: 'Fixed scope' }))
-    fireEvent.change(screen.getByLabelText('Contract value'), { target: { value: 'not a number' } })
+    fireEvent.change(screen.getByLabelText('Contract value'), { target: { value: '$28,500' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/contractValueCents/)
+    // Not `contractValueCents` — the column name the user has never seen
+    // (T-260828-53 item 2).
+    expect(alert.textContent).toBe('Contract value: "$28,500" is not a valid amount')
+    expect(alert.textContent).not.toMatch(/contractValueCents/)
+
+    // And it is attached to that field, not floating at the top of the sheet:
+    // the Contract value input itself points at this message.
+    const contractValue = screen.getByLabelText('Contract value')
+    expect(contractValue.getAttribute('aria-invalid')).toBe('true')
+    expect(contractValue.getAttribute('aria-describedby')).toBe(alert.id)
+    expect(alert.id).not.toBe('')
+
     expect(create).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('leaves a failure no field owns as the sheet-level banner rather than dropping it', async () => {
+    const create = vi.fn(async (input: unknown) => {
+      void input
+      return {
+        ok: true as const,
+        data: {
+          ok: false as const,
+          error: { code: 'refused' as const, message: 'the database is read-only right now' }
+        }
+      }
+    })
+    renderSheet(vi.fn(), { 'engagements:create': create })
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Refused' } })
+    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('the database is read-only right now')
+    expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBeNull()
   })
 })

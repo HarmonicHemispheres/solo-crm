@@ -11,14 +11,40 @@ import './fields.css'
  * label to focus the control") without every one of this directory's four
  * sheets hand-authoring its own id string per field.
  */
-export function Field({ label, children }: { label: string; children: ReactElement<{ id?: string }> }) {
+export function Field({
+  label,
+  error,
+  children
+}: {
+  label: string
+  /**
+   * The validation failure this field caused, already labelled as the user
+   * sees the field (`useSheetMutation`'s `errorFor`). Rendered here, beside
+   * the control, rather than as a banner at the top of the sheet naming a
+   * database column — T-260828-53 item 2. `aria-invalid` plus
+   * `aria-describedby` put the same fact on the control itself, so a screen
+   * reader announces it on focus instead of only when the alert fires.
+   */
+  error?: string
+  children: ReactElement<{ id?: string; 'aria-invalid'?: boolean; 'aria-describedby'?: string }>
+}) {
   const id = useId()
+  const errorId = `${id}-error`
   return (
     <div>
       <label className="f-lab" htmlFor={id}>
         {label}
       </label>
-      {cloneElement(children, { id })}
+      {cloneElement(children, {
+        id,
+        'aria-invalid': error ? true : undefined,
+        'aria-describedby': error ? errorId : undefined
+      })}
+      {error && (
+        <div className="field-error" id={errorId} role="alert">
+          {error}
+        </div>
+      )}
     </div>
   )
 }

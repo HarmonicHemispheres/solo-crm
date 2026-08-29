@@ -157,7 +157,7 @@ describe('Companies', () => {
     const cardNames = screen.getAllByText(/^(EZDeploy|Rinvii)$/).map((el) => el.textContent)
 
     // Same component instance, same query cache — only the presentation toggled.
-    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }))
     await waitFor(() => expect(screen.getByRole('columnheader', { name: /company/i })).toBeTruthy())
     const listNames = screen.getAllByText(/^(EZDeploy|Rinvii)$/).map((el) => el.textContent)
 
@@ -178,12 +178,12 @@ describe('Companies', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Company' }))
     expect(rowsInOrder()).toEqual(['Rinvii', 'EZDeploy']) // descending, reversed
 
-    fireEvent.click(screen.getByRole('button', { name: 'Card' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Card view' }))
     await waitFor(() => expect(screen.getByRole('button', { name: /^EZDeploy/ })).toBeTruthy())
     const cardOrder = screen.getAllByText(/^(EZDeploy|Rinvii)$/).map((el) => el.textContent)
     expect(cardOrder).toEqual(['Rinvii', 'EZDeploy'])
 
-    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }))
     await waitFor(() => expect(rowsInOrder()).toEqual(['Rinvii', 'EZDeploy']))
   })
 
@@ -248,7 +248,7 @@ describe('Companies', () => {
     const first = renderCompanies({ mode: 'card', crmOverrides })
     await waitFor(() => expect(screen.getByText('EZDeploy')).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }))
     await waitFor(() => expect(settingsSet).toHaveBeenCalledWith({ key: 'view.companies.mode', value: 'list' }))
     first.unmount()
 
@@ -289,6 +289,14 @@ describe('Companies', () => {
     const rinviiCard = screen.getByRole('button', { name: /^Rinvii/ })
     expect(rinviiCard.textContent).toContain('never')
     expect(rinviiCard.textContent).not.toMatch(/NaN/)
+
+    // And it reads as maximally stale, not as healthy (ADR-001 rule 5). The
+    // label alone does not say this: a `decayPct` that returned 0 for a
+    // never-contacted company would still render the word "never" — over a
+    // green, full-health bar (T-260828-53 item 7).
+    const meter = rinviiCard.querySelector('.decay')
+    expect(meter?.className).toContain('late')
+    expect(meter?.className).not.toContain('ok')
   })
 
   it('opens the create sheet from both the header action and the empty state', async () => {
@@ -297,6 +305,51 @@ describe('Companies', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Add company' }))
     expect(screen.getByRole('dialog', { name: 'New company' })).toBeTruthy()
+  })
+
+  it('offers the presentation toggle as icon buttons, each with the name a screen reader reads', async () => {
+    renderCompanies({ mode: 'card' })
+    await waitFor(() => expect(screen.getByText('EZDeploy')).toBeTruthy())
+
+    // `.claude/rules/ui-design.md`: icon buttons by default, and an icon-only
+    // control still carries a label. The mockup's own VIEWTOG wording.
+    const cardView = screen.getByRole('button', { name: 'Card view' })
+    const listView = screen.getByRole('button', { name: 'List view' })
+    expect(cardView.textContent).toBe('')
+    expect(cardView.querySelector('svg')).toBeTruthy()
+    expect(cardView.getAttribute('aria-pressed')).toBe('true')
+    expect(listView.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('rolls the toggle back to the stored presentation when settings:set fails', async () => {
+    // The optimistic write has to be undone by an onError, not left standing:
+    // without one the view keeps claiming a preference main never stored
+    // (T-260828-53 item 6). settings:get answers 'card' once and then never
+    // resolves, so the reconciling refetch cannot paper over a missing
+    // rollback — the only thing that can put 'card' back on screen is the
+    // rollback itself.
+    let getCalls = 0
+    const settingsGet = vi.fn(async () => {
+      getCalls += 1
+      if (getCalls === 1) return { ok: true as const, data: { key: 'view.companies.mode' as const, value: 'card' as const } }
+      return new Promise<never>(() => {})
+    })
+    const settingsSet = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'handler-error' as const, message: 'disk is read-only' }
+    }))
+    renderCompanies({ crmOverrides: { 'settings:get': settingsGet, 'settings:set': settingsSet } })
+    await waitFor(() => expect(screen.getByText('EZDeploy')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }))
+
+    // The click really did ask main to store 'list' — the toggle below is
+    // back on 'card' because the write failed, not because nothing happened.
+    await waitFor(() => expect(settingsSet).toHaveBeenCalledWith({ key: 'view.companies.mode', value: 'list' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Card view' }).getAttribute('aria-pressed')).toBe('true'))
+    expect(screen.getByRole('button', { name: 'List view' }).getAttribute('aria-pressed')).toBe('false')
+    // And the cards, not the table, are what is actually on screen.
+    expect(screen.queryByRole('columnheader', { name: /company/i })).toBeNull()
   })
 
   it('never calls window.crm from this module directly — every read is wired through the ipc/query-key helpers', async () => {
