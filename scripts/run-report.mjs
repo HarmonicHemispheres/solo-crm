@@ -60,8 +60,13 @@ function classify(raw) {
   }
   if (/npm\s+(run\s+)?test\b(?!:)/.test(c)) return 'full suite'
   if (/npm\s+run\s+test:unit/.test(c)) return 'fast pool'
+  // Order matters: a named file wins over a project filter, and an invocation
+  // carrying neither is the one the preamble forbids. Distinguishing these is
+  // the whole point — a scoped run reported as unscoped makes a compliant agent
+  // look like a wasteful one, which it did on this script's first outing.
   if (/vitest[^|]*\.(test|spec)\.[jt]sx?/.test(c)) return 'targeted tests'
-  if (/vitest/.test(c)) return 'vitest (unscoped)'
+  if (/vitest[^|]*--project/.test(c)) return 'scoped tests (--project)'
+  if (/vitest/.test(c)) return 'vitest (UNSCOPED — see preamble)'
   if (/typecheck|tsc\s+-p|tsc\s+--noEmit/.test(c)) return 'typecheck'
   if (/npm\s+run\s+lint|eslint/.test(c)) return 'lint'
   if (/^git\s/.test(c)) return 'git'
