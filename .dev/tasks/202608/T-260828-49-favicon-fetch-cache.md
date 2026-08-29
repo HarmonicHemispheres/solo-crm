@@ -1,11 +1,11 @@
 ---
 id: T-260828-49
 title: Fetch and cache favicons in main, once per host, never through a third party
-status: in-progress
+status: done
 category: integration
 plan_ref: P1-19
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -95,3 +95,114 @@ what was returned — no resizing, no format conversion.
 - **No telemetry, no analytics, no network call the user did not configure**
   (AGENTS.md). This task adds the app's first outbound request; it needs to be
   the kind a user would recognise as theirs.
+
+
+---
+
+## Outcome
+
+Merged. Built by a subagent under the build-only process; reviewed and verified
+by the orchestrator at merge.
+
+**Changed:** `electron/main/favicons/` (new: `fetch.ts`, `service.ts`,
+`sniff.ts`, `store.ts`, `index.ts`, four test files, a recording-fetch
+test support), `electron/shared/favicons.ts` (new), `ipc-types.ts`,
+`electron/main/ipc/registry.ts`, `electron/renderer/lib/favicon-boundary.test.ts`
+(new), `stub-crm.ts`.
+
+### The AGENTS.md rule is asserted two ways, not read
+
+> **Never call a third-party favicon service.** It leaks every client URL and
+> breaks offline.
+
+`https://www.google.com/s2/favicons?domain=…` is one line, works immediately,
+and quietly ships every client domain this consultancy works with to a third
+party. The acceptance was explicit that a reviewer's eye is not the guard —
+"asserted by a test over the source *and* over the actual request target, not by
+reading the diff".
+
+Both halves exist. A **source scan** over all of `electron/` refuses any known
+service host, so the one-line version cannot be added anywhere in the app —
+including in a view or a helper nothing to do with this directory. And a
+**behavioural** test drives the real fetcher against a recording `fetch` and
+requires every requested URL to be on the link's own host, or a host that host
+redirected to.
+
+**The source scan bit twice during the build, and the builder took the hit
+rather than exempting itself.** It failed on a doc comment in `fetch.ts` that
+quoted the search-engine favicon URL, and on a renderer test that named
+`XMLHttpRequest` in prose. Both were reworded so the literal strings are gone,
+and both now say why the API names are absent from their own prose. That is the
+correct call: the checker's whole value is that it cannot tell a mention from a
+call site.
+
+### SSRF, decided rather than defaulted
+
+`isFetchableHost` refuses **every IP-literal host — private and public alike** —
+plus `localhost`, `.localhost`, `.local`, and dotless intranet names. Refusing
+the whole class is narrower and simpler than enumerating private ranges, and it
+closes the cloud metadata endpoint in all its integer spellings (the WHATWG
+parser normalises `0xa9fea9fe` to `169.254.169.254` before this code sees it —
+asserted, not assumed).
+
+**DNS is not resolved**, so a public name pointing into a private range is still
+fetched. That is accepted explicitly and stated in `fetch.ts`'s header, on the
+grounds that this is a single-user local-first app and the response only ever
+reaches the user as pixels that have passed a magic-number check. Recorded as a
+decision because the scope asked for it to be one.
+
+### No migration, and why that is not merely a workaround
+
+The scope says "store the bytes and content type", but `favicons` has only
+`(host, bytes, fetched_at)`. Adding a column means editing `schema.ts`, whose
+drizzle regeneration gate asserts the incremental delta is exactly 0004's
+`CREATE INDEX` statements and nothing else — so a column would have forced an
+edit to that gate, in a file outside this task's ownership, mid-wave.
+
+The content type is instead recovered by **sniffing the bytes' magic numbers on
+read.** The only other source is the arbitrary host's own `Content-Type` header,
+which is a *claim*; the bytes end up in a `data:` URL the renderer displays, so
+sniffing is the stronger answer regardless. The existing three columns already
+carry all four states: absent = never tried, bytes + `fetched_at` = cached,
+NULL bytes + `fetched_at` = tried and failed at that instant.
+
+### Absence is an answer, never a wait
+
+The dispatch asked for this because T-260828-50 renders link rows and must not
+reflow as favicons resolve. `favicons:get` returns
+`{ state: 'ready', contentType, dataUrl, fetchedAt }` or
+`{ state: 'none', reason, retryAfter }` with `reason` one of `never-fetched` |
+`fetching` | `unavailable` | `unsupported-url`. **Never pending.** The fetch
+happens in the background in main and lands in the table for the next query.
+
+`ready` carries a `data:` URL because the CSP is `img-src 'self' data:` — a
+`blob:` URL would be refused by the page. `FAVICON_FALLBACK_ICONS` in
+`electron/shared/favicons.ts` is keyed by `LinkKind` and exhaustive by
+construction.
+
+**Verified at merge:** typecheck clean across all three passes, lint clean, and
+the full suite green on the merged tree.
+
+## Two judgement calls a reviewer may want to revisit
+
+**SVG is off the content-type allowlist**, so a host serving only an SVG icon
+falls back to its per-kind icon. Documented and reversible.
+
+**The "renderer issues no fetch" criterion is asserted in two files, not one.**
+ESLint's `no-renderer-node-access` forbids a renderer module importing
+`node:fs`, and the established carve-out convention is four shared config files
+the builder did not want to edit mid-wave. So the source scan over
+`electron/renderer/**` lives in the node-pool test, and the renderer-side
+behavioural half — `window.crm` is the only route, and the first answer is
+definite — lives in a renderer-pool test. Each file's header points at the other.
+
+## No ADR, and the reason is this run's own history
+
+The builder declined to write one: ADR-012 would have been the next free number,
+and **claiming it mid-wave risks colliding with another agent.** This run
+produced two such collisions already (T-46 vs T-51, then T-41 against the
+renumber that fixed the first), which is exactly the hazard it avoided.
+
+The SSRF and no-migration decisions are recorded in the module headers instead.
+Promoting either to an ADR is a call worth making from outside a wave, when the
+next free number is not a moving target.
