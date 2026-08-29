@@ -1,0 +1,104 @@
+/*
+ * Engagements view — planning/solo-crm-mockup.html's `views.engagements`
+ * (mockup lines ~1660-1685) and its progress/model rules (lines ~287-299).
+ * `.card`/`.card-h`/`.tag`/`.modeltag` are already styled by their own
+ * primitives (Card.css, Tag.css, ModelTag.css); `.eng`/`.eng-t`/`.via` are
+ * ported again here rather than imported from CompanyDetail.css —
+ * CompanyDetail.css's own header explains why: no shared home for that trio
+ * exists yet, so each consuming view keeps its own copy. `.status-grid`,
+ * `.bar`/`.prog`/`.prog-meta` have no shared primitive either and are this
+ * view's own port.
+ */
+
+.status-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+  align-items: start;
+}
+
+/* ── engagement rows ─────────────────── */
+
+.eng {
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.eng:last-child {
+  border-bottom: 0;
+}
+
+.eng-t {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.eng-t .nm {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.via {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-top: 6px;
+}
+
+/* ── progress & models ───────────────── */
+
+.prog {
+  display: flex;
+  gap: 3px;
+  margin-top: 8px;
+}
+
+.prog i {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+
+.prog i.on {
+  background: var(--verdigris);
+}
+
+.bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+/*
+ * The fill is a flat zero, not a computed percentage — this file's header
+ * explains why (no `time_entries` channel exists to plot a real "hours
+ * used" against yet). A future task wiring real hours in replaces this
+ * static rule with a per-engagement inline width; until then there is
+ * nothing here to animate or reduce motion for.
+ */
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--verdigris);
+}
+
+.prog-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
