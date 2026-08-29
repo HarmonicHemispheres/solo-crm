@@ -71,6 +71,15 @@ const MIGRATION_0001: MigrationDefinition = (() => {
   return found
 })()
 
+/**
+ * The version a database is at once the real migration set has been applied,
+ * and the floor a synthetic "next" migration in this file has to sit above.
+ * Derived rather than written as a literal for the reason `migrate.test.ts`'s
+ * copy gives: every real migration added so far has otherwise meant walking
+ * these files renumbering hardcoded versions.
+ */
+const LATEST_MIGRATION_VERSION: number = Math.max(...MIGRATIONS.map((m) => m.version))
+
 afterEach(() => {
   closeDatabase()
 })
@@ -458,11 +467,9 @@ describe('openDatabase and the migration runner (T-260828-07)', () => {
 
   it('a throwing migration leaves openDatabase() no better than never having been called — no dangling handle, no file left mid-migration for a plain retry to trip over', () => {
     const tmpDir = makeTmpDir('solo-crm-connection-migrate-broken-')
-    // Versioned 3, not 2: version 2 is the real `0002_search_fts` migration
-    // (T-260828-36) since this test was written.
     const breakingMigrations: readonly MigrationDefinition[] = [
       ...MIGRATIONS,
-      { version: 3, name: 'test_broken', sql: 'THIS IS NOT VALID SQL;' }
+      { version: LATEST_MIGRATION_VERSION + 1, name: 'test_broken', sql: 'THIS IS NOT VALID SQL;' }
     ]
     try {
       expect(() => openDatabase({ userDataDir: tmpDir, migrations: breakingMigrations })).toThrow()
@@ -475,9 +482,7 @@ describe('openDatabase and the migration runner (T-260828-07)', () => {
       // the same directory rather than hitting a stale "already open" guard
       // or a half-migrated file it cannot recover from.
       expect(() => openDatabase({ userDataDir: tmpDir })).not.toThrow()
-      // 2, not 1: the default migration set is 0001 + 0002 (`search_fts`,
-      // T-260828-36).
-      expect(getSchemaVersion(getDatabase()).version).toBe(2)
+      expect(getSchemaVersion(getDatabase()).version).toBe(LATEST_MIGRATION_VERSION)
     } finally {
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })

@@ -38,7 +38,13 @@ import { type AnySQLiteColumn, check, index, sqliteTable, text, integer, real, b
  *
  * `search_fts` and its triggers are deliberately absent (G6, ADR carried in
  * requirements §5): P1-06 creates both together, in its own migration,
- * because it needs these tables to already exist.
+ * because it needs these tables to already exist. `search_source` — FTS5's
+ * content relation, materialised as a real table by T-260828-51's
+ * `0003_search_content_table.sql` (ADR-009) — is absent for the same reason
+ * and one more: it is not a table of records but a derived projection of the
+ * five tables below, so AGENTS.md's UUID-key/timestamps rule does not reach
+ * it (see that migration's own comment). `schema.test.ts` compares only
+ * against `0001_init.sql`, so neither shows up in its regeneration check.
  */
 
 // ---------------------------------------------------------------------------
