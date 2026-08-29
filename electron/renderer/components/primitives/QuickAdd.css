@@ -18,10 +18,28 @@
   flex: 1;
   background: none;
   border: 0;
-  outline: none;
   color: var(--papyrus);
   font-family: inherit;
   font-size: 13px;
+}
+
+/*
+ * Scoped, not deleted — the same correction T-260828-53 made in
+ * `sheets/fields.css`, for the same defect, found here by T-260828-50's review.
+ *
+ * A bare `outline: none` on `.quickadd input` beat base.css's global
+ * `:focus-visible { outline: 2px solid var(--verdigris) }` — equal specificity,
+ * later source order — so every QuickAdd in the app had no visible keyboard
+ * focus ring: the todos and activity cards on company detail, the todos view,
+ * anywhere the primitive is used. X-06 requires focus visible on every
+ * interactive element and `.claude/rules/ui-design.md` makes it binding.
+ *
+ * What the mockup was suppressing is the ring a *pointer* click leaves behind,
+ * and `:focus:not(:focus-visible)` names exactly that state. A keyboard focus
+ * matches `:focus-visible` and never this rule, so it keeps the global ring.
+ */
+.quickadd input:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .quickadd input::placeholder {

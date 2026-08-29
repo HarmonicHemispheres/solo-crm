@@ -901,9 +901,15 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     // while `companies:get` resolves reproduces the race exactly: before the
     // gate, the header painted the raw uuid and corrected itself a frame
     // later.
-    let releaseList: (() => void) | null = null
+    // Held in an object rather than a bare let: TypeScript control-flow
+    // analysis does not track an assignment made inside the Promise executor,
+    // so a plain let narrows back to null at the release call below, and the
+    // optional call on it fails to compile as never. A property is not narrowed
+    // that way. (Found at the merge gate — this file did not compile on its
+    // own branch either.)
+    const gate: { release: (() => void) | null } = { release: null }
     const listGate = new Promise<void>((resolve) => {
-      releaseList = resolve
+      gate.release = resolve
     })
     const crm = stubCrm({
       ...buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS),
@@ -926,7 +932,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     expect(screen.queryByText(/co-ezdeploy/)).toBeNull()
     expect(screen.getByText('Loading…')).toBeTruthy()
 
-    releaseList?.()
+    gate.release?.()
     await screen.findByRole('heading', { name: 'W+K' })
     expect(screen.getByText('billed through EZDeploy')).toBeTruthy()
   })
