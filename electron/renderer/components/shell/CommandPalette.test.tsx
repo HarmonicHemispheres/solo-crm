@@ -240,7 +240,7 @@ describe('CommandPalette — results', () => {
 
 describe('CommandPalette — Enter lands on the right view', () => {
   // One case per indexed kind (`SEARCH_KINDS`) — the five source tables the
-  // FTS index covers. The catalogue is not one of them (see
+  // FTS index covers. Offerings is not one of them (see
   // `targetForSearchResult`'s note), so there is no sixth case to write.
   const EXPECTED: Record<SearchKind, string> = {
     company: '/company/x1',

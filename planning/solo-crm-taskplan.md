@@ -75,7 +75,7 @@ the same day, so the DDL there and the DDL P0-05 writes cannot disagree.
 | **G2** | No `settings` table. §6.11 needs identity, per-kind default cadence, integration toggles, backup folder and appearance; §6.13 needs view mode remembered per view. | Mockup keeps all of it in module-level JS that dies on reload. | Add `settings(key text pk, value text /* json */, updated_at)`. One table, typed accessors in the repo layer. Secrets never go here (see G7). | **amended** — table accepted as recommended, plus the point the recommendation left open, settled as a class rather than a one-off: **tables keyed by natural identity are exempt** from the UUID primary key rule — `settings` by key, `favicons` by host — and `settings` carries `updated_at` but no `created_at`. Join tables are *not* exempt: `affiliations` and `taggings` gain UUID keys and timestamps, `taggings` with a unique index on its natural triple. The exemption clause is now carried in AGENTS.md, §4, `architecture-review` and P0-05. [ADR-002](../.dev/decisions/ADR-002-settings-key-value-table.md), built by P2-01. |
 | **G3** | `engagements.status` includes `lost` in the schema; the mockup's status list and create form omit it. | §5 DDL vs mockup `FORMS.engagement`. | Keep `lost` in the schema, add it to the form. Work that dies needs somewhere to go, or it stays `Proposed` forever and inflates the book. | **accepted** — no DDL change; §5 already spans all six statuses. The form is P1-08's job and no ADR is warranted for adding one chip. |
 | **G4** | `milestones` carries `amount_cents` and `expected_month` — both required to generate fixed-scope revenue lines — but the mockup's create form asks only "Milestones: 4". | Mockup `MODEL_FIELDS.fixed`. | UI gap, not a schema gap. The engagement form needs a real milestone editor before P3 revenue is anything but a guess. Tracked as **P3-09**. | **accepted** — reclassified as a UI gap, so §5 is untouched. The columns already exist; P3-09 must land before fixed-scope revenue lines mean anything. |
-| **G5** | `revenue_lines` is never exercised by the mockup. Its revenue chart is a hardcoded 15-element array and its metrics are computed live off engagement columns. | Mockup `revMonths`, `mrr()`, `backlog()`, `runRate()`. | **The highest-risk carry-over in the project.** §5 is explicit that revenue is materialised so every question is one `SUM … GROUP BY`. Porting the mockup's per-model branching would quietly undo that decision. Tracked as **P3-05**, and named in `architecture-review` as a standing thing to flag. | **accepted** — and sharpened: the shape is `SUM(amount_cents) … GROUP BY period_month, status`, and branching on `billing_model` anywhere outside the P3-05 generator is the defect. The ADR also settles what the rule does *not* cover (a single engagement's headline price and the catalogue price list stay legal reads of engagement columns), how actuals supersede estimates (the generator deletes the month's estimate rows in the same transaction), the `none` and `expense` cases, and a provisional allowance for Phase 2 that P3-05 must remove. [ADR-003](../.dev/decisions/ADR-003-materialised-revenue.md). |
+| **G5** | `revenue_lines` is never exercised by the mockup. Its revenue chart is a hardcoded 15-element array and its metrics are computed live off engagement columns. | Mockup `revMonths`, `mrr()`, `backlog()`, `runRate()`. | **The highest-risk carry-over in the project.** §5 is explicit that revenue is materialised so every question is one `SUM … GROUP BY`. Porting the mockup's per-model branching would quietly undo that decision. Tracked as **P3-05**, and named in `architecture-review` as a standing thing to flag. | **accepted** — and sharpened: the shape is `SUM(amount_cents) … GROUP BY period_month, status`, and branching on `billing_model` anywhere outside the P3-05 generator is the defect. The ADR also settles what the rule does *not* cover (a single engagement's headline price and the offerings price list stay legal reads of engagement columns), how actuals supersede estimates (the generator deletes the month's estimate rows in the same transaction), the `none` and `expense` cases, and a provisional allowance for Phase 2 that P3-05 must remove. [ADR-003](../.dev/decisions/ADR-003-materialised-revenue.md). |
 | **G6** | `search_fts` is one line in the schema with no sync mechanism. | §5. | FTS5 external-content table plus `AFTER INSERT/UPDATE/DELETE` triggers on all five source tables. Tracked as **P1-06**. | **accepted** — §5's one-line entry now names external-content plus triggers so P1-06 cannot read it as a standalone table. **P1-06 owns the whole thing: it creates `search_fts` *and* its triggers, in its own migration. Migration 0001 (P0-05) creates neither** — they are the one part of §5 it leaves out, so the two tasks cannot both issue the same `CREATE`. |
 | **G7** | Nowhere to put Stripe and Google credentials. | §7 integrations vs §5 schema. | Electron `safeStorage`, encrypted, in `userData` — **not** in the database. Consequence: the nightly JSON backup can never leak a key, which is why this is a schema decision and not an implementation detail. | **accepted** — stated as a rule about what the `settings` table may hold rather than a rule about Stripe, since that is the form it fails in. [ADR-004](../.dev/decisions/ADR-004-credentials-in-safestorage.md), enforced by P2-01 and P4-01. |
 | **G8** | `activity` is described as append-only but nothing enforces it. | §6.8. | Enforce at the repository boundary: no update or delete channel is exposed for `activity`. Corrections are new rows. | **accepted** — no DDL change. A SQLite trigger would also block the repository's own writes, so the boundary is the only place it can live. P1-05 owns it. |
@@ -217,7 +217,7 @@ task.
 
 - [ ] **P0-11 · Dev seed** — 🗄 data · S · after P0-05
   Port the mockup's seed data — ten companies, seven people, eleven engagements,
-  eleven todos, ten activity rows, nine catalogue items with versions.
+  eleven todos, ten activity rows, nine offerings with versions.
   - [ ] `npm run seed` populates a database from a fixture file
   - [ ] Row counts match the mockup's arrays exactly
   - [ ] Re-running it is idempotent or refuses on a non-empty database — it never
@@ -333,7 +333,7 @@ is not what makes it start.
   - [ ] An empty note is refused rather than saved blank
 
 - [ ] **P1-10 · Command palette (⌘K)** — 🎨 ui · L · after P1-07
-  Searches companies, people, engagements, catalogue, todos and activity notes;
+  Searches companies, people, engagements, offerings, todos and activity notes;
   leads with create commands; arrows and enter; a kind label and hint per row.
   - [ ] Results update within one frame of a keystroke at 10× data volume (§8)
   - [ ] Every create command in the New menu is reachable from the palette
@@ -497,7 +497,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
 
 ## Phase 3 — Money
 
-- [ ] **P3-01 · Catalogue repositories** — 🗄 data · M · after P0-05
+- [ ] **P3-01 · Offerings repositories** — 🗄 data · M · after P0-05
   `service_categories`, `services`, `service_versions`.
   - [ ] A service always has at least one version — creating one without a rate
         is refused
@@ -562,7 +562,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
   - [ ] Concentration is the largest payer's share of YTD, and is stable across
         rollup switches
 
-- [ ] **P3-07 · Catalogue view** — 🎨 ui · L · after P3-01
+- [ ] **P3-07 · Offerings view** — 🎨 ui · L · after P3-01
   A management surface, not an analytics surface (§6.5). Create, edit, duplicate,
   archive; categories; filter; quick-add parsing.
   - [ ] `Name, 4500`, `Name, 4500/mo` and `Name, 175/hr` each parse to the right
@@ -575,7 +575,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
   A distinct action, not an edit field.
   - [ ] The sheet states how many signed engagements are unaffected, from P3-02's
         query
-  - [ ] Price is not editable anywhere else in the catalogue UI
+  - [ ] Price is not editable anywhere else in the offerings UI
 
 - [ ] **P3-09 · Milestone editor** — 🎨 ui · M · after P3-04, P1-08
   The engagement create and edit forms get real milestone rows (G4).
@@ -788,7 +788,7 @@ P4-03 being real.
 | §6.2 Companies | P1-01, P1-11, P1-12, P1-13, P2-06 |
 | §6.3 People | P1-02, P1-14 |
 | §6.4 Engagements | P1-03, P1-08, P1-15, P3-12 |
-| §6.5 Catalogue | P3-01, P3-02, P3-07, P3-08 |
+| §6.5 Offerings | P3-01, P3-02, P3-07, P3-08 |
 | §6.6 Todos | P1-04, P1-16, P2-05, P2-07 |
 | §6.7 Revenue | P3-05, P3-06, P3-10, P3-11, P5-05 |
 | §6.8 Activity | P1-05, P1-17 |

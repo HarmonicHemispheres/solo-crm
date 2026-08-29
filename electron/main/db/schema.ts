@@ -146,7 +146,7 @@ export const affiliations = sqliteTable(
 )
 
 // ---------------------------------------------------------------------------
-// Catalogue: services and products
+// Offerings: services and products
 // ---------------------------------------------------------------------------
 
 export const serviceCategories = sqliteTable('service_categories', {
