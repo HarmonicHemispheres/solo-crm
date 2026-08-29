@@ -1,0 +1,212 @@
+/*
+ * People view — planning/solo-crm-mockup.html.
+ *
+ * `.card`, `.card-h` and `.tag` are already styled by their own primitives
+ * (Card.css, Tag.css); this file only ports the mockup rules T-260828-11's
+ * closed primitive list didn't cover, mirroring Companies.css exactly
+ * (`.grid`/`.autofill`/`.cmark`/`.ccard`/`.tbl` are the same shapes the
+ * mockup reuses for the people grid and table — verbatim rules, duplicated
+ * per-view rather than shared, the same choice Companies.css documents in
+ * its own header and CompanyDetail.css repeats for `.cmark`).
+ */
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.autofill {
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+}
+
+/* ── identity mark ── */
+.cmark {
+  border-radius: var(--radius-9);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+.cmark span {
+  position: relative;
+  z-index: 1;
+}
+
+.cmark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+  background: currentColor;
+}
+
+/* ── person card ── */
+.ccard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-13);
+  padding: 15px;
+  text-align: left;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color var(--motion-fade), transform var(--motion-fade);
+}
+
+.ccard:hover,
+.ccard:focus-visible {
+  border-color: var(--border-bright);
+  transform: translateY(-2px);
+}
+
+.ccard .top {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.ccard .top .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.ccard .top .meta {
+  margin-top: 3px;
+}
+
+.ccard .nm {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.ccard .tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ccard .foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
+
+.ccard .foot .n {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-left: auto;
+}
+
+.ccard-new {
+  border-style: dashed;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  min-height: 150px;
+}
+
+/* ── sortable table ── */
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tbl th {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 400;
+}
+
+.tbl td {
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tbl tr:last-child td {
+  border-bottom: 0;
+}
+
+.tbl tbody tr {
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.tbl tbody tr:hover,
+.tbl tbody tr:focus-visible {
+  background: var(--surface-2);
+}
+
+.tbl .num {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.tbl th.align-right {
+  text-align: right;
+}
+
+.tbl .role-cell {
+  font-size: 12.5px;
+  color: var(--mute);
+  max-width: 250px;
+}
+
+/* The identity cell: mark + truncating name, mirroring Companies.css's own
+   `.tbl .id-cell` (this file's header: duplicated per-view, not shared). */
+.tbl .id-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tbl .id-cell .grow {
+  min-width: 0;
+}
+
+.tbl .id-cell .nm {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.sort-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sort-btn:hover {
+  color: var(--mute);
+}
+
+.sort-arrow {
+  font-size: 9px;
+}

@@ -60,11 +60,16 @@ describe('AppRoutes', () => {
     expect(await screen.findByText(/not found/i)).toBeTruthy()
   })
 
-  it('resolves person/:id and highlights People, not itself', () => {
+  it('resolves person/:id and highlights People, not itself', async () => {
     renderAt('/person/pe_1')
     const people = screen.getByRole('link', { name: 'People' })
     expect(people.getAttribute('aria-current')).toBe('page')
-    expect(screen.getByRole('heading', { name: 'Person' })).toBeTruthy()
+    // T-260828-31's PersonDetail is a real, query-backed view now (matching
+    // CompanyDetail's own precedent above) — an id nothing seeded resolves
+    // to its "not found" state, not a crash or an infinite spinner.
+    // PersonDetail.test.tsx covers this view's real content in depth; this
+    // only proves routing wired it in.
+    expect(await screen.findByText(/not found/i)).toBeTruthy()
   })
 
   it('every ROUTE_META row is reachable and highlights the row\'s own navId', () => {

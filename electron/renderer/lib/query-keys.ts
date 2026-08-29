@@ -86,7 +86,18 @@ export const queryKeys = {
   activity: {
     all: () => ['activity'] as const,
     list: () => ['activity', 'list'] as const,
-    detail: (id: string) => ['activity', 'detail', id] as const
+    detail: (id: string) => ['activity', 'detail', id] as const,
+    /**
+     * `activity:list({ personId })` (T-260828-31: a person's page shows
+     * activity involving them regardless of which company the row carries —
+     * `activityFiltersSchema`'s `personId` is independent of its
+     * `companyId`, so this is a person-scoped read, not a company one).
+     * Scoped under its own id, the same reason `engagements.byBillingCompany`/
+     * `byClientCompany` exist rather than reusing the bare `list()` key: an
+     * unfiltered `activity:list()` call (the future Activity view) and this
+     * filtered one must not share a cache entry.
+     */
+    byPerson: (personId: string) => ['activity', 'byPerson', personId] as const
   },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
   settings: {
