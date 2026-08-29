@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -78,19 +78,58 @@ function tableInfo(db: Database.Database, table: string): ColumnInfo[] {
   return db.prepare(`PRAGMA table_info(${table})`).all() as ColumnInfo[]
 }
 
-describe('schema.ts and 0001_init.sql cannot drift', () => {
+/** Every `CREATE INDEX ...;` statement in a migration's text, one per entry, semicolon stripped. */
+function createIndexStatements(sql: string): string[] {
+  return sql
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line) => line.startsWith('CREATE INDEX'))
+    .map((line) => line.slice(0, line.indexOf(';')))
+}
+
+describe('schema.ts and the checked-in migrations cannot drift', () => {
   it(
-    'regenerating the migration from schema.ts reproduces the checked-in SQL exactly',
+    'regenerating from schema.ts against 0001 produces exactly the indexes migration 0004 creates',
     () => {
       // schema.ts is imported by no production module — the runtime applies
       // the checked-in SQL — so nothing else would catch a hand-edit of the
-      // SQL or an unregenerated schema change, and a wrong 0002 generated
-      // from a drifted snapshot is the expensive failure this guards
-      // (T-260828-07 review, should-fix 2).
+      // SQL or an unregenerated schema change, and a wrong migration
+      // generated from a drifted snapshot is the expensive failure this
+      // guards (T-260828-07 review, should-fix 2).
+      //
+      // Until T-260828-41 this compared a from-scratch regeneration against
+      // `0001_init.sql`, which worked only while 0001 was the sole
+      // schema.ts-derived migration. schema.ts is cumulative and migrations
+      // are incremental, so once 0004 added the foreign-key indexes a
+      // from-scratch generation could no longer equal 0001 by construction.
+      // The incremental form below is the same guarantee, not a weaker one:
+      // the temp folder is seeded with 0001's snapshot, so drizzle-kit emits
+      // the *delta* between the snapshot and schema.ts — and this test
+      // asserts that delta is exactly 0004's `CREATE INDEX` statements and
+      // nothing else. Any drift in a table definition would appear in the
+      // delta as a CREATE/ALTER statement and fail the "indexes only"
+      // assertion below.
+      //
+      // 0002 and 0003 (search_fts, search_source) are hand-written and are
+      // not in the journal; they add no object schema.ts declares, so the
+      // snapshot staying at 0001 is correct rather than an oversight.
       const here = dirname(fileURLToPath(import.meta.url))
       const repoRoot = resolve(here, '..', '..', '..')
-      const outDir = makeTmpDir('solo-crm-drizzle-regen-')
+      const migrationsDir = join(here, 'migrations')
+      // The out folder must be *inside* the cwd drizzle-kit is spawned with:
+      // its snapshot reader joins cwd with the `--out` value, so an absolute
+      // path in a system temp directory is read back as
+      // `<repoRoot>\C:\Users\...\meta\0001_snapshot.json` and fails ENOENT.
+      // (The old from-scratch form never hit that code path — it seeded no
+      // snapshot to read.)
+      const outDirName = `.drizzle-regen-${process.pid}-${Date.now()}`
+      const outDir = join(repoRoot, outDirName)
       try {
+        mkdirSync(join(outDir, 'meta'), { recursive: true })
+        cpSync(join(migrationsDir, 'meta', '_journal.json'), join(outDir, 'meta', '_journal.json'))
+        cpSync(join(migrationsDir, 'meta', '0001_snapshot.json'), join(outDir, 'meta', '0001_snapshot.json'))
+        cpSync(join(migrationsDir, '0001_init.sql'), join(outDir, '0001_init.sql'))
+
         // drizzle-kit treats --schema as a glob, and its globber only
         // understands forward slashes — a Windows backslash path matches
         // nothing ("No schema files found").
@@ -102,22 +141,36 @@ describe('schema.ts and 0001_init.sql cannot drift', () => {
             'generate',
             '--dialect', 'sqlite',
             '--schema', toPosix(join(here, 'schema.ts')),
-            '--out', toPosix(outDir),
-            '--name', 'init'
+            '--out', outDirName,
+            '--name', 'regen'
           ],
           { cwd: repoRoot, encoding: 'utf-8', timeout: 60_000 }
         )
         expect(result.error).toBeUndefined()
         expect(result.status).toBe(0)
 
-        const generated = readdirSync(outDir).filter((f) => f.endsWith('.sql'))
+        const generated = readdirSync(outDir).filter((f) => f.endsWith('.sql') && f !== '0001_init.sql')
         expect(generated).toHaveLength(1)
         // Normalize line endings: git's autocrlf checks the committed file out
         // with CRLF on Windows while drizzle-kit always emits LF.
-        const normalize = (sql: string): string => sql.replace(/\r\n/g, '\n')
-        const regenerated = normalize(readFileSync(join(outDir, generated[0]), 'utf-8'))
-        const checkedIn = normalize(readFileSync(join(here, 'migrations', '0001_init.sql'), 'utf-8'))
-        expect(regenerated).toBe(checkedIn)
+        const delta = readFileSync(join(outDir, generated[0]), 'utf-8').replace(/\r\n/g, '\n')
+
+        // Nothing but indexes: strip every CREATE INDEX line and drizzle's own
+        // statement separators, and what remains must be blank. A dropped
+        // column or a renamed table shows up here.
+        const residue = delta
+          .split('\n')
+          .filter((line) => !line.startsWith('CREATE INDEX'))
+          .join('\n')
+          .replace(/--> statement-breakpoint/g, '')
+          .trim()
+        expect(residue).toBe('')
+
+        const checkedIn = readFileSync(join(migrationsDir, '0004_fk_indexes_polymorphic_cascade.sql'), 'utf-8')
+        expect(createIndexStatements(delta).sort()).toEqual(createIndexStatements(checkedIn).sort())
+        // Belt and braces on the empty case: an accidentally-emptied 0004
+        // would satisfy the equality above against an empty delta.
+        expect(createIndexStatements(checkedIn).length).toBeGreaterThan(0)
       } finally {
         rmSync(outDir, { recursive: true, force: true })
       }

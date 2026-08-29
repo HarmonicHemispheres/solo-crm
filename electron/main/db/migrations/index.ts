@@ -1,6 +1,7 @@
 import migration0001Sql from './0001_init.sql?raw'
 import migration0002Sql from './0002_search_fts.sql?raw'
 import migration0003Sql from './0003_search_content_table.sql?raw'
+import migration0004Sql from './0004_fk_indexes_polymorphic_cascade.sql?raw'
 
 /**
  * The ordered, explicit manifest of every migration `migrate.ts` knows how
@@ -38,5 +39,12 @@ export const MIGRATIONS: readonly MigrationDefinition[] = [
   // INTEGER PRIMARY KEY content_rowid, so FTS5's per-result lookup is a
   // rowid seek instead of a five-table scan. Hand-written for the same
   // reason as 0002. See ADR-009.
-  { version: 3, name: '0003_search_content_table', sql: migration0003Sql }
+  { version: 3, name: '0003_search_content_table', sql: migration0003Sql },
+  // T-260828-41: the foreign-key indexes every delete pre-check needs, and
+  // the polymorphic cascade (ADR-010) that stops a delete stranding `links`,
+  // `taggings` or `external_refs` rows. The index half is drizzle-kit output
+  // diffed against 0001's snapshot; the trigger half is hand-written, because
+  // no schema-diffing tool expresses a cascade whose parent table is chosen
+  // by a string column.
+  { version: 4, name: '0004_fk_indexes_polymorphic_cascade', sql: migration0004Sql }
 ]

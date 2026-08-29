@@ -63,3 +63,74 @@ export function refuseIfReferenced(db: Database.Database, id: string, blockers: 
     throw new RefusalError(blocker.describe(countRow.count, example), { reason: blocker.reason, count: countRow.count })
   }
 }
+
+// ---------------------------------------------------------------------------
+// Polymorphic attachments (T-260828-41, ADR-010)
+// ---------------------------------------------------------------------------
+
+/**
+ * The three tables that reference an entity as `entity_type`/`entity_id`
+ * rather than through a foreign key. They are deliberately **not**
+ * `ReferenceBlocker`s: ADR-010 settles that an attachment is cascaded with
+ * its entity rather than blocking the delete, so nothing above ever asks
+ * about them.
+ *
+ * The cascade itself is three `AFTER DELETE` triggers installed by migration
+ * `0004_fk_indexes_polymorphic_cascade.sql`, not code in this file — a
+ * trigger cannot be forgotten by the next repository and also covers the
+ * writers that never go through one (the seeder, the P4 importers). ADR-010
+ * has the full reasoning.
+ *
+ * What lives here is the *declaration*: the single place in TypeScript that
+ * says which attachment tables exist and which `entity_type` literal each
+ * parent table's rows carry. `referential-guard.test.ts` reads both constants
+ * and asserts the installed trigger set matches, so a fourth attachment table
+ * added to this list without a matching trigger fails a test rather than
+ * being silently uncovered.
+ */
+export const POLYMORPHIC_ATTACHMENT_TABLES = ['links', 'taggings', 'external_refs'] as const
+
+export type PolymorphicAttachmentTable = (typeof POLYMORPHIC_ATTACHMENT_TABLES)[number]
+
+/**
+ * Parent table → the `entity_type` literal its rows are named by. The values
+ * are the same three strings as `LINK_ENTITY_TYPES` in
+ * `electron/shared/links.ts`, but they are not imported from there: that
+ * constant is the closed union one *repository's* zod schema validates
+ * against, while this map is about which SQL tables the cascade spans. They
+ * happen to agree today; a fourth entity type that carries links would extend
+ * both, and the test below would say so.
+ */
+export const POLYMORPHIC_PARENT_ENTITY_TYPES = {
+  companies: 'company',
+  people: 'person',
+  engagements: 'engagement'
+} as const
+
+export type PolymorphicParentTable = keyof typeof POLYMORPHIC_PARENT_ENTITY_TYPES
+
+/** The cascade trigger migration 0004 installs on `parentTable`. Distinct from `trg_<parent>_search_ad`, which 0003 owns. */
+export function attachmentCascadeTriggerName(parentTable: PolymorphicParentTable): string {
+  return `trg_${parentTable}_attachments_ad`
+}
+
+/**
+ * How many rows across all three attachment tables still point at
+ * `entityType`/`entityId` — the query ADR-010's guarantee is stated in, and
+ * the one place the three table names are spelled out for a caller rather
+ * than for a trigger. Written as a `UNION ALL` of three counts so a caller
+ * gets one number for "is this entity fully detached" without three
+ * round-trips or three hand-written statements to keep in step.
+ *
+ * Each table name comes from `POLYMORPHIC_ATTACHMENT_TABLES`, a literal in
+ * this file, never from anything that crossed the IPC boundary — the same
+ * trust boundary `refuseIfReferenced` above explains.
+ */
+export function countPolymorphicAttachments(db: Database.Database, entityType: string, entityId: string): number {
+  const sql = POLYMORPHIC_ATTACHMENT_TABLES.map(
+    (table) => `SELECT COUNT(*) AS count FROM ${table} WHERE entity_type = ? AND entity_id = ?`
+  ).join(' UNION ALL ')
+  const params = POLYMORPHIC_ATTACHMENT_TABLES.flatMap(() => [entityType, entityId])
+  const rows = db.prepare(sql).all(...params) as { count: number }[]
+  return rows.reduce((total, row) => total + row.count, 0)
+}

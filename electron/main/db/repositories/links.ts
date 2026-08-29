@@ -17,8 +17,9 @@ import {
   type UpdateLinkInput,
   updateLinkInputSchema
 } from '../../../shared/links'
-import { NotFoundError } from './errors'
+import { NotFoundError, RefusalError } from './errors'
 import { parseInput } from './input'
+import { type ConstraintHandler, translateWriteError } from './sqlite-errors'
 
 /**
  * The `links` repository (T-260828-48) — the first **polymorphic** table in
@@ -35,13 +36,13 @@ import { parseInput } from './input'
  * Deliberately raw `db.prepare(...).run(...)`, matching every sibling
  * repository — not built on `drizzle-orm`'s query builder.
  *
- * No `FIELD_SPECS`/constraint-translation machinery here the way
- * `companies.ts` has: migration 0001 gives `links` no `CHECK`, `UNIQUE` or
+ * One `CONSTRAINT_HANDLERS` entry and no `FIELD_SPECS` machinery, unlike
+ * `companies.ts`: migration 0001 gives `links` no `CHECK`, `UNIQUE` or
  * `FOREIGN KEY` beyond `id`'s primary key and the two `NOT NULL` timestamp
- * columns this repository always sets itself, so there is no SQLite
- * constraint a normal call here can trip. That machinery is not reused
- * because there is nothing for it to translate, not because it was
- * overlooked.
+ * columns this repository always sets itself. The single constraint a normal
+ * call here can trip is the one migration 0004 added — the `BEFORE INSERT`
+ * trigger that refuses a row naming an entity that does not exist (ADR-010),
+ * which SQLite reports as `SQLITE_CONSTRAINT_TRIGGER`.
  */
 export { LINK_ENTITY_TYPES, LINK_KIND_RULES, LINK_KINDS, createLinkInputSchema, updateLinkInputSchema }
 export type { CreateLinkInput, Link, LinkEntityType, LinkKind, ListLinksInput, UpdateLinkInput }
@@ -49,6 +50,20 @@ export type { CreateLinkInput, Link, LinkEntityType, LinkKind, ListLinksInput, U
 // ---------------------------------------------------------------------------
 // Row <-> domain mapping
 // ---------------------------------------------------------------------------
+
+/**
+ * The only SQLite constraint a call into this repository can raise: migration
+ * 0004's `trg_links_entity_exists_bi`/`_bu`. The message is written here, not
+ * read from `error.message` — `sqlite-errors.ts`'s standing rule is that the
+ * driver's own text never reaches a caller — and `reason: 'unknown-entity'`
+ * is the tag the IPC layer branches on.
+ */
+const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
+  SQLITE_CONSTRAINT_TRIGGER: () =>
+    new RefusalError('That link cannot be attached: the company, person or engagement it names does not exist.', {
+      reason: 'unknown-entity'
+    })
+}
 
 interface LinkRow {
   readonly id: string
@@ -145,20 +160,20 @@ export function listLinks(db: Database.Database, input: unknown): readonly Link[
  * wanted to (T-260828-48's Acceptance: "Adding a link does not mutate the
  * entity it attaches to").
  *
- * **`entityId` is deliberately not checked for existence** (T-260828-55's
- * Scope asks for this decision to be stated rather than left implicit). A
- * typo'd id therefore creates a link no view can reach. That is accepted,
- * for two reasons. Checking would mean branching on `entityType` to pick a
- * table — `companies`, `people` or `engagements` — which is precisely the
- * per-type branching the polymorphic design exists to avoid, and it would
- * be a half-guarantee anyway: nothing stops the entity being deleted a
- * second later, because no foreign key can span three tables and
- * `deleteCompany`/`deletePerson`/`deleteEngagement` do not consult this
- * table. A links row pointing at a dead id is already a state this schema
- * permits, so a create-time check would buy a narrower window, not an
- * invariant. The real fix is the cascade-vs-refuse policy T-260828-41 owns;
- * when that lands it can add the create-side check in the same place it
- * adds the delete-side one, with one answer instead of two.
+ * **`entityId` is now checked for existence** — by migration 0004's
+ * `trg_links_entity_exists_bi`, not by a `SELECT` in this function.
+ * T-260828-55 left this open, noting that a create-time check in TypeScript
+ * would mean branching on `entityType` to pick a table (the per-type
+ * branching the polymorphic design exists to avoid) and would be a
+ * half-guarantee anyway, since nothing stopped the entity being deleted a
+ * second later. ADR-010 closes both halves at once: the same migration that
+ * makes an entity delete cascade its attachments makes an attachment
+ * impossible to create against an entity that is not there. The branching
+ * lives in one trigger body rather than in every writer, and the window this
+ * used to leave open is gone rather than narrowed.
+ *
+ * The failure surfaces as a `RefusalError` with `reason: 'unknown-entity'`
+ * via `CONSTRAINT_HANDLERS` above, never as a raw `SqliteError`.
  */
 export function addLink(db: Database.Database, input: unknown): Link {
   const parsed = parseInput(createLinkInputSchema, input)
@@ -187,10 +202,14 @@ export function addLink(db: Database.Database, input: unknown): Link {
   const id = randomUUID()
   const timestamp = nowTimestamp()
 
-  db.prepare(
-    `INSERT INTO links (id, entity_type, entity_id, url, title, kind, added_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, parsed.entityType, parsed.entityId, storedUrl, title, kind, timestamp, timestamp, timestamp)
+  try {
+    db.prepare(
+      `INSERT INTO links (id, entity_type, entity_id, url, title, kind, added_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, parsed.entityType, parsed.entityId, storedUrl, title, kind, timestamp, timestamp, timestamp)
+  } catch (error) {
+    translateWriteError(CONSTRAINT_HANDLERS, error)
+  }
 
   // Guaranteed to exist: this connection just inserted it and nothing here
   // is concurrent (better-sqlite3 is synchronous, single connection).
@@ -217,11 +236,12 @@ export function updateLink(db: Database.Database, id: string, patch: unknown): L
  * in migration 0001 points a foreign key at it, so there is nothing for
  * `refuseIfReferenced` to check on delete of a link itself.
  *
- * What this function deliberately does NOT do: check whether
- * `entityId` still names a live row before deleting, or touch other
- * `links` rows when some other repository deletes an entity. Both are the
- * open question T-260828-41 owns ("what happens to a link when its entity
- * disappears") — this repository states no answer, quietly or otherwise.
+ * Deleting one link is still just that. What happens to a link when its
+ * *entity* is deleted is no longer an open question and is still not this
+ * function's business: ADR-010 settles it as a cascade, implemented as an
+ * `AFTER DELETE` trigger on each parent table (migration 0004), so
+ * `deleteCompany`/`deletePerson`/`deleteEngagement` clear a row's links
+ * without either side importing the other.
  */
 export function deleteLink(db: Database.Database, id: string): void {
   if (!getLinkRow(db, id)) {

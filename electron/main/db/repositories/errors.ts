@@ -24,6 +24,13 @@
  *   `blocker` is optional structured detail (what kind of reference, how
  *   many rows) for the same string-match-avoidance reason as `.code` above.
  *
+ * Note what is *not* a `RefusalError`: a polymorphic attachment (`links`,
+ * `taggings`, `external_refs`) never blocks an entity delete. ADR-010
+ * (T-260828-41) settles those as a cascade, so a delete that would once have
+ * stranded them now succeeds and takes them with it — there is no error type
+ * for it because there is no failure. The one refusal that decision *does*
+ * produce is on the create side, `reason: 'unknown-entity'` from `links.ts`.
+ *
  * Anything else — a genuine bug, a constraint this file did not anticipate —
  * is left to propagate as whatever it already was; wrapping it here would
  * only hide it from `verify`'s test output.
