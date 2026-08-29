@@ -1,10 +1,10 @@
 ---
 id: T-260829-10
 title: Rename the catalogue identifiers to offerings, before anything is built on them
-status: in-progress
+status: done
 category: data
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -142,10 +142,105 @@ P3-01 and P3-07, which inherit the new names.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/main/db/migrations/0006_offerings_rename.sql` (new) — five `ALTER TABLE … RENAME` statements, registered in `migrations/index.ts` as version 6.
+- `electron/main/db/migrations/0006_offerings_rename.test.ts` (new) — 7 tests over a **seeded pre-migration** database.
+- `electron/main/db/schema.ts` — `offeringCategories` / `offerings` / `offeringVersions` / `engagements.offeringVersionId`; `category_id` keeps its name.
+- `electron/main/db/schema.test.ts` — the drift check's base moved; `MIGRATION_0001_TABLES` split from `EXPECTED_TABLES`.
+- `electron/main/db/repositories/engagements.ts` and its tests, `electron/shared/engagements.ts` — the column and the operator-readable "offering version" prose.
+- `electron/main/db/seed/fixture.ts`, `seed/index.ts`, `seed/index.test.ts` — the seed. `type: 'service'` left alone: a data *value*, not an identifier.
+- `electron/renderer/nav.ts`, `routes.tsx` (`/offerings`), `icons.tsx` (`OfferingsIcon`, glyph unchanged), `Rail.tsx` (lines 6, 23, 29, 44 only), `stub-crm.ts` and six renderer tests.
+- `polymorphic-cascade.test.ts`, `stats.test.ts` — two collateral fixes, below.
+- `planning/solo-crm-requirements.md`, `solo-crm-taskplan.md`.
 
-**Review:** what `code-review` found and what was done about each finding.
+Untouched, deliberately: `0001_init.sql`, `meta/_journal.json`, `meta/0001_snapshot.json`.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+**The dangerous part was checked, and the documentation was inverted.** SQLite's
+docs read as though `REFERENCES` rewriting depends on `PRAGMA foreign_keys` —
+and `migrate.ts` runs every migration with foreign keys **off**. The builder
+probed it directly before writing the migration: the rewrite is governed by
+`legacy_alter_table`, not `foreign_keys`, and happens in both states. That probe
+is why 0006 is a plain rename rather than a table rebuild — a rebuild would have
+dropped `engagements`' search triggers and 0004's indexes along with it.
+
+Against a database migrated 0001–0005, seeded, then migrated to 0006:
+`PRAGMA foreign_key_check` returns `[]`; the `engagements` DDL names
+`FOREIGN KEY ("offering_version_id") REFERENCES "offering_versions"`; row counts
+match on all four tables; the engagement resolves to its version. The test also
+asserts a bad write is still **rejected** after the migration — enforcement, not
+just shape — that a re-run is a no-op, and that the seed loads into a migrated
+database as well as a fresh one.
+
+**`search_source` was read, not trusted.** `0003_search_content_table.sql:54`
+unions companies · people · engagements · tasks · activity. The catalogue is
+absent, so no kind code moves and no index rebuild is needed — the scope's
+paragraph is correct. `engagements` is in the union but projects only `id` and
+`name`, neither renamed; `search_source_live`'s DDL is byte-identical after
+migrating.
+
+**Review:** no blocking findings.
+
+*The drift assertion was widened by moving its base, not by loosening it — and
+this was the thing to get right.* The scope's plan (assert the delta's tables
+also equal 0006's) **cannot work**: drizzle-kit sees three tables gone and three
+arrived and opens an interactive "created or renamed?" prompt, which without a
+TTY aborts and emits no migration at all. There is no flag to answer it. So the
+base became 0001's snapshot with 0006's renames applied — the state after 0001
+and 0006, before 0004 and 0005 — leaving the delta once again exactly 0004's
+indexes and 0005's table, with **every assertion unchanged**. The renames are
+parsed out of the registered migrations' own SQL rather than restated, so the
+base cannot drift from what the runtime applies.
+
+It still fails closed in every direction, proved three times: the builder added a
+column to `offerings` (red) and renamed `tags` → `labels` in `schema.ts` with no
+migration (red, via the prompt path); independently at merge, with 04's widening
+and 10's base-shift now combined, adding `driftProbe: text('drift_probe')` gave
+`AssertionError: expected 'ALTER TABLE \`offerings\` ADD \`drift_pr…' to be ''`.
+Reverted with a targeted edit. The second failure mode used to be cryptic, so the
+assertion now explains the created-or-renamed case and echoes drizzle's output.
+
+*Two collateral test fixes, neither a weakening.* `polymorphic-cascade.test.ts`
+seeded a database stopped at 0003, which stopped being possible once the seed
+writes today's names — its base is now every migration except 0004, the one under
+test, which is the same precondition stated in a way the next rename will not
+break. `stats.test.ts` inserted a flat 5 companies to be the largest table and a
+sixth migration made `schema_migrations` overtake it; it is now
+`MIGRATIONS.length + 5`.
+
+*`architecture-review` ran, as category `data` requires. Verdict: the rename
+migration is the right instrument.* It spends nothing the project bought — the
+IPC boundary is unchanged (a field name inside existing zod schemas, both sides
+shipping together), revenue untouched, integrations untouched, the renamed tables
+keep their UUID keys and timestamps, and a rename moves no rows. No ADR:
+"hand-write the migration when drizzle-kit cannot express the change" is the
+precedent 0002/0003/0004 already set. **One finding, fixed in the same branch** —
+`applyRenames` substitutes over the snapshot's raw text, which is what repairs
+drizzle's compound FK names in one pass but means a future rename whose *source*
+is a common token (`name`, `type`) would rewrite more than it should. It fails
+closed rather than open, but unreadably, so the derived base's table set is now
+asserted against `EXPECTED_TABLES` at the point of transformation.
+
+`typecheck`, `lint`, both project groups (39 files / 792 tests and 59 files / 511
+tests) passed on the branch. On the merged tree: node projects 40 files / 820
+tests, renderer 51 files / 426 tests, and the merge itself auto-resolved
+`Rail.tsx` (06's brand block vs 10's icon rename) and `stub-crm.ts` (05's
+branding channels vs 10's column rename) with both branches' content intact —
+verified by grep, not by trusting the merge.
+
+**Deferred:**
+
+- **The acceptance grep does not come back empty, and should not.** Five matches
+  remain, all *about* the old names rather than uses of them: `0001_init.sql`
+  (explicitly exempted); `meta/0001_snapshot.json`, the other half of that same
+  history — editing it would make 0001's snapshot disagree with the SQL it
+  describes, and the drift test reads it as the base; `0006_offerings_rename.sql`,
+  which must name what it renames; its test, whose pre-migration fixture must
+  write the old names; and `MIGRATION_0001_TABLES` plus a comment in
+  `schema.test.ts`. Excluding exactly those five the grep is empty. The criterion
+  named only the `.sql` file and should have named the snapshot beside it.
+- **`meta/` now describes a schema no live database has**, and the project's
+  current schema exists only as a derivation inside `schema.test.ts`. Inherent to
+  leaving 0001 as history; the only consumer is that test, and no npm script runs
+  `drizzle-kit generate`. Filed as
+  [T-260829-12](T-260829-12-post-rename-drizzle-snapshot.md).

@@ -1,7 +1,7 @@
 ---
 id: T-260829-07
 title: Upload an icon and a logo in Workspace Settings, and show them in the rail
-status: open
+status: in-progress
 category: ui
 created: 2026-08-29
 closed:
