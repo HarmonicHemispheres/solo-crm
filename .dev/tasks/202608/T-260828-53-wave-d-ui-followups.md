@@ -1,11 +1,11 @@
 ---
 id: T-260828-53
 title: Restore the focus ring in the sheets, and close wave D's UI review findings
-status: in-progress
+status: done
 category: ui
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -110,3 +110,95 @@ global class names) unless they fall out of item 6 for free.
 - **Testing the focus ring by asserting a class name.** The finding was proven
   against the built bundle's cascade order; a test that checks a class would
   pass while the cascade still loses.
+
+
+---
+
+## Outcome
+
+Merged, then one review finding fixed on top of the merge. Built by a subagent
+under the build-only process; reviewed, corrected and verified by the
+orchestrator at merge.
+
+**Changed:** the four create sheets and their tests, `fields.css`,
+`fields.test.ts` (new), `field-errors.ts` (new), `Field.tsx`,
+`useSheetMutation.ts`, `views/Companies.{tsx,css,test.tsx}`,
+`tests/integration/engagement-sheet-roundtrip.test.ts` (new),
+`tsconfig.integration.json` (new), `tsconfig.{web,node}.json`, `package.json`,
+`eslint.config.js`.
+
+### The accessibility regression this task exists for
+
+`.inp { outline: none }` was ported verbatim from the mockup and suppressed the
+app's global keyboard focus ring on every input, date field, select and textarea
+in all four create sheets — `base.css`'s
+`:focus-visible { outline: 2px solid var(--verdigris) }` has the same specificity
+as a bare `.inp`, and this stylesheet is applied later, so the later rule won.
+X-06 requires focus visible on every interactive element and
+`.claude/rules/ui-design.md` makes it binding.
+
+**Fixed by scoping, not deleting.** What the mockup was suppressing is the ring a
+*pointer* click leaves behind, and `:focus:not(:focus-visible)` names exactly
+that state. Keyboard focus matches `:focus-visible` and never this rule, so it
+keeps `base.css`'s ring; a mouse click still gets the quiet treatment the mockup
+wanted.
+
+`fields.test.ts` resolves the cascade the way a browser does — specificity, then
+source order, across both stylesheets — rather than asserting a class name.
+**A class-name assertion would have passed against the defect**, which is the
+whole reason the regression survived review the first time.
+
+### Review finding, fixed at merge
+
+`tsconfig.integration.json` claimed to typecheck one named file. It compiled
+**116**. `extends` inherits `tsconfig.web.json`'s `include`, and `files` unions
+with it rather than replacing it, so the new third typecheck pass recompiled the
+entire renderer with Node types on the side. Nothing went *unenforced* — the web
+pass still runs without Node types, so a renderer file importing `node:fs` still
+fails there — but `npm run typecheck` was doing the renderer twice.
+
+Setting `"include": []` narrowed it to 35 files and immediately surfaced a second
+thing: `electron/renderer/window.d.ts` is an ambient augmentation nothing
+imports, and the broad glob had been picking it up **by accident**. It is now
+named in `files`, so the dependency is explicit rather than lucky. Both
+constraints are commented in the file.
+
+### The rest
+
+Item 2 moved validation messages beneath the control that caused them —
+`useSheetMutation` now carries a `{ field, message }` pair instead of a string,
+and each sheet passes its own label table. Only keys with a `Field` that renders
+`errorFor` belong in those tables; a key listed without one would put its message
+on a control that never displays it.
+
+**Verified at merge:** `npm run typecheck` clean across all three passes;
+`npm run lint` clean; `renderer` + `catch-all` projects 49 files / 379 tests
+green on the merged tree, with the review fix applied.
+
+Every new guard was checked against its mutant by the builder, applied and
+reverted: reintroducing `.inp { outline: none }` fails the cascade test;
+deleting `PersonSheet`'s `if (mutation.isPending) return` fails the double-submit
+test; replacing Companies' `optimisticUpdate` with the old
+`setQueryData`+`onSuccess` fails the rollback test.
+
+## Left for whoever owns CompanyDetail
+
+Two acceptance bullets could not be closed here because they live in
+`views/CompanyDetail.tsx`, which another task owned this wave: the
+`cadenceState` never-contacted guard, and the `companiesById` three-query race
+that lets the detail body render against a half-loaded companies list. **The
+equivalent never-contacted hole in `Companies.tsx` is closed** (its card now
+asserts the meter renders `late`, not `ok`), but the detail view still has both.
+Carried into the run summary rather than left in a builder's report — see
+[T-260828-50](T-260828-50-links-ui.md), which owns that file next.
+
+## A config decision worth knowing about
+
+The round-trip test is renderer code and main-process code at once, which
+`local/no-renderer-node-access`, `tsconfig.web` (no Node types) and
+`tsconfig.node` (no DOM/JSX) each forbid inside `electron/renderer/**`. Rather
+than add it to the lint rule's ignore list — **that would blunt a real
+boundary** — it lives in a new top-level `tests/integration/`, is collected by
+vitest's existing `catch-all` project, and runs under jsdom via a
+`@vitest-environment` docblock. It uses `createElement` rather than JSX because
+no tsconfig above `tests/` sets a JSX transform.
