@@ -35,7 +35,12 @@ written there, never into the working tree.
   Its CSS variables become `tokens.css` verbatim. One exception: the mockup's
   **Pipeline** nav item is deliberately not ported — dropped by
   [ADR-005](.dev/decisions/ADR-005-pipeline-view.md); its absence is a decision,
-  not an omission to fix.
+  not an omission to fix. A second exception: the mockup's **brand block** wears
+  MagicPill Labs' mark and wordmark with the product name as a text row beneath.
+  The shipped rail carries Solo CRM's own mark and wordmark instead, drops the
+  duplicated name row and reads its version live — T-260829-06, annotated in
+  place in the mockup — because that block is the default an operator overrides
+  with their own branding, and a default cannot be one particular consultancy's.
 - [planning/solo-crm-requirements.md](planning/solo-crm-requirements.md) — scope,
   data model, integrations, non-functional requirements.
 - [CONVENTIONS.md](CONVENTIONS.md) — date, timestamp and money representations.
