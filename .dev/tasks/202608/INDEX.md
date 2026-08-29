@@ -18,7 +18,6 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | P1-09 · P1-CUT |
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
 | ○ open | [T-260828-49](T-260828-49-favicon-fetch-cache.md) | Fetch and cache favicons in main, once per host, never through a third party | 🔗 integration | P1-19 |
 | ○ open | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
@@ -41,6 +40,11 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 |---|---|---|---|---|
 | ○ open | [T-260828-39](T-260828-39-readonly-query-channel.md) | Open a genuinely read-only query channel — second connection plus statement refusal | 🔌 ipc | X-02 |
 | ○ open | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | X-01 · X-03 |
+| ○ open | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | build | — |
+| ○ open | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | data | — |
+| ○ open | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | data | — |
+| ○ open | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | data | — |
+| ○ open | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | ui | — |
 
 ## Closed this month
 
@@ -86,3 +90,4 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 | ● done | [T-260828-18](T-260828-18-first-run-location-chooser.md) | Ask where the data goes on first run, and never ask again | 🗄 data | R-260828-02 |
 | ● done | [T-260828-42](T-260828-42-billed-via-cycle-guard.md) | Refuse a billed-via cycle in the repository, as the seed loader already does | 🗄 data | R-260828-02 |
 | ● done | [T-260828-48](T-260828-48-links-repository.md) | Build the links repository — paste a URL on any entity, host decides the kind | 🗄 data | R-260828-02 |
+| ● done | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | R-260828-02 |

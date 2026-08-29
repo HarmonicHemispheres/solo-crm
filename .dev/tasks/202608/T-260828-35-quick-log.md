@@ -1,11 +1,11 @@
 ---
 id: T-260828-35
 title: Build the quick log (⌘L) — who, kind, one line, from anywhere
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-09
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -79,3 +79,52 @@ logged row, which G8 forbids. Voice or clipboard capture.
 - **A "who" field that requires an exact match** turns a five-second log into a
   detour through the create sheet. Offer creating the company inline or say
   plainly that it must exist first.
+
+
+---
+
+## Outcome
+
+Merged as `e02877e`. Review non-blocking (5 should-fix, 2 nits).
+
+**Changed:** `components/shell/QuickLog.tsx`, its CSS and test (new),
+`components/shell/LayerManager.tsx` and its test, `hooks/useGlobalShortcuts.ts`
+and its test, `routes.test.tsx`.
+
+⌘L (Ctrl+L here) opens the quick log from any route. Who, kind, one line; the
+engagement pre-fills only when the chosen company has exactly one active
+engagement and does not guess otherwise. Saving goes through `activity:log`,
+which moves `last_touch_at` / `last_contact_at` in the same transaction — so
+the cadence clock resets as a consequence of the write rather than as a second
+call the UI makes, which was the risk the task file named. Esc dismisses through
+`LayerManager`; no local handler, per T-260828-12's review.
+
+**A note on the first attempt.** This task was dispatched twice. The first
+builder landed in a worktree created at the session's opening commit, found no
+`.dev/tasks/202608/T-260828-35-quick-log.md`, searched `git log --all` and
+`git branch -a`, and reported `blocked — the scope does not exist anywhere in
+git history`. The file was tracked on main the whole time. Every isolation
+worktree starts at `CLAUDE_BASE`, dozens of commits back; the prompt asked the
+agent to *check* its base rather than telling it to reset unconditionally, and
+one agent in six skipped the check. The rule is now stated as a fact in
+`run-tasks`, and the rebuild was clean on the first pass.
+
+**Deferred (follow-ups, not blockers). The first two are the ones that matter:**
+
+- **The keyboard target is the least visible row.** `.qlog-opt.sel` paints
+  `--surface` inside a `--surface-2` list inside a `--surface` sheet, so the
+  highlighted row is the same colour as the panel behind the list and *darker*
+  than its unhighlighted neighbours — about a 1.06:1 step. The mockup's
+  `.pal-i.sel` runs the other way. In a flow that is keyboard-only by design,
+  this is the one visual state that has to read.
+- **Arrow keys move the highlight without scrolling it into view.** The list is
+  `max-height: 168px; overflow: auto`, so past ~5 matches the user is driving a
+  selection they cannot see.
+- `onSuccess` awaits three `invalidateQueries` before closing, so the overlay
+  and its toast wait on a companies + people + activity round trip — against a
+  goal measured in felt seconds.
+- The five-second test models per-character keystrokes from `text.length` rather
+  than dispatching them, and its exact-count assertion baselines on a counter
+  read at runtime, so a two-press open would still pass.
+- ArrowDown reopens a closed list one row further down than it was; and
+  `aria-controls` is a dangling IDREF while the list is closed.
