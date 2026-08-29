@@ -50,12 +50,19 @@
   cursor: pointer;
 }
 
-/* The mockup's `.pal-i.sel` — the row ↵ would take. `.qlog-list` already
-   sits on `--surface-2`, so the highlight reads against it with `--surface`
-   rather than the mockup's own inverse pairing. */
+/* The mockup's `.pal-i.sel` — the row ↵ would take. The mockup steps the
+   selected row one surface *up* from what it sits on (`--surface-2` inside a
+   palette panel painted `--surface`); this list is already `--surface-2`, so
+   the same step up is `--surface-3`. It ran the other way until T-260828-58,
+   which made the one row that must read in a keyboard-only flow the darkest
+   thing in the list and the same colour as the sheet behind it.
+
+   The accent bar is a second signal, so the highlight is not carried by
+   colour alone (.claude/rules/ui-design.md). */
 .qlog-opt.sel {
-  background: var(--surface);
+  background: var(--surface-3);
   color: var(--papyrus);
+  box-shadow: inset 2px 0 0 var(--verdigris);
 }
 
 .qlog-opt .ki {

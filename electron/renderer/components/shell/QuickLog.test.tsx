@@ -8,6 +8,13 @@ import { useGlobalShortcuts } from '../../hooks/useGlobalShortcuts'
 import { LayerManager } from './LayerManager'
 import { QuickLog } from './QuickLog'
 import { Companies } from '../../views/Companies'
+// The visual spec as text, through Vite's `?raw` (the same mechanism
+// `electron/main/db/migrations/index.ts` uses) rather than `node:fs`, which a
+// renderer file may not import (`local/no-renderer-node-access`). It is what
+// lets the highlight's contrast be checked against the token values instead of
+// by eye — see the block above `QuickLog’s selected row` for why the token
+// values are read from here and not from QuickLog.css itself.
+import mockupHtml from '../../../../planning/solo-crm-mockup.html?raw'
 import type { Company } from '../../../shared/companies'
 import type { Engagement } from '../../../shared/engagements'
 import type { Person } from '../../../shared/people'
@@ -127,10 +134,20 @@ function press(target: Document | Element, key: string, init: KeyboardEventInit 
   fireEvent.keyDown(target, { key, ...init })
 }
 
-/** Typed text — one keystroke per character, plus the value change it produces. */
+/**
+ * Typed text, one character at a time. Every counted keystroke is a key event
+ * this function actually dispatched — the count used to be `text.length` added
+ * beside a single whole-string `change`, which is a number the test asserted
+ * about itself rather than about the interface (T-260828-35 review).
+ */
 function type(target: HTMLElement, text: string) {
-  keystrokes += text.length
-  fireEvent.change(target, { target: { value: text } })
+  const field = target as HTMLInputElement | HTMLTextAreaElement
+  for (const char of text) {
+    keystrokes += 1
+    fireEvent.keyDown(field, { key: char })
+    fireEvent.change(field, { target: { value: field.value + char } })
+    fireEvent.keyUp(field, { key: char })
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +232,6 @@ describe('QuickLog', () => {
       const who = await openQuickLog()
       // Opens focused on the who field (scope) — nothing to Tab to first.
       expect(document.activeElement).toBe(who)
-      const overheadBefore = keystrokes
 
       await pickWho(who, 'sand')
       const note = screen.getByLabelText('What happened') as HTMLTextAreaElement
@@ -231,8 +247,14 @@ describe('QuickLog', () => {
       // What the interface itself costs, with the note's own characters taken
       // out: the ⌘L chord, the four characters that identify who, and the two
       // ↵s. Everything else in the budget is the operator writing their line.
+      //
+      // The chord is the literal 1 it is, not a counter read after opening:
+      // baselining on `keystrokes` as it stood after the open made the
+      // assertion agree with whatever opening had just cost, so an overlay
+      // that took two presses to open would still have passed
+      // (T-260828-35 review).
       const interfaceKeystrokes = keystrokes - noteLength
-      expect(interfaceKeystrokes).toBe(overheadBefore + 4 + 1 + 1)
+      expect(interfaceKeystrokes).toBe(1 + 4 + 1 + 1)
       expect(interfaceKeystrokes * KEYSTROKE_MS).toBeLessThan(FIVE_SECONDS_MS / 2)
 
       // And the whole scripted flow, note included, still lands inside five
@@ -547,5 +569,185 @@ describe('QuickLog against a live view', () => {
       expect(refreshed.textContent).toContain('today')
       expect(refreshed.querySelector('.decay')?.className).toContain('ok')
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The highlight (T-260828-58). The quick log is keyboard-only by design, so
+// the row ↵ would take is the one state that has to read, and it has to stay
+// on screen. Both are asserted against something mechanical — the token
+// values and the dispatched scroll call — rather than by eye, which is how a
+// highlight *darker* than its own list survived a review in the first place.
+//
+// Why the token values come from the mockup rather than from QuickLog.css:
+// Vitest replaces every `.css` import with an empty string (`css: false`, its
+// default — its css-disable plugin matches on the extension, so `?raw` is
+// blanked too), and a renderer test may not reach for `node:fs`
+// (`local/no-renderer-node-access`, AGENTS.md). The mockup is `.html`, so it
+// arrives intact, and tokens.css is lifted from its `:root` verbatim —
+// styles/tokens.test.ts is the standing diff that keeps that true. What is
+// pinned here is therefore the pair of tokens QuickLog.css names:
+// `.qlog-list { background: var(--surface-2) }` and
+// `.qlog-opt.sel { background: var(--surface-3) }`.
+// ---------------------------------------------------------------------------
+
+const LIST_BACKGROUND_TOKEN = '--surface-2'
+const SELECTED_ROW_TOKEN = '--surface-3'
+
+/** The hex the mockup's own `:root` — and so tokens.css — gives a token. */
+function tokenValue(name: string): string {
+  const rootStart = mockupHtml.indexOf(':root')
+  if (rootStart === -1) throw new Error('the mockup has no :root block')
+  const root = mockupHtml.slice(rootStart, mockupHtml.indexOf('}', rootStart))
+  // Anchored on a preceding delimiter so `--surface` cannot match inside
+  // `--surface-2`, which is exactly the family this compares.
+  const declared = new RegExp(`(?:^|[\\s;{])${name}\\s*:\\s*([^;]+)`).exec(root)
+  if (!declared) throw new Error(`the mockup declares no ${name}`)
+  return declared[1].trim()
+}
+
+/** WCAG relative luminance — "one step lighter" as a number, not an opinion. */
+function luminance(hex: string): number {
+  const match = /^#([0-9a-fA-F]{6})$/.exec(hex)
+  if (!match) throw new Error(`not a 6-digit hex colour: ${hex}`)
+  const [r, g, b] = [0, 2, 4]
+    .map((offset) => parseInt(match[1].slice(offset, offset + 2), 16) / 255)
+    .map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+describe('QuickLog’s selected row', () => {
+  it('is painted a step lighter than the list it sits in, by the token values themselves', () => {
+    // It was `--surface` on a `--surface-2` list: the one row a keyboard-only
+    // flow has to see was the darkest in the list, and the same colour as the
+    // sheet behind it. The mockup's `.pal-i.sel` steps the other way.
+    expect(luminance(tokenValue(SELECTED_ROW_TOKEN))).toBeGreaterThan(luminance(tokenValue(LIST_BACKGROUND_TOKEN)))
+  })
+
+  it('is the row the keyboard would take, and it alone carries the class the highlight is drawn with', async () => {
+    renderShell()
+    const who = await openQuickLog()
+    type(who, 'sand')
+    const listbox = await screen.findByRole('listbox')
+
+    press(who, 'ArrowDown')
+    await waitFor(() => {
+      const options = within(listbox).getAllByRole('option')
+      expect(options.map((option) => option.className)).toEqual(['qlog-opt', 'qlog-opt sel'])
+      expect(options.map((option) => option.getAttribute('aria-selected'))).toEqual(['false', 'true'])
+    })
+  })
+})
+
+describe('QuickLog keeps the highlight in view', () => {
+  const many = Array.from({ length: 12 }, (_, index) =>
+    makeCompany({ id: `acme-${index}`, name: `Acme ${String(index).padStart(2, '0')}` })
+  )
+
+  it('scrolls the row the arrow keys moved to into the list’s viewport', async () => {
+    // jsdom has no layout, so the geometry cannot be measured here — what is
+    // asserted instead is that the app asked for the *right element* to be
+    // brought into view, with `block: 'nearest'` so a row already on screen
+    // does not make the list jump. The browser does the geometry.
+    const original = Element.prototype.scrollIntoView as ((arg?: boolean | ScrollIntoViewOptions) => void) | undefined
+    const scrolled: Array<{ element: Element; options?: boolean | ScrollIntoViewOptions }> = []
+    Element.prototype.scrollIntoView = function scrollIntoViewSpy(
+      this: Element,
+      options?: boolean | ScrollIntoViewOptions
+    ) {
+      scrolled.push({ element: this, options })
+    }
+
+    try {
+      renderShell({ companies: many, people: [] })
+      const who = await openQuickLog()
+      type(who, 'acme')
+      const listbox = await screen.findByRole('listbox')
+      expect(within(listbox).getAllByRole('option')).toHaveLength(12)
+
+      // Down to the last match — past what 168px of list can show.
+      for (let step = 0; step < 11; step++) press(who, 'ArrowDown')
+
+      const options = within(listbox).getAllByRole('option')
+      const last = options[options.length - 1]
+      await waitFor(() => expect(last.getAttribute('aria-selected')).toBe('true'))
+      await waitFor(() => expect(scrolled[scrolled.length - 1].element).toBe(last))
+      expect(scrolled[scrolled.length - 1].options).toEqual({ block: 'nearest' })
+    } finally {
+      if (original) Element.prototype.scrollIntoView = original
+      else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
+})
+
+describe('QuickLog’s combobox wiring', () => {
+  it('points aria-controls at the list only while the list is rendered', async () => {
+    renderShell()
+    const who = await openQuickLog()
+
+    // Closed: a dangling IDREF resolves to nothing, so there must be none.
+    expect(who.hasAttribute('aria-controls')).toBe(false)
+
+    type(who, 'sand')
+    const listbox = await screen.findByRole('listbox')
+    const controls = who.getAttribute('aria-controls')
+    expect(controls).toBeTruthy()
+    expect(document.getElementById(controls as string)).toBe(listbox)
+  })
+
+  it('reopens a closed list where it was left rather than one row further down', async () => {
+    // Two matches that both survive the pick, so the difference is visible:
+    // picking "Sand" leaves the query matching "Sand" and "Sand & Sage" both.
+    const sand = makeCompany({ id: 'sand', name: 'Sand' })
+    renderShell({ companies: [sand, SANDSAGE], people: [] })
+
+    const who = await openQuickLog()
+    type(who, 'sand')
+    await screen.findByRole('listbox')
+    press(who, 'Enter')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(who.value).toBe('Sand')
+
+    press(who, 'ArrowDown')
+    const listbox = await screen.findByRole('listbox')
+    const options = within(listbox).getAllByRole('option')
+    expect(options.map((option) => option.getAttribute('aria-selected'))).toEqual(['true', 'false'])
+  })
+})
+
+describe('QuickLog confirms before the refetches settle', () => {
+  it('closes the overlay and raises the toast without waiting on the invalidated queries', async () => {
+    let calls = 0
+    let settled = 0
+    let release: () => void = () => {}
+    // Every refetch after the first load hangs here until this test lets it
+    // go — a deliberately slow query standing in for three real round trips.
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const companiesList = vi.fn(async () => {
+      calls += 1
+      if (calls > 1) await held
+      settled += 1
+      return { ok: true as const, data: [SANDSAGE, RINVII] }
+    })
+
+    renderShell({ crmOverrides: { 'companies:list': companiesList } })
+
+    const who = await openQuickLog()
+    await pickWho(who, 'sand &')
+    type(screen.getByLabelText('What happened'), 'Kickoff')
+    press(screen.getByLabelText('What happened'), 'Enter')
+
+    // Gone and confirmed...
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Log a touch' })).toBeNull())
+    expect(screen.getByRole('status').textContent).toBe('Logged. Sand & Sage is current.')
+
+    // ...while the refetch it triggered is still in flight.
+    await waitFor(() => expect(calls).toBeGreaterThan(1))
+    expect(settled).toBe(1)
+
+    release()
+    await waitFor(() => expect(settled).toBe(calls))
   })
 })
