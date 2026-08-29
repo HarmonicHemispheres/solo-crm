@@ -8,7 +8,7 @@ import { Card } from '../components/primitives/Card'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
-import { useLayerManager } from '../components/shell/layer-manager-context'
+import { useLayerManager, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import type { Company, CompanyKind } from '../../shared/companies'
@@ -294,7 +294,7 @@ export function People() {
             value={mode}
             onChange={handleModeChange}
           />
-          <Button variant="ghost" onClick={(event) => openSheet('New person', event.currentTarget)}>
+          <Button variant="ghost" onClick={(event) => openSheet('person', 'New person', event.currentTarget)}>
             <PlusIcon />
             New person
           </Button>
@@ -330,7 +330,7 @@ export function People() {
             // "Add person", distinct from the header's own "New person"
             // button — same reasoning as Companies.tsx's EmptyState action
             // comment: two buttons on one page need two accessible names.
-            <Button variant="primary" onClick={(event) => openSheet('New person', event.currentTarget)}>
+            <Button variant="primary" onClick={(event) => openSheet('person', 'New person', event.currentTarget)}>
               <PlusIcon />
               Add person
             </Button>
@@ -375,7 +375,9 @@ function PeopleGrid({
 }: {
   rows: readonly PersonRow[]
   onOpen: (id: string) => void
-  onCreate: (title: string, trigger?: HTMLElement | null) => void
+  /** `openSheet` itself — see `CompaniesGrid`'s own note on why this is
+   * typed off the context value rather than restated here. */
+  onCreate: LayerManagerContextValue['openSheet']
 }) {
   return (
     <div className="grid autofill">
@@ -385,7 +387,7 @@ function PeopleGrid({
       <button
         type="button"
         className="ccard ccard-new"
-        onClick={(event) => onCreate('New person', event.currentTarget)}
+        onClick={(event) => onCreate('person', 'New person', event.currentTarget)}
       >
         <PlusIcon width={22} height={22} />
         <span className="meta">Add person</span>

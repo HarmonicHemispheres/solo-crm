@@ -10,7 +10,7 @@ import { Ring } from '../components/primitives/Ring'
 import { DecayMeter } from '../components/primitives/DecayMeter'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
-import { useLayerManager } from '../components/shell/layer-manager-context'
+import { useLayerManager, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
 import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import type { Company, CompanyKind } from '../../shared/companies'
@@ -285,7 +285,7 @@ export function Companies() {
             value={mode}
             onChange={handleModeChange}
           />
-          <Button variant="ghost" onClick={(event) => openSheet('New company', event.currentTarget)}>
+          <Button variant="ghost" onClick={(event) => openSheet('company', 'New company', event.currentTarget)}>
             <PlusIcon />
             New company
           </Button>
@@ -323,7 +323,7 @@ export function Companies() {
             // wording) is rendered above this on every branch, so the two
             // buttons need distinct accessible names rather than two
             // identically-labelled "New company" buttons on the same page.
-            <Button variant="primary" onClick={(event) => openSheet('New company', event.currentTarget)}>
+            <Button variant="primary" onClick={(event) => openSheet('company', 'New company', event.currentTarget)}>
               <PlusIcon />
               Add company
             </Button>
@@ -395,7 +395,10 @@ function CompaniesGrid({
 }: {
   rows: readonly CompanyRow[]
   onOpen: (id: string) => void
-  onCreate: (title: string, trigger?: HTMLElement | null) => void
+  /** `openSheet` itself, typed off the context value so this card's create
+   * call cannot drift from the signature every other create button in the
+   * view uses — the drift T-260829-08 closed. */
+  onCreate: LayerManagerContextValue['openSheet']
 }) {
   return (
     <div className="grid autofill">
@@ -408,7 +411,7 @@ function CompaniesGrid({
       <button
         type="button"
         className="ccard ccard-new"
-        onClick={(event) => onCreate('New company', event.currentTarget)}
+        onClick={(event) => onCreate('company', 'New company', event.currentTarget)}
       >
         <PlusIcon width={22} height={22} />
         <span className="meta">Add company</span>

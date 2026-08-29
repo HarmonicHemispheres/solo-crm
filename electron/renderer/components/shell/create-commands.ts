@@ -80,7 +80,7 @@ export function runCreateCommand(
   trigger?: HTMLElement | null
 ): void {
   if (command.sheet) {
-    layers.openSheet(command.sheet.title, trigger, command.sheet.kind)
+    layers.openSheet(command.sheet.kind, command.sheet.title, trigger)
     return
   }
   if (command.layer) layers.openLayer(command.layer, trigger)

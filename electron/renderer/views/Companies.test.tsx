@@ -138,6 +138,20 @@ function renderCompanies({
   return { ...result, queryClient }
 }
 
+/**
+ * Asserts the dialog is `CompanySheet`, not something merely titled like it.
+ * The name input is the cheapest thing only the real form has: the shell
+ * T-260829-08 deleted had the same title and role and no fields at all.
+ */
+function expectRealCompanyForm(dialog: HTMLElement): void {
+  const name = within(dialog).getByLabelText('Name') as HTMLInputElement
+  expect(name.placeholder).toBe('Acme Co')
+  fireEvent.change(name, { target: { value: 'Northwind' } })
+  expect(name.value).toBe('Northwind')
+  const create = within(dialog).getByRole('button', { name: 'Create' }) as HTMLButtonElement
+  expect(create.disabled).toBe(false)
+}
+
 describe('Companies', () => {
   it('excludes a company that only appears as another one\'s end client — the seed fixture\'s W+K and Programetrix', async () => {
     renderCompanies()
@@ -299,12 +313,40 @@ describe('Companies', () => {
     expect(meter?.className).not.toContain('ok')
   })
 
-  it('opens the create sheet from both the header action and the empty state', async () => {
+  /**
+   * The T-260829-08 regression. Both these buttons opened a sheet with the
+   * right title, a disabled Create button and no fields, because they called
+   * `openSheet` without a kind — so an assertion that "a dialog named 'New
+   * company' is open" passed against the broken build and is worth nothing
+   * here. What separates the real form from that placeholder is a field, so
+   * that is what these assert: the company name input, by its label, its
+   * placeholder and its editability, plus a Create button that is enabled.
+   *
+   * The empty state runs first because an empty database is where a
+   * first-run user meets these buttons — and where the empty-state one is
+   * the only way in.
+   */
+  it('opens a real company form — not a titled shell — from the empty state and from the header', async () => {
     renderCompanies({ companies: [], engagements: [] })
     await waitFor(() => expect(screen.getByText(/No companies yet/)).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: 'Add company' }))
-    expect(screen.getByRole('dialog', { name: 'New company' })).toBeTruthy()
+    const fromEmptyState = screen.getByRole('dialog', { name: 'New company' })
+    expectRealCompanyForm(fromEmptyState)
+
+    fireEvent.click(within(fromEmptyState).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New company' }))
+    expectRealCompanyForm(screen.getByRole('dialog', { name: 'New company' }))
+  })
+
+  it('opens a real company form from the grid\'s own "Add company" card', async () => {
+    renderCompanies({ mode: 'card' })
+    await waitFor(() => expect(screen.getByText('EZDeploy')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add company' }))
+    expectRealCompanyForm(screen.getByRole('dialog', { name: 'New company' }))
   })
 
   it('offers the presentation toggle as icon buttons, each with the name a screen reader reads', async () => {

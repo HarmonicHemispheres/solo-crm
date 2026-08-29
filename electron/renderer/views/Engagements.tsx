@@ -329,7 +329,7 @@ export function Engagements() {
       title="Engagements"
       description="Each engagement carries a billing model. Retainers show hours against the monthly allowance, fixed scopes show milestones completed, T&M shows hours against the estimate — hours stay provisional until the timelog import lands."
       actions={
-        <Button variant="ghost" onClick={(event) => openSheet('New engagement', event.currentTarget)}>
+        <Button variant="ghost" onClick={(event) => openSheet('engagement', 'New engagement', event.currentTarget)}>
           <PlusIcon />
           New engagement
         </Button>
@@ -361,7 +361,7 @@ export function Engagements() {
         {header}
         <EmptyState
           action={
-            <Button variant="primary" onClick={(event) => openSheet('New engagement', event.currentTarget)}>
+            <Button variant="primary" onClick={(event) => openSheet('engagement', 'New engagement', event.currentTarget)}>
               <PlusIcon />
               Add engagement
             </Button>

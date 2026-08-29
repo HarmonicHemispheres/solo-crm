@@ -35,17 +35,17 @@ export function NewMenu() {
       </Button>
       {open && (
         <div className="menu" role="menu" aria-label="Create">
-          <button type="button" role="menuitem" onClick={() => openSheet('New company', buttonRef.current, 'company')}>
+          <button type="button" role="menuitem" onClick={() => openSheet('company', 'New company', buttonRef.current)}>
             <NewCompanyIcon />
             Company
             <span className="k">C</span>
           </button>
-          <button type="button" role="menuitem" onClick={() => openSheet('New person', buttonRef.current, 'person')}>
+          <button type="button" role="menuitem" onClick={() => openSheet('person', 'New person', buttonRef.current)}>
             <NewPersonIcon />
             Person
             <span className="k">P</span>
           </button>
-          <button type="button" role="menuitem" onClick={() => openSheet('New engagement', buttonRef.current, 'engagement')}>
+          <button type="button" role="menuitem" onClick={() => openSheet('engagement', 'New engagement', buttonRef.current)}>
             <NewEngagementIcon />
             Engagement
             <span className="k">E</span>

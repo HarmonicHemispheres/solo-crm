@@ -141,6 +141,20 @@ function renderPeople({
   return { ...result, queryClient }
 }
 
+/**
+ * Asserts the dialog is `PersonSheet`, not something merely titled like it —
+ * see `Companies.test.tsx`'s counterpart for why the field, not the title,
+ * is the load-bearing assertion.
+ */
+function expectRealPersonForm(dialog: HTMLElement): void {
+  const name = within(dialog).getByLabelText('Name') as HTMLInputElement
+  expect(name.placeholder).toBe('Jane Doe')
+  fireEvent.change(name, { target: { value: 'Dana Okoro' } })
+  expect(name.value).toBe('Dana Okoro')
+  const create = within(dialog).getByRole('button', { name: 'Create' }) as HTMLButtonElement
+  expect(create.disabled).toBe(false)
+}
+
 describe('People', () => {
   it('shows a person\'s current company and title on their card', async () => {
     renderPeople()
@@ -261,12 +275,29 @@ describe('People', () => {
     await waitFor(() => expect(screen.getByTestId('person-detail').textContent).toBe('beto'))
   })
 
-  it('opens the create sheet from both the header action and the empty state', async () => {
+  /** The T-260829-08 regression — see `Companies.test.tsx`'s own note on why
+   * this asserts a field rather than that a dialog opened. */
+  it('opens a real person form — not a titled shell — from the empty state and from the header', async () => {
     renderPeople({ people: [], details: {} })
     await waitFor(() => expect(screen.getByText(/No people yet/)).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: 'Add person' }))
-    expect(screen.getByRole('dialog', { name: 'New person' })).toBeTruthy()
+    const fromEmptyState = screen.getByRole('dialog', { name: 'New person' })
+    expectRealPersonForm(fromEmptyState)
+
+    fireEvent.click(within(fromEmptyState).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New person' }))
+    expectRealPersonForm(screen.getByRole('dialog', { name: 'New person' }))
+  })
+
+  it('opens a real person form from the grid\'s own "Add person" card', async () => {
+    renderPeople({ mode: 'card' })
+    await waitFor(() => expect(screen.getByText('Ana Silva')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }))
+    expectRealPersonForm(screen.getByRole('dialog', { name: 'New person' }))
   })
 
   it('never calls window.crm from this module directly — every read is wired through the ipc/query-key helpers', async () => {

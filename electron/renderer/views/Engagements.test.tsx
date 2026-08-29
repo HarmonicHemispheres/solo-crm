@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { Engagements } from './Engagements'
@@ -215,6 +215,20 @@ function cardFor(name: string): HTMLElement {
   return card as HTMLElement
 }
 
+/**
+ * Asserts the dialog is `EngagementSheet`, not something merely titled like
+ * it — see `Companies.test.tsx`'s counterpart for why the field, not the
+ * title, is the load-bearing assertion.
+ */
+function expectRealEngagementForm(dialog: HTMLElement): void {
+  const name = within(dialog).getByLabelText('Name') as HTMLInputElement
+  expect(name.placeholder).toBe('Fixed scope SOW')
+  fireEvent.change(name, { target: { value: 'Q4 advisory' } })
+  expect(name.value).toBe('Q4 advisory')
+  const create = within(dialog).getByRole('button', { name: 'Create' }) as HTMLButtonElement
+  expect(create.disabled).toBe(false)
+}
+
 describe('Engagements', () => {
   it('renders three distinct progress shapes — retainer hours-vs-allowance, fixed milestones, T&M hours-vs-estimate', async () => {
     renderEngagements()
@@ -334,6 +348,23 @@ describe('Engagements', () => {
     await screen.findByText(/No engagements yet/)
     expect(screen.getByRole('button', { name: 'Add engagement' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'New engagement' })).toBeTruthy()
+  })
+
+  /** The T-260829-08 regression — see `Companies.test.tsx`'s own note on why
+   * this asserts a field rather than that a dialog opened. */
+  it('opens a real engagement form — not a titled shell — from the empty state and from the header', async () => {
+    renderEngagements({ engagements: [], companies: [] })
+    await screen.findByText(/No engagements yet/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add engagement' }))
+    const fromEmptyState = screen.getByRole('dialog', { name: 'New engagement' })
+    expectRealEngagementForm(fromEmptyState)
+
+    fireEvent.click(within(fromEmptyState).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New engagement' }))
+    expectRealEngagementForm(screen.getByRole('dialog', { name: 'New engagement' }))
   })
 
   it('does not render any dollar amount unless the Scope explicitly calls for one (T&M not-to-exceed)', async () => {
