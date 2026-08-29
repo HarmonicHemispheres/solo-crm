@@ -1,11 +1,11 @@
 ---
 id: T-260828-56
 title: Test the chain walk directly, and stop reporting a cycle as depth exceeded
-status: in-progress
+status: done
 category: data
 plan_ref: 
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -85,3 +85,71 @@ never a hierarchy). The database `CHECK`, which cannot express reachability.
 - **Testing the walk through the repository again.** The whole point is a direct
   test of the primitive — going through `createCompany` reproduces the coverage
   that already exists and misses the branch again.
+
+
+---
+
+## Outcome
+
+Merged as `20ab952`. Built by a subagent under the build-only process
+(T-260828-54's wave H); reviewed and gated by the orchestrator at merge.
+
+**Changed:** `electron/main/db/chain-walk.ts`, `chain-walk.test.ts` (new),
+`electron/main/db/repositories/companies.ts`, `companies.test.ts`,
+`electron/main/db/seed/index.ts`.
+
+**A cycle and a depth overrun are now different facts.** Both call sites caught
+`ChainCycleError` and `ChainDepthExceededError` in one branch and reported the
+depth message, so three rows pointing in a triangle produced a refusal telling
+the operator their data "already exceeds 50 steps without resolving" — sending
+whoever reads it to look for a chain that is not there. Each error now has its
+own branch, its own sentence and its own discriminator, at both the repository
+guard and the seed loader's fixture check.
+
+**The chain walk is tested directly.** `chain-walk.test.ts` is new: the walk was
+previously exercised only through the repositories that call it, which is what
+let the conflated catch survive.
+
+**Reason strings changed meaning**, which is the part worth a reader's attention:
+
+| Fact | Before | After |
+|---|---|---|
+| `introduced_by` points at itself | `introduced-by-cycle` | `introduced-by-self-reference` |
+| `introduced_by` would close a loop | `introduced-by-cycle` | `introduced-by-cycle` |
+| The existing chain already loops | `*-chain-depth-exceeded` | `*-chain-cycle` |
+
+`billed_via`'s `self-reference` is untouched — T-260828-20 established it
+against a database `CHECK` constraint name, and a caller may already switch on
+it. **Verified at merge:** the changed strings have no consumer outside the
+repository and its own test, grepped across `electron/` and `planning/` on the
+branch. No IPC channel maps any of them yet.
+
+**Also, off the scope's path but in its files:** `assertNoChainCycle` compiled
+its one-column `SELECT` once per step, so a 50-deep chain prepared the identical
+statement 50 times. Hoisted to once per guarded write. `spec.column` is a fixed
+literal from the two guard specs, never caller input, so the interpolation is as
+safe hoisted as it was inline.
+
+**Verified at merge:** `npm run typecheck` clean; the whole `node` project
+528/528 in 8.45s on the merged tree.
+
+## What the scope did not anticipate
+
+`createCompany`'s `introduced_by` guard **cannot be covered by an ordinary
+create**: a brand-new row's id cannot appear in any existing chain, so
+`chain.includes(selfId)` can never fire on the create path. The test therefore
+wires a two-row loop with raw inserts and asserts the create refuses with
+`introduced-by-chain-cycle`. The `billed_via` twin of that case had the same
+gap and got the same test.
+
+A correction made while writing the depth tests: `maxDepth` bounds `getParent`
+calls, not edges, so the longest chain that terminates is exactly `maxDepth`
+nodes, not `maxDepth + 1`. The existing repository depth test was already on the
+correct side of that line and needed no change.
+
+**A hazard worth carrying forward.** The builder reverted an acceptance mutation
+with `git checkout <file>` and silently lost the doc-comment edits it had made
+to the same file earlier. It caught this by grepping for a marker and re-applied
+them, and reverted the remaining mutations by targeted edit instead. Mutation
+testing and `git checkout` are a bad pair on a file you are also authoring; this
+is now in the subagent preamble.

@@ -97,6 +97,14 @@ reported `verify-failed` for timeouts caused purely by concurrent agents; all
 three passed on a quiet machine. Say explicitly whether a failure reproduces in
 isolation.
 
+**Reverting a mutation: never with `git checkout <file>`.** Proving a test goes
+red by breaking the code is a good check, but `git checkout` restores the file to
+its committed state — which also discards every *uncommitted* edit you made to
+that same file earlier, including the one you are testing. It fails silently:
+you get your green run back and your work is gone. Undo the mutation with a
+targeted edit, or commit before you mutate. One builder lost a set of
+doc-comments this way and only found them by grepping for a marker.
+
 ## Worktree hygiene
 
 Do **not** run `npm install`. Link dependencies with exactly this form, as a

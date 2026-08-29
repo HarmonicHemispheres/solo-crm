@@ -9,6 +9,8 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 |---|---|---|---|---|
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
 | ○ open | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | P0-03 |
+| ○ open | [T-260829-01](T-260829-01-installer-maintenance-page.md) | Offer repair or remove when the installer finds an existing installation | 📦 build | X-09 |
+| ○ open | [T-260829-02](T-260829-02-release-versioning.md) | Give each release a distinct version so two installers are never the same file name | 📦 build | X-09 |
 
 ### Phase 1 — the spine
 
@@ -33,8 +35,6 @@ that surfaced them. Each names the review it came from.
 |---|---|---|---|---|
 | ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
 | ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
-| ◐ in-progress | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | 🗄 data | *(review)* |
-| ◐ in-progress | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | 🗄 data | *(review)* |
 | ○ open | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | *(review)* |
 | ◐ in-progress | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | 🎨 ui | *(review)* |
 
@@ -92,3 +92,5 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | R-260828-02 |
 | ● done | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | R-260828-02 |
 | ● done | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | 📦 build | R-260828-02 |
+| ● done | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | 🗄 data | R-260828-03 |
+| ● done | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | 🗄 data | R-260828-03 |
