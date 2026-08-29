@@ -95,3 +95,23 @@ a {
     width: var(--w) !important;
   }
 }
+
+/*
+ * The in-app "interface motion" switch (§6.11, T-260828-38's Appearance
+ * panel: `appearance.motion`) — the same two rules as the OS-level query
+ * above, keyed off an attribute the settings view sets on `<html>` instead
+ * of a media query, so turning the in-app toggle off has the identical
+ * effect to the system reduced-motion setting rather than a second,
+ * differently-behaved "off". Never set by anything but that view (see its
+ * own comment on where the attribute is written).
+ */
+:root[data-motion='off'] *,
+:root[data-motion='off'] *::before,
+:root[data-motion='off'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+:root[data-motion='off'] .decay .fill {
+  width: var(--w) !important;
+}

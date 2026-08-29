@@ -481,6 +481,18 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
   - [ ] Companies as list and People as cards both survive a restart,
         independently of each other
 
+- [ ] **P2-09 · Settings view** — 🎨 ui · S · after P2-01
+  §6.11's workspace surface: identity, per-kind cadence defaults, integration
+  toggles, backup, appearance, and a shortcut reference. Built as
+  T-260828-38 with no `plan_ref` of its own — §6.11 mapped to P2-01, P2-03,
+  P4-08, X-04 and X-06, each adding one panel to a page nothing owned as a
+  whole; this is that missing entry, filed after the fact.
+  - [ ] Every key §6.11 lists has a control
+  - [ ] A panel whose behaviour hasn't landed elsewhere — cadence
+        inheritance (P2-02), the backup folder picker — says so plainly
+        rather than storing a value and implying an effect
+  - [ ] No credential field appears anywhere on the page (ADR-004)
+
 ---
 
 ## Phase 3 — Money
