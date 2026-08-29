@@ -8,6 +8,14 @@
 -- schema.test.ts's regeneration check only ever compares against
 -- 0001_init.sql.
 --
+-- The reasoning below -- why a union view rather than one content table, the
+-- rowid encoding as a contract, the reserved shadow-table name, and the
+-- measured cost that puts this shape under review -- is recorded durably in
+-- ADR-008 (.dev/decisions/ADR-008-search-index-shape.md). Read it before
+-- extending this migration's shape (a sixth searchable table, a kind-code
+-- change) or before touching T-260828-51, which may replace the union view
+-- this comment describes.
+--
 -- Design -- a genuine external-content table, not a self-contained one:
 -- `search_fts` is declared with content=/content_rowid=, so its own shadow
 -- tables hold the inverted index only, never a second stored copy of
