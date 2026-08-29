@@ -42,13 +42,24 @@ describe('queryKeys — T-260828-26 entities', () => {
     }
   })
 
-  it('G8: no activity update or delete scope exists to key', () => {
-    // `byPerson` (T-260828-31: a person's page reads `activity:list({ personId })`,
-    // scoped under its own id the same reason `engagements.byBillingCompany`/
-    // `byClientCompany` are — see query-keys.ts's own comment) is a second
-    // *read* scope, not an update/delete one; G8's actual constraint is that
-    // no mutating scope exists to key, which this still holds.
-    expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'byPerson', 'detail', 'list'])
+  it('G8: no activity key beyond list/detail plus the read scopes — no update or delete scope exists to key', () => {
+    // byCompany/byPerson/byEngagement (T-260828-30 and -31) are additional
+    // *read* scopes, not mutating ones. G8's constraint is that no update or
+    // delete scope exists to key, which this list still holds — a new entry
+    // here has to be justified as a read.
+    expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'byCompany', 'byEngagement', 'byPerson', 'detail', 'list'])
+  })
+
+  it('T-260828-30: tasks.byCompany and activity.byCompany/byPerson/byEngagement follow [entity, scope, id] and start with all()', () => {
+    expect(queryKeys.tasks.byCompany('c1')).toEqual(['tasks', 'byCompany', 'c1'])
+    expect(queryKeys.tasks.byCompany('c1').slice(0, queryKeys.tasks.all().length)).toEqual(queryKeys.tasks.all())
+
+    expect(queryKeys.activity.byCompany('c1')).toEqual(['activity', 'byCompany', 'c1'])
+    expect(queryKeys.activity.byPerson('p1')).toEqual(['activity', 'byPerson', 'p1'])
+    expect(queryKeys.activity.byEngagement('e1')).toEqual(['activity', 'byEngagement', 'e1'])
+    for (const key of [queryKeys.activity.byCompany('c1'), queryKeys.activity.byPerson('p1'), queryKeys.activity.byEngagement('e1')]) {
+      expect(key.slice(0, queryKeys.activity.all().length)).toEqual(queryKeys.activity.all())
+    }
   })
 })
 

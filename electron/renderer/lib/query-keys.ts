@@ -102,7 +102,14 @@ export const queryKeys = {
      */
     waitingList: () => ['tasks', 'waitingList'] as const,
     /** `tasks:countOpen` — a summary, not a single record, so no id (this file's header: "id is present only when scope addresses one record"). */
-    countOpen: () => ['tasks', 'countOpen'] as const
+    countOpen: () => ['tasks', 'countOpen'] as const,
+    /**
+     * `tasks:list({ companyId })` (T-260828-30's company detail Todos card) —
+     * named after the filter field, matching `engagements.byBillingCompany`'s
+     * own precedent above rather than a generic `list` a second scoped query
+     * would collide with.
+     */
+    byCompany: (companyId: string) => ['tasks', 'byCompany', companyId] as const
   },
   /**
    * G8: no `activity` update or delete channel exists — no corresponding key
@@ -139,8 +146,17 @@ export const queryKeys = {
      * `list({ personId })` would now key correctly too, but PersonDetail calls
      * this and the distinct prefix keeps a person's timeline invalidatable on
      * its own, without touching the Activity view's cached pages.
+     *
+     * `byCompany`/`byEngagement` (T-260828-30) are the same idea for company
+     * detail's Activity timeline, which merges three independently-filtered
+     * calls — rows carrying the company's own id, rows hung on its people, and
+     * rows hung on its engagements — rather than slicing one unfiltered list
+     * client-side. A company detail page calls each once per contact or
+     * engagement it has, not once total.
      */
-    byPerson: (personId: string) => ['activity', 'byPerson', personId] as const
+    byCompany: (companyId: string) => ['activity', 'byCompany', companyId] as const,
+    byPerson: (personId: string) => ['activity', 'byPerson', personId] as const,
+    byEngagement: (engagementId: string) => ['activity', 'byEngagement', engagementId] as const
   },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
   settings: {
