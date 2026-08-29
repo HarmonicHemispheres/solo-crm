@@ -16,7 +16,9 @@ import {
   type UpdateEngagementInput,
   updateEngagementInputSchema
 } from '../../../shared/engagements'
-import { NotFoundError, RefusalError, ValidationError } from './errors'
+import { NotFoundError, RefusalError } from './errors'
+import { parseInput, type ParseInputOptions } from './input'
+import { type ConstraintHandler, NOT_NULL_HANDLER, PRIMARY_KEY_HANDLER, translateWriteError, UNIQUE_HANDLER } from './sqlite-errors'
 import { refuseIfReferenced } from './referential-guard'
 
 /**
@@ -44,46 +46,25 @@ export type { BillingModel, CreateEngagementInput, Engagement, EngagementStatus,
 // Input parsing
 // ---------------------------------------------------------------------------
 
-function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
-  // Same reasoning as companies.ts's parseInput: zod's `.partial()` marks a
-  // field optional, not absent, so a patch carrying an explicit
-  // `undefined`-valued key (the shape a renderer's
-  // `{ field: dirty ? value : undefined }` naturally produces, preserved
-  // across Electron's structured-clone IPC boundary) still has that key
-  // present in `Object.keys`. Every write path below distinguishes "key
-  // absent" from "key present" via `in`, so stripping undefined-valued keys
-  // makes "absent" and "explicitly undefined" the same thing for every
-  // caller.
-  //
-  // This has to happen BEFORE `safeParse`, not after: `updateEngagementInputSchema`
-  // is a `z.union([engagementCommonPatchSchema, engagementModelPatchSchema])`,
-  // and stripping after parsing cannot influence which union branch was
-  // chosen. `{ billingModel: undefined, notes: 'x' }` defeats both branches
-  // as parsed — `engagementCommonPatchSchema` is `.strict()` with no
-  // `billingModel` key at all, and `engagementModelPatchSchema`'s
-  // `discriminatedUnion` looks up `billingModel`, finds `undefined`, and
-  // matches no branch — even though the caller's actual intent ("leave
-  // billingModel alone") is exactly what an absent key means. Stripping
-  // before `safeParse` makes that patch parse as `{ notes: 'x' }`, which
-  // `engagementCommonPatchSchema` accepts.
-  const stripped = stripUndefinedValues(input)
-  const result = schema.safeParse(stripped)
-  if (!result.success) {
-    const issues = flattenIssues(result.error.issues)
-    const message = issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, issues)
-  }
-  return result.data
-}
-
-function stripUndefinedValues<T>(value: T): T {
-  if (typeof value !== 'object' || value === null) return value
-  const cleaned = { ...(value as Record<string, unknown>) }
-  for (const key of Object.keys(cleaned)) {
-    if (cleaned[key] === undefined) delete cleaned[key]
-  }
-  return cleaned as T
-}
+/**
+ * Every schema in this file parses through the shared `parseInput`
+ * (`input.ts`) with both of its options set, because `engagements` is the one
+ * table whose schemas are unions:
+ *
+ * - `stripBeforeParse` — undefined-valued keys must be stripped BEFORE
+ *   `safeParse`, not after. `updateEngagementInputSchema` is a
+ *   `z.union([engagementCommonPatchSchema, engagementModelPatchSchema])`, and
+ *   stripping after parsing cannot influence which union branch was chosen.
+ *   `{ billingModel: undefined, notes: 'x' }` defeats both branches as parsed
+ *   — `engagementCommonPatchSchema` is `.strict()` with no `billingModel` key
+ *   at all, and `engagementModelPatchSchema`'s `discriminatedUnion` looks up
+ *   `billingModel`, finds `undefined`, and matches no branch — even though
+ *   the caller's actual intent ("leave billingModel alone") is exactly what
+ *   an absent key means. Stripping first makes that patch parse as
+ *   `{ notes: 'x' }`, which `engagementCommonPatchSchema` accepts.
+ * - `transformIssues` — `flattenIssues` below, for the same union reason.
+ */
+const PARSE_OPTIONS: ParseInputOptions = { stripBeforeParse: true, transformIssues: flattenIssues }
 
 /**
  * zod v4 nests a union branch's own issues inside `issue.errors` (one array
@@ -175,23 +156,6 @@ const MODEL_SPECIFIC_COLUMNS: ReadonlyArray<{ readonly key: string; readonly col
 // SQLite constraint translation
 // ---------------------------------------------------------------------------
 
-interface SqliteConstraintError {
-  readonly code: string
-  readonly message: string
-}
-
-function isSqliteConstraintError(error: unknown): error is SqliteConstraintError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    (error as { code: string }).code.startsWith('SQLITE_CONSTRAINT')
-  )
-}
-
-type ConstraintHandler = (error: SqliteConstraintError) => RefusalError
-
 /**
  * Migration 0001 declares no `CHECK` constraint on `engagements` (unlike
  * `companies`' self-reference check), so there is no name-dispatched `CHECK`
@@ -206,19 +170,9 @@ const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
       'This write references a company or service version that does not exist — check billingCompanyId, clientCompanyId and serviceVersionId.',
       { reason: 'foreign-key' }
     ),
-  SQLITE_CONSTRAINT_NOTNULL: () => new RefusalError('A required field was left empty.', { reason: 'not-null' }),
-  SQLITE_CONSTRAINT_UNIQUE: () => new RefusalError('This value conflicts with an existing row.', { reason: 'unique' }),
-  SQLITE_CONSTRAINT_PRIMARYKEY: () => new RefusalError('This id is already in use.', { reason: 'primary-key' })
-}
-
-/** Turns a thrown `SqliteError` from an insert/update into a `RefusalError`. Anything else propagates unchanged. */
-function translateWriteError(error: unknown): never {
-  if (isSqliteConstraintError(error)) {
-    const handler = CONSTRAINT_HANDLERS[error.code]
-    if (handler) throw handler(error)
-    throw new RefusalError('This write violates a database constraint.', { reason: 'constraint' })
-  }
-  throw error
+  SQLITE_CONSTRAINT_NOTNULL: NOT_NULL_HANDLER,
+  SQLITE_CONSTRAINT_UNIQUE: UNIQUE_HANDLER,
+  SQLITE_CONSTRAINT_PRIMARYKEY: PRIMARY_KEY_HANDLER
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +318,7 @@ export function listMilestones(db: Database.Database, engagementId: string): rea
 // ---------------------------------------------------------------------------
 
 export function createEngagement(db: Database.Database, input: unknown): Engagement {
-  const parsed = parseInput(createEngagementInputSchema, input) as unknown as Record<string, unknown>
+  const parsed = parseInput(createEngagementInputSchema, input, PARSE_OPTIONS) as unknown as Record<string, unknown>
 
   const id = randomUUID()
   const timestamp = nowTimestamp()
@@ -380,7 +334,7 @@ export function createEngagement(db: Database.Database, input: unknown): Engagem
   try {
     db.prepare(`INSERT INTO engagements (${columns.join(', ')}) VALUES (${placeholders})`).run(...values)
   } catch (error) {
-    translateWriteError(error)
+    translateWriteError(CONSTRAINT_HANDLERS, error)
   }
 
   // Guaranteed to exist: this connection just inserted it and nothing here
@@ -389,7 +343,7 @@ export function createEngagement(db: Database.Database, input: unknown): Engagem
 }
 
 export function updateEngagement(db: Database.Database, id: string, patch: unknown): Engagement {
-  const parsed = parseInput(updateEngagementInputSchema, patch) as unknown as Record<string, unknown>
+  const parsed = parseInput(updateEngagementInputSchema, patch, PARSE_OPTIONS) as unknown as Record<string, unknown>
 
   const currentRow = getEngagementRow(db, id)
   if (!currentRow) {
@@ -451,7 +405,7 @@ export function updateEngagement(db: Database.Database, id: string, patch: unkno
   try {
     db.prepare(`UPDATE engagements SET ${setClauses.join(', ')} WHERE id = ?`).run(...values)
   } catch (error) {
-    translateWriteError(error)
+    translateWriteError(CONSTRAINT_HANDLERS, error)
   }
 
   return getEngagement(db, id) as Engagement

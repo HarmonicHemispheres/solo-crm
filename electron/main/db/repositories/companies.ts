@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { z } from 'zod'
 import { ChainCycleError, ChainDepthExceededError, MAX_CHAIN_DEPTH, walkChain } from '../chain-walk'
 import { nowTimestamp } from '../../../shared/format'
 import {
@@ -12,8 +11,16 @@ import {
   type UpdateCompanyInput,
   updateCompanyInputSchema
 } from '../../../shared/companies'
-import { NotFoundError, RefusalError, ValidationError } from './errors'
+import { NotFoundError, RefusalError } from './errors'
+import { boolToSql, parseInput } from './input'
 import { refuseIfReferenced } from './referential-guard'
+import {
+  type ConstraintHandler,
+  NOT_NULL_HANDLER,
+  PRIMARY_KEY_HANDLER,
+  translateWriteError,
+  UNIQUE_HANDLER
+} from './sqlite-errors'
 
 /**
  * The `companies` repository (T-260828-20) — the first module in this
@@ -48,40 +55,6 @@ export { COMPANY_KINDS, createCompanyInputSchema, updateCompanyInputSchema }
 export type { Company, CompanyKind, CreateCompanyInput, UpdateCompanyInput }
 
 // ---------------------------------------------------------------------------
-// Input parsing
-// ---------------------------------------------------------------------------
-
-function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
-  const result = schema.safeParse(input)
-  if (!result.success) {
-    const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, result.error.issues)
-  }
-  // zod's `.partial()` marks a field optional, not absent: a patch that sets
-  // a key to the literal value `undefined` (the shape a renderer's
-  // `{ field: dirty ? value : undefined }` naturally produces, and the shape
-  // Electron's structured clone preserves across the IPC boundary) still
-  // parses with that key present, holding `undefined`. Every write path
-  // below distinguishes "key absent" from "key present" via `in`, so an
-  // undefined-valued key left in `result.data` would read as "the caller
-  // explicitly set this" and either wipe a column to NULL (updateCompany) or
-  // skip a documented CREATE_DEFAULTS default (createCompany). Stripping
-  // undefined-valued keys here, once, makes "absent" and "explicitly
-  // undefined" the same thing for every caller, which is what a JS object
-  // literal actually means.
-  return stripUndefinedValues(result.data)
-}
-
-function stripUndefinedValues<T>(value: T): T {
-  if (typeof value !== 'object' || value === null) return value
-  const cleaned = { ...(value as Record<string, unknown>) }
-  for (const key of Object.keys(cleaned)) {
-    if (cleaned[key] === undefined) delete cleaned[key]
-  }
-  return cleaned as T
-}
-
-// ---------------------------------------------------------------------------
 // Column mapping — shared between createCompany and updateCompany so the two
 // can never disagree on a column name or a value transform.
 // ---------------------------------------------------------------------------
@@ -93,8 +66,6 @@ interface FieldSpec {
   readonly column: string
   readonly toSql?: (value: unknown) => unknown
 }
-
-const boolToSql = (value: unknown): unknown => (value === null || value === undefined ? null : value ? 1 : 0)
 
 const FIELD_SPECS: readonly FieldSpec[] = [
   { key: 'name', column: 'name' },
@@ -129,34 +100,17 @@ const CREATE_DEFAULTS: Partial<Record<WritableKey, unknown>> = {
 // SQLite constraint translation
 // ---------------------------------------------------------------------------
 
-interface SqliteConstraintError {
-  readonly code: string
-  readonly message: string
-}
-
-function isSqliteConstraintError(error: unknown): error is SqliteConstraintError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    (error as { code: string }).code.startsWith('SQLITE_CONSTRAINT')
-  )
-}
-
 /** The one named `CHECK` constraint `companies` currently declares (migration 0001). */
 const SELF_REFERENCE_CHECK_NAME = 'companies_billed_via_company_not_self'
-
-type ConstraintHandler = (error: SqliteConstraintError) => RefusalError
 
 /**
  * One entry per `SQLITE_CONSTRAINT_*` subcode this table can actually raise,
  * dispatched on the code (and, for `CHECK`, on the constraint name) rather
- * than by forwarding `error.message` into user-facing text. better-sqlite3's
- * message is an implementation detail of the SQLite build it links — not
- * something to show an operator or to string-match on later — so nothing
- * here reads it except this one `includes()` check against a name this
- * repository itself defined in the migration.
+ * than by forwarding `error.message` into user-facing text — see
+ * `sqlite-errors.ts` for that discipline, and for the three generic handlers
+ * this map opts into. Nothing here reads `error.message` except the one
+ * `includes()` check against a name this repository itself defined in the
+ * migration.
  *
  * Adding a second `CHECK` constraint to `companies` means adding a branch
  * here, not editing the fallback: the previous version of this table mapped
@@ -180,22 +134,9 @@ const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
       'This write references a company that does not exist — check billedViaCompanyId and introducedByCompanyId.',
       { reason: 'foreign-key' }
     ),
-  SQLITE_CONSTRAINT_NOTNULL: () => new RefusalError('A required field was left empty.', { reason: 'not-null' }),
-  SQLITE_CONSTRAINT_UNIQUE: () => new RefusalError('This value conflicts with an existing row.', { reason: 'unique' }),
-  SQLITE_CONSTRAINT_PRIMARYKEY: () => new RefusalError('This id is already in use.', { reason: 'primary-key' })
-}
-
-/** Turns a thrown `SqliteError` from an insert/update into a `RefusalError`. Anything else propagates unchanged. */
-function translateWriteError(error: unknown): never {
-  if (isSqliteConstraintError(error)) {
-    const handler = CONSTRAINT_HANDLERS[error.code]
-    if (handler) throw handler(error)
-    // A `SQLITE_CONSTRAINT_*` subcode this table cannot currently raise
-    // (e.g. `SQLITE_CONSTRAINT_TRIGGER`, `_VTAB`). Still a refusal, not a
-    // crash — but still no raw driver text in the user-facing message.
-    throw new RefusalError('This write violates a database constraint.', { reason: 'constraint' })
-  }
-  throw error
+  SQLITE_CONSTRAINT_NOTNULL: NOT_NULL_HANDLER,
+  SQLITE_CONSTRAINT_UNIQUE: UNIQUE_HANDLER,
+  SQLITE_CONSTRAINT_PRIMARYKEY: PRIMARY_KEY_HANDLER
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +334,7 @@ export function createCompany(db: Database.Database, input: unknown): Company {
   try {
     db.prepare(`INSERT INTO companies (${columns.join(', ')}) VALUES (${placeholders})`).run(...values)
   } catch (error) {
-    translateWriteError(error)
+    translateWriteError(CONSTRAINT_HANDLERS, error)
   }
 
   // Guaranteed to exist: this connection just inserted it and nothing here
@@ -440,7 +381,7 @@ export function updateCompany(db: Database.Database, id: string, patch: unknown)
   try {
     db.prepare(`UPDATE companies SET ${setClauses.join(', ')} WHERE id = ?`).run(...values)
   } catch (error) {
-    translateWriteError(error)
+    translateWriteError(CONSTRAINT_HANDLERS, error)
   }
 
   return getCompany(db, id) as Company

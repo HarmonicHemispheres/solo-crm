@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { z } from 'zod'
 import { nowTimestamp } from '../../../shared/format'
 import {
   type Affiliation,
@@ -20,8 +19,10 @@ import {
   type UpdatePersonInput,
   updatePersonInputSchema
 } from '../../../shared/people'
-import { NotFoundError, RefusalError, ValidationError } from './errors'
+import { NotFoundError, RefusalError } from './errors'
+import { boolToSql, parseInput } from './input'
 import { refuseIfReferenced } from './referential-guard'
+import { type ConstraintHandler, PRIMARY_KEY_HANDLER, translateWriteError } from './sqlite-errors'
 
 /**
  * The `people` + `affiliations` repository (T-260828-21) — copies
@@ -70,70 +71,21 @@ export type {
 }
 
 // ---------------------------------------------------------------------------
-// Input parsing — identical discipline to companies.ts's parseInput; see that
-// file's comment for why undefined-valued keys must be stripped after parse
-// rather than left for zod's `.partial()` to keep them present-but-undefined.
+// SQLite constraint translation — the machinery (`translateWriteError`, the
+// generic handlers) lives in sqlite-errors.ts; only the per-table maps below,
+// scoped to the constraints these two tables can actually raise, are local.
 // ---------------------------------------------------------------------------
-
-function parseInput<Schema extends z.ZodType>(schema: Schema, input: unknown): z.infer<Schema> {
-  const result = schema.safeParse(input)
-  if (!result.success) {
-    const message = result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-    throw new ValidationError(message, result.error.issues)
-  }
-  return stripUndefinedValues(result.data)
-}
-
-function stripUndefinedValues<T>(value: T): T {
-  if (typeof value !== 'object' || value === null) return value
-  const cleaned = { ...(value as Record<string, unknown>) }
-  for (const key of Object.keys(cleaned)) {
-    if (cleaned[key] === undefined) delete cleaned[key]
-  }
-  return cleaned as T
-}
-
-// ---------------------------------------------------------------------------
-// SQLite constraint translation — same shape as companies.ts's, scoped to
-// the constraints these two tables can actually raise.
-// ---------------------------------------------------------------------------
-
-interface SqliteConstraintError {
-  readonly code: string
-  readonly message: string
-}
-
-function isSqliteConstraintError(error: unknown): error is SqliteConstraintError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    (error as { code: string }).code.startsWith('SQLITE_CONSTRAINT')
-  )
-}
-
-type ConstraintHandler = (error: SqliteConstraintError) => RefusalError
 
 /** `people` declares no `CHECK` or `UNIQUE` constraint (migration 0001) — only a primary-key collision is reachable. */
 const PERSON_CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
-  SQLITE_CONSTRAINT_PRIMARYKEY: () => new RefusalError('This id is already in use.', { reason: 'primary-key' })
+  SQLITE_CONSTRAINT_PRIMARYKEY: PRIMARY_KEY_HANDLER
 }
 
 /** `affiliations` declares two foreign keys (`person_id`, `company_id`) and no `CHECK`/`UNIQUE` (migration 0001). */
 const AFFILIATION_CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
   SQLITE_CONSTRAINT_FOREIGNKEY: () =>
     new RefusalError('This affiliation references a person or company that does not exist.', { reason: 'foreign-key' }),
-  SQLITE_CONSTRAINT_PRIMARYKEY: () => new RefusalError('This id is already in use.', { reason: 'primary-key' })
-}
-
-function translateWriteError(handlers: Record<string, ConstraintHandler>, error: unknown): never {
-  if (isSqliteConstraintError(error)) {
-    const handler = handlers[error.code]
-    if (handler) throw handler(error)
-    throw new RefusalError('This write violates a database constraint.', { reason: 'constraint' })
-  }
-  throw error
+  SQLITE_CONSTRAINT_PRIMARYKEY: PRIMARY_KEY_HANDLER
 }
 
 // ---------------------------------------------------------------------------
@@ -355,8 +307,6 @@ function mapAffiliationRow(row: AffiliationRow): Affiliation {
 function getAffiliationRow(db: Database.Database, id: string): AffiliationRow | undefined {
   return db.prepare('SELECT * FROM affiliations WHERE id = ?').get(id) as AffiliationRow | undefined
 }
-
-const boolToSql = (value: unknown): unknown => (value === null || value === undefined ? null : value ? 1 : 0)
 
 // ---------------------------------------------------------------------------
 // affiliations: reads

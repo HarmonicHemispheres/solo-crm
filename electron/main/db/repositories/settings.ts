@@ -19,6 +19,7 @@ import {
   VIEW_PRESENTATION_MODES
 } from '../../../shared/settings'
 import { ValidationError } from './errors'
+import { formatIssues } from './input'
 
 /**
  * The `settings` repository (T-260828-25). `SETTINGS_REGISTRY` — every
@@ -84,10 +85,6 @@ function requireKnownKey(key: string): asserts key is SettingKey {
   if (!Object.prototype.hasOwnProperty.call(SETTINGS_REGISTRY, key)) {
     throw new ValidationError(`"${key}" is not a declared setting (see electron/shared/settings.ts)`)
   }
-}
-
-function formatIssues(issues: ReadonlyArray<{ readonly path: PropertyKey[]; readonly message: string }>): string {
-  return issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
 }
 
 // ---------------------------------------------------------------------------
