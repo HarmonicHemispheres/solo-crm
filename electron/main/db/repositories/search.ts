@@ -6,9 +6,11 @@ import { parseInput } from './input'
  * The `search` repository (T-260828-36 / P1-06) — reads `search_fts`, the
  * external-content FTS5 index `0002_search_fts.sql` creates and keeps in
  * sync via triggers on `companies`, `people`, `engagements`, `tasks` and
- * `activity`. That migration's own header carries the full design rationale
- * (why a view stands in for a single `content=` table, the rowid encoding,
- * why `AFTER UPDATE` is delete-then-insert); this module only ever reads
+ * `activity`. That migration's own header carries the original design
+ * rationale (the rowid encoding, why `AFTER UPDATE` is delete-then-insert);
+ * `0003_search_content_table.sql` and ADR-009 carry why `search_source` is
+ * now a materialised table rather than the union view 0002 created. This
+ * module only ever reads
  * `search_fts` — it is not one of that migration's five trigger-driven
  * writers, `rebuildSearchIndex` below excepted.
  *
@@ -114,20 +116,38 @@ export function searchAll(db: Database.Database, input: unknown): readonly Searc
 // ---------------------------------------------------------------------------
 
 /**
- * Drops every row from `search_fts` — FTS5's own `'delete-all'` special
- * command, the documented way to empty an external-content table without
- * dropping and recreating the virtual table — and repopulates it in one pass
- * by selecting straight out of `search_source`
- * (`0002_search_fts.sql`'s union view). That is the same view every
- * trigger's `rowid * 8 + <kind code>` formula targets, so a freshly rebuilt
- * index and an incrementally-triggered one hold identical rows for identical
- * source data — the equivalence this task's acceptance criteria and
- * `search.test.ts` check directly, and the recovery path if a trigger is
- * ever suspected of having drifted.
+ * Rebuilds both halves of the index from the five source tables, in one
+ * transaction, in dependency order.
+ *
+ * Since T-260828-51 (`0003_search_content_table.sql`, ADR-009) there are two
+ * derived relations to repair, not one: `search_source` is a materialised
+ * table — FTS5's content relation, the thing that made `content_rowid` a
+ * rowid seek instead of a five-table scan — and `search_fts` is the index
+ * over it. Both are trigger-maintained, so both can drift, and rebuilding
+ * only the index would faithfully reproduce a drifted content table.
+ *
+ * `search_source_live` is the union view 0002 originally pointed `content=`
+ * at, kept as the single written-down definition of the five-table union and
+ * the `rowid * 8 + <kind code>` encoding. Re-deriving from it is what makes a
+ * freshly rebuilt index and an incrementally-triggered one hold identical
+ * rows for identical source data — the equivalence `search.test.ts` checks
+ * directly, and the recovery path if a trigger is ever suspected of having
+ * drifted.
+ *
+ * `'delete-all'` is FTS5's own special command, the documented way to empty
+ * an external-content table without dropping and recreating the virtual
+ * table. It runs first, before the content table is emptied: an
+ * external-content FTS5 table with rows whose content is gone is precisely
+ * the `SQLITE_CORRUPT_VTAB` state this function exists to clear, and the
+ * transaction is what keeps that ordering from ever being observable anyway.
  */
 export function rebuildSearchIndex(db: Database.Database): void {
   const run = db.transaction(() => {
     db.prepare("INSERT INTO search_fts(search_fts) VALUES ('delete-all')").run()
+    db.prepare('DELETE FROM search_source').run()
+    db.prepare(
+      'INSERT INTO search_source(content_rowid, kind, source_id, text) SELECT content_rowid, kind, source_id, text FROM search_source_live'
+    ).run()
     db.prepare(
       'INSERT INTO search_fts(rowid, kind, source_id, text) SELECT content_rowid, kind, source_id, text FROM search_source'
     ).run()

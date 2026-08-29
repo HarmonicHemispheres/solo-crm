@@ -5,6 +5,15 @@ status: accepted
 date: 2026-08-28
 ---
 
+> **Superseded in part by [ADR-009](ADR-009-search-content-table.md)
+> (T-260828-51).** The kind-code contract, the `rowid * 8 + <code>`
+> encoding, the external-content choice and the `search_fts_content` naming
+> prohibition below all still stand unchanged. What changed is the one thing
+> this ADR left open: `search_source` is now a materialised table with an
+> `INTEGER PRIMARY KEY` `content_rowid`, not the union view described here.
+> That view survives, renamed `search_source_live`, as the definition the
+> table and the rebuild are derived from.
+
 ## Context
 
 G6 settled the mechanism for §6.9's command palette: "an external-content FTS5
