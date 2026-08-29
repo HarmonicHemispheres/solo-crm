@@ -151,9 +151,35 @@
     position: fixed;
     left: -250px;
     transition: left var(--motion-rail);
+    /*
+     * T-260828-15. `left: -250px` moves the rail out of sight and nothing
+     * more: it stays in the document, stays focusable, and Tab walked straight
+     * into an invisible menu — eleven nav items and a footer, off-screen,
+     * with focus rings landing on nothing the user can see. X-06 requires
+     * focus to be visible on every stop, and a stop that cannot be seen at all
+     * fails that harder than a missing outline does.
+     *
+     * `visibility: hidden` is the fix rather than `inert`: it removes the
+     * subtree from the tab order and from assistive technology, and — unlike
+     * `display: none` or `inert` — it is an animatable property, so the slide
+     * still runs. The delay is what keeps it running: hiding immediately would
+     * cut the closing animation off at frame one, so visibility flips only
+     * after `--motion-rail` has elapsed, while `left` transitions throughout.
+     *
+     * Opening has no delay (see `.rail.open`), because a rail sliding in must
+     * be focusable the moment it starts moving, not a beat later.
+     */
+    visibility: hidden;
+    transition:
+      left var(--motion-rail),
+      visibility 0s linear var(--motion-rail);
   }
 
   .rail.open {
     left: 0;
+    visibility: visible;
+    transition:
+      left var(--motion-rail),
+      visibility 0s linear 0s;
   }
 }

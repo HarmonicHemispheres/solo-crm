@@ -70,7 +70,8 @@ export default tseslint.config(
     ignores: [
       'electron/renderer/styles/tokens.test.ts',
       'electron/renderer/styles/base.test.ts',
-      'electron/renderer/components/sheets/fields.test.ts'
+      'electron/renderer/components/sheets/fields.test.ts',
+      'electron/renderer/components/shell/Rail.test.ts'
     ],
     languageOptions: {
       globals: globals.browser

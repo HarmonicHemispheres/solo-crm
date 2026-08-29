@@ -3,6 +3,13 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { AppRoutes } from './routes'
+// Vite ?raw, not node:fs: a renderer module may not touch the filesystem
+// (local/no-renderer-node-access, AGENTS.md), and blunting that rule to let a
+// test read a file would be trading a real boundary for a convenience. The
+// sanity assertion below is what proves this import actually arrived with
+// content — .css imports are blanked by vitest css-disable plugin, so an
+// empty string is a real possibility worth asserting against, not a paranoia.
+import ROUTES_SOURCE from './routes.tsx?raw'
 import { NAV_ITEMS, ROUTE_META } from './nav'
 import { LayerManager } from './components/shell/LayerManager'
 import { createQueryClient } from './lib/query-client'
@@ -123,5 +130,68 @@ describe('AppRoutes', () => {
       expect(screen.getByRole('dialog', { name: 'Log a touch' })).toBeTruthy()
       unmount()
     }
+  })
+})
+
+
+/**
+ * The other direction (T-260828-15).
+ *
+ * The test above walks `ROUTE_META` and proves every entry resolves. That is
+ * one half of an agreement, and it was the only half checked: a `<Route>` added
+ * to `AppRoutes` alone — the ordinary way a view is added — highlighted no nav
+ * item, showed no breadcrumb, and **every test stayed green**, because nothing
+ * ever read the route table from the side that declares it.
+ *
+ * So this reads `routes.tsx`'s own source and requires each declared path to
+ * appear in `ROUTE_META`. Source-scanning rather than introspecting the element
+ * tree is deliberate and matches this repo's other structural guards
+ * (`connection.test.ts`'s Database-owner walk, the favicon service scan): React
+ * Router gives no supported way to enumerate a `<Routes>` subtree without
+ * rendering it, and rendering tells you what resolves, never what was declared.
+ *
+ * Three exclusions, each for a stated reason rather than to make a list fit:
+ *
+ *  - `*` is the catch-all that redirects to Today. It is not a destination.
+ *  - `workspace` is a layout wrapper rendering an `<Outlet />` and an index
+ *    redirect; the two real paths under it, `/workspace/settings` and
+ *    `/workspace/data`, are both in `ROUTE_META` and are checked here.
+ *  - An `index` route has no `path` attribute at all, so it cannot appear in
+ *    this scan; `/` is covered by the ROUTE_META direction above.
+ */
+describe('AppRoutes and ROUTE_META agree in both directions', () => {
+
+  /** Paths that are structural rather than destinations — see the block above. */
+  const NOT_DESTINATIONS = new Set(['*', 'workspace'])
+
+  /**
+   * `path="x"` on a `<Route>`, in declaration order. Nested routes are matched
+   * too, which is why `settings` and `data` need their parent segment restored
+   * before they can be compared with ROUTE_META's absolute paths.
+   */
+  function declaredPaths(): string[] {
+    return [...ROUTES_SOURCE.matchAll(/<Route\s+path="([^"]+)"/g)]
+      .map((match) => match[1])
+      .filter((path) => !NOT_DESTINATIONS.has(path))
+  }
+
+  function absolutePath(path: string): string {
+    return path === 'settings' || path === 'data' ? `/workspace/${path}` : `/${path}`
+  }
+
+  it('finds the route table in the source — the scan is not silently matching nothing', () => {
+    // Without this, a rename of the file or a change to how routes are written
+    // would turn every assertion below into a vacuous pass over an empty list.
+    expect(declaredPaths().length).toBeGreaterThanOrEqual(11)
+  })
+
+  it.each(declaredPaths())('a route declared as "%s" has a ROUTE_META entry', (path) => {
+    const expected = absolutePath(path)
+    const meta = ROUTE_META.find((row) => row.path === expected)
+    expect(
+      meta,
+      `<Route path="${path}"> is declared in routes.tsx but ${expected} is missing from ROUTE_META (nav.ts). ` +
+        'Without an entry the route renders, highlights no nav item and shows no breadcrumb — silently, with every other test green.'
+    ).toBeTruthy()
   })
 })
