@@ -234,11 +234,22 @@ export function orderCompaniesForInsert(companies: readonly CompanySeed[]): read
       // inserted in.
       chain = walkChain(company, getParent, (c) => c.key, MAX_CHAIN_DEPTH)
     } catch (error) {
-      if (error instanceof ChainCycleError || error instanceof ChainDepthExceededError) {
-        const at = error instanceof ChainCycleError ? (error.node as CompanySeed).key : company.key
+      // A cycle and a chain that is merely absurdly long are different facts
+      // about the fixture and each gets its own sentence (T-260828-56) —
+      // saying "cycle" for a 60-deep acyclic chain sends whoever edited
+      // fixture.ts looking for a loop that is not there.
+      if (error instanceof ChainCycleError) {
+        const at = (error.node as CompanySeed).key
         throw new FixtureIntegrityError(
           `fixture.ts's companies form a billed-via cycle involving "${at}" — ` +
             'a company cannot be billed via itself, even transitively.'
+        )
+      }
+      if (error instanceof ChainDepthExceededError) {
+        throw new FixtureIntegrityError(
+          `fixture.ts's billed-via chain starting at "${company.key}" runs more than ` +
+            `${MAX_CHAIN_DEPTH} companies deep without reaching one that bills directly. ` +
+            'That is past the runaway bound the walk stops at; shorten the chain.'
         )
       }
       throw error

@@ -364,14 +364,79 @@ describe('the billed-via / introduced-by transitive cycle guard (T-260828-42)', 
       }
 
       expect(thrown).toBeInstanceOf(RefusalError)
-      expect((thrown as RefusalError).blocker?.reason).toBe('introduced-by-cycle')
+      // Its own discriminator, distinct from the transitive-cycle one above
+      // (T-260828-56) — "you pointed this row at itself" and "this would
+      // close a loop through other rows" are different facts.
+      expect((thrown as RefusalError).blocker?.reason).toBe('introduced-by-self-reference')
 
       const after = getCompany(db, company.id)
       expect(after?.introducedByCompanyId).toBeNull()
     })
   })
 
-  it('does not hang on a database that already contains a billed-via cycle — the walk is bounded and refuses', () => {
+  it("refuses createCompany's introduced_by target whose existing chain already loops — the create-path guard, not the update-path one", () => {
+    withDatabase((db) => {
+      // Covers `createCompany`'s `introducedByCompanyId` guard call
+      // specifically: delete that one line and this is the test that fails.
+      // A fresh row's own id cannot be reached by any existing chain, so the
+      // only thing the create-path guard can catch is a chain that was
+      // already bad — wired raw here, bypassing the repository entirely.
+      const timestamp = nowTimestamp()
+      const ids = [randomUUID(), randomUUID()]
+      const insert = db.prepare(
+        `INSERT INTO companies (id, name, bills_directly, cadence_days, created_at, updated_at) VALUES (?, ?, 1, 14, ?, ?)`
+      )
+      for (let i = 0; i < ids.length; i += 1) {
+        insert.run(ids[i], `Referral Loop ${i}`, timestamp, timestamp)
+      }
+      const setIntroducedBy = db.prepare('UPDATE companies SET introduced_by_company_id = ? WHERE id = ?')
+      setIntroducedBy.run(ids[1], ids[0])
+      setIntroducedBy.run(ids[0], ids[1])
+
+      let thrown: unknown
+      try {
+        createCompany(db, { name: 'New Referred Co', introducedByCompanyId: ids[0] })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('introduced-by-chain-cycle')
+      // The refused create wrote nothing.
+      expect(listCompanies(db).map((company) => company.name)).not.toContain('New Referred Co')
+    })
+  })
+
+  it("refuses createCompany's billed_via target whose existing chain already loops — the create-path guard for that column", () => {
+    withDatabase((db) => {
+      // The billed-via twin of the case above, for the same reason: delete
+      // `createCompany`'s `billedViaCompanyId` guard call and this fails.
+      const timestamp = nowTimestamp()
+      const ids = [randomUUID(), randomUUID()]
+      const insert = db.prepare(
+        `INSERT INTO companies (id, name, bills_directly, cadence_days, created_at, updated_at) VALUES (?, ?, 1, 14, ?, ?)`
+      )
+      for (let i = 0; i < ids.length; i += 1) {
+        insert.run(ids[i], `Billing Loop ${i}`, timestamp, timestamp)
+      }
+      const setBilledVia = db.prepare('UPDATE companies SET billed_via_company_id = ? WHERE id = ?')
+      setBilledVia.run(ids[1], ids[0])
+      setBilledVia.run(ids[0], ids[1])
+
+      let thrown: unknown
+      try {
+        createCompany(db, { name: 'New Billed Co', billedViaCompanyId: ids[0] })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('billed-via-chain-cycle')
+      expect(listCompanies(db).map((company) => company.name)).not.toContain('New Billed Co')
+    })
+  })
+
+  it('does not hang on a database that already contains a billed-via cycle — the walk is bounded and refuses as a CYCLE, not as depth exceeded', () => {
     withDatabase((db) => {
       // Simulates data that predates this guard: three companies wired into
       // a raw cycle directly, bypassing createCompany/updateCompany
@@ -399,7 +464,12 @@ describe('the billed-via / introduced-by transitive cycle guard (T-260828-42)', 
       const elapsedMs = Date.now() - start
 
       expect(thrown).toBeInstanceOf(RefusalError)
-      expect((thrown as RefusalError).blocker?.reason).toBe('billed-via-chain-depth-exceeded')
+      // T-260828-56: this walk closes a 3-cycle at step 3. Reporting it as
+      // depth-exceeded told the operator their chain "already exceeds 50
+      // steps", which is simply untrue about their data.
+      expect((thrown as RefusalError).blocker?.reason).toBe('billed-via-chain-cycle')
+      expect((thrown as RefusalError).message).not.toContain(String(MAX_CHAIN_DEPTH))
+      expect((thrown as RefusalError).message).toMatch(/loops back on itself/)
       expect(elapsedMs).toBeLessThan(1000)
     })
   })
@@ -431,7 +501,10 @@ describe('the billed-via / introduced-by transitive cycle guard (T-260828-42)', 
       const elapsedMs = Date.now() - start
 
       expect(thrown).toBeInstanceOf(RefusalError)
+      // Asserted separately from the cycle case above, and deliberately the
+      // other discriminator: this chain is long, not looping (T-260828-56).
       expect((thrown as RefusalError).blocker?.reason).toBe('billed-via-chain-depth-exceeded')
+      expect((thrown as RefusalError).message).toContain(String(MAX_CHAIN_DEPTH))
       expect(elapsedMs).toBeLessThan(2000)
     })
   })

@@ -21,6 +21,15 @@
  *  database cannot make the walk itself hang. */
 export const MAX_CHAIN_DEPTH = 50
 
+/**
+ * The walk revisited a node it had already seen on this same walk. Distinct
+ * from `ChainDepthExceededError` and never interchangeable with it: a cycle
+ * is a fact about the chain's shape, detected at the step that closes it —
+ * a 3-cycle throws this at step 3, nowhere near `maxDepth`. Callers catch
+ * the two separately and report them separately (T-260828-56); catching them
+ * in one branch produced a refusal telling the operator their data "already
+ * exceeds 50 steps" when it was three rows pointing in a triangle.
+ */
 export class ChainCycleError<Node> extends Error {
   constructor(
     /** The node at which the walk revisited an id already seen earlier on this same walk. */
@@ -32,6 +41,11 @@ export class ChainCycleError<Node> extends Error {
   }
 }
 
+/**
+ * The walk ran `maxDepth` steps without terminating AND without repeating a
+ * node — a chain that is merely absurdly long, not (as far as this walk saw)
+ * looping. See `ChainCycleError` for why the two are never reported as one.
+ */
 export class ChainDepthExceededError<Node> extends Error {
   constructor(
     readonly start: Node,
