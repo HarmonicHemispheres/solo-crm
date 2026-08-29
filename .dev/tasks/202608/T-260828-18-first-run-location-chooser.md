@@ -1,11 +1,11 @@
 ---
 id: T-260828-18
 title: Ask where the data goes on first run, and never ask again
-status: open
+status: done
 category: data
 plan_ref: P0-03
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -117,3 +117,39 @@ That constraint is what keeps this one task rather than an IPC channel plus a vi
 **Review:** what `code-review` found and what was done about each finding.
 
 **Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+
+
+---
+
+## Outcome
+
+Merged as `655ecb1`. Review non-blocking (4 should-fix, 1 nit).
+
+**Changed:** `electron/main/first-run/data-location-prompt.ts` and its test
+(new), `electron/main/index.ts`, `electron/main/db/connection.ts`.
+
+First run now asks where the data goes, between
+`installContentSecurityPolicy` and `openDatabase()`, and never asks again. Esc
+maps to Quit rather than to a silent default; cancelling the folder picker
+returns to the choice instead of falling through; a sync-folder match re-prompts
+and writes no pointer, so it is not possible to commit a choice that refuses to
+boot on the next launch. The opt-out is an explicit argument, so tests,
+`npm run seed` and headless boots skip it rather than hanging on a dialog.
+
+**Deferred (follow-ups, not blockers) — the first two are worth doing soon:**
+
+- The existing-install check recomputes the database path itself, with its own
+  `DB_FILENAME` constant, rather than asking `resolveDatabasePath()`. The whole
+  safety property ("a database already exists, so never prompt") now rests on
+  two copies of one path staying equal.
+- The pick-time sync-folder check ignores `isSyncFolderGuardOverridden()` while
+  the boot-time guard honours it — one guard, two behaviours. A user who set the
+  documented `SOLOCRM_ALLOW_SYNC_FOLDER_DB=1` escape hatch cannot pick that
+  folder at all.
+- A chosen folder is never probed for writability before the pointer commits, so
+  a read-only pick fails *after* the pointer is on disk, and every later launch
+  reports `existing-install` and never re-prompts.
+- "Use the default" writes a pointer naming the default root, which changes
+  ADR-006's stated semantics — no pointer meant "resolve `app.getPath` fresh".
+  Baking an absolute path into new profiles is a real behaviour change and
+  deserves either a decision or a revert.

@@ -1,11 +1,11 @@
 ---
 id: T-260828-45
 title: Pin the brand generator's scale factor and put its test under a tsconfig
-status: open
+status: done
 category: build
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -93,3 +93,37 @@ remaining half). Any change to the SVG artwork. Auto-update.
   Prefer proving the generator now produces the same bytes.
 - **A pixel test that is too strict.** Anti-aliasing differs across Chromium
   versions; sample a few flat-colour regions rather than hashing the file.
+
+
+---
+
+## Outcome
+
+Merged as `d867359`. Review non-blocking (3 should-fix, 1 nit).
+
+**Changed:** `scripts/brand-assets.mjs`, `scripts/brand-assets.test.ts`,
+`tsconfig.node.json`, `eslint.config.js`, `electron-builder.yml`; deleted
+`build/installerHeader.bmp`.
+
+The scale factor is pinned, so a regeneration on a HiDPI laptop no longer
+produces a byte-count-correct, header-correct, visually-garbage banner. The
+acceptance criterion asked for the 1x-vs-2x diff to be recorded here, and review
+re-ran it independently: both runs produce `installerSidebar.bmp` md5
+`c10dcfa12b3657e7bf4be9cf02f64714` and `icon.ico` md5
+`534a384e4a78bfe456df28704f9e0f14`. Identical under
+`force-device-scale-factor=2`, which is the whole point.
+
+`scripts/**/*.ts` is now inside a tsconfig `include`, so `npm run typecheck`
+covers the one test file guarding the brand binaries — confirmed with
+`tsc --listFiles`, the same way review originally found it absent.
+
+**Deferred (follow-ups, not blockers):**
+
+- The ring sample point sits 1px from the antialiased edge, not the "several
+  pixels" its comment claims — a one-pixel arc shift in a future Chromium would
+  fail the test for the wrong reason.
+- `icon.ico` still has no content assertion, so the scale-factor failure is only
+  half-covered: the unpinned generator at 2x emitted 49005 bytes against the
+  correct 73828 and all six ICO tests stayed green.
+- The header's documented invocation dies under `ELECTRON_RUN_AS_NODE=1`, which
+  agent shells set.

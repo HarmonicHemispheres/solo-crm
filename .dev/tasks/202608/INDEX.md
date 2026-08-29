@@ -8,7 +8,6 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
-| ○ open | [T-260828-18](T-260828-18-first-run-location-chooser.md) | Ask where the data goes on first run, and never ask again | 🗄 data | P0-03 |
 | ○ open | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | P0-03 |
 
 ### Phase 1 — the spine
@@ -19,13 +18,11 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | P1-09 · P1-CUT |
+| ◐ in-progress | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | P1-09 · P1-CUT |
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
-| ○ open | [T-260828-48](T-260828-48-links-repository.md) | Build the links repository — paste a URL on any entity, host decides the kind | 🗄 data | P1-18 |
 | ○ open | [T-260828-49](T-260828-49-favicon-fetch-cache.md) | Fetch and cache favicons in main, once per host, never through a third party | 🔗 integration | P1-19 |
 | ○ open | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
 | ○ open | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | P1-06 |
-| ○ open | [T-260828-52](T-260828-52-adr-search-index-shape.md) | Record the search index shape as an ADR — union view and rowid encoding | 📄 docs | P1-06 |
 | ○ open | [T-260828-53](T-260828-53-wave-d-ui-followups.md) | Restore the focus ring in the sheets, and close wave D UI review findings | 🎨 ui | *(review)* |
 
 ### Follow-ups from review
@@ -35,9 +32,7 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
-| ○ open | [T-260828-42](T-260828-42-billed-via-cycle-guard.md) | Refuse a billed-via cycle in the repository, as the seed loader already does | 🗄 data | *(review)* |
 | ○ open | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | *(review)* |
-| ○ open | [T-260828-45](T-260828-45-brand-asset-generator-hardening.md) | Pin the brand generator scale factor and put its test under a tsconfig | 📦 build | *(review)* |
 | ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
 
 ### Workspace — the two blank pages
@@ -86,3 +81,8 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 | ● done | [T-260828-08](T-260828-08-date-money-conventions.md) | Fix the date and money representations and enforce them at the boundary | 📄 docs | R-260828-01 |
 | ● done | [T-260828-11](T-260828-11-design-tokens-primitives.md) | Lift `tokens.css` from the mockup and build the shared primitives | 🎨 ui | R-260828-01 |
 | ● done | [T-260828-12](T-260828-12-app-shell.md) | Build the app shell — rail, topbar, router, layer dismissal | 🎨 ui | R-260828-01 |
+| ● done | [T-260828-52](T-260828-52-adr-search-index-shape.md) | Record the search index shape as an ADR — union view and rowid encoding | 📄 docs | R-260828-02 |
+| ● done | [T-260828-45](T-260828-45-brand-asset-generator-hardening.md) | Pin the brand generator scale factor and put its test under a tsconfig | 📦 build | R-260828-02 |
+| ● done | [T-260828-18](T-260828-18-first-run-location-chooser.md) | Ask where the data goes on first run, and never ask again | 🗄 data | R-260828-02 |
+| ● done | [T-260828-42](T-260828-42-billed-via-cycle-guard.md) | Refuse a billed-via cycle in the repository, as the seed loader already does | 🗄 data | R-260828-02 |
+| ● done | [T-260828-48](T-260828-48-links-repository.md) | Build the links repository — paste a URL on any entity, host decides the kind | 🗄 data | R-260828-02 |

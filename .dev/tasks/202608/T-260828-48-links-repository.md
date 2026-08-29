@@ -1,11 +1,11 @@
 ---
 id: T-260828-48
 title: Build the links repository — paste a URL on any entity, host decides the kind
-status: open
+status: done
 category: data
 plan_ref: P1-18
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -92,3 +92,48 @@ answer to it.
   does nothing, say so explicitly in a comment rather than leaving it unstated.
 - **A seventh copy of the shared repository machinery.** Five already exist and
   T-260828-43 will extract them; do not add another.
+
+
+---
+
+## Outcome
+
+Merged as `291055e`. Review non-blocking (5 should-fix, 2 nits).
+
+**Changed:** `electron/shared/links.ts`, `electron/main/db/repositories/links.ts`
+and its test (all new).
+
+The first polymorphic repository — `entity_type` / `entity_id` with no foreign
+key, because a link attaches to a company, a person or an engagement and no
+single-table FK can say that. Links attach to all three through one table,
+`listLinks` for one entity never returns another entity's, `entity_type` is a
+closed union validated in the shared schema, and kind detection is driven from
+the mockup's `linkKind` map rather than a re-declared copy. `javascript:` and
+`file:` URLs are refused at the boundary rather than at some future render site.
+
+What happens to link rows when their entity is deleted is left explicitly
+undecided in a comment — T-260828-41 owns that, and this task deliberately does
+not answer it by accident.
+
+**Deferred (follow-ups, not blockers). The first is the one to fix:**
+
+- **Validate one string, store another.** `addLink` validates the WHATWG-parsed
+  URL but inserts the raw caller string, so characters the parser strips survive
+  into the row: a URL carrying an embedded tab or NUL stores them verbatim. The
+  scheme allowlist itself is not bypassable, so this is hardening rather than an
+  open hole — but every future sink (a renderer `href`, T-260828-49's favicon
+  fetch, `shell.openExternal`) receives the unvalidated form. `linkSchema.url`
+  is also a bare `z.string()`, so the guarantee is write-side only.
+- `detectLinkKind` matches its rule substrings against the whole hostname, so
+  `mynotion.com` and `notion.evil.com` both resolve as Notion. The acceptance
+  criterion (the query-string spoof) is met and tested; the false-positive
+  direction is not.
+- Mutation survivors: every `.strict()` can become `.passthrough()`, and both
+  empty-string guards can be relaxed, with all 31 tests still green.
+- `ORDER BY added_at DESC` is untested and unstable — flipping to `ASC` leaves
+  the suite green, and `added_at` has millisecond precision with no tiebreaker.
+- `addLink` accepts any `entityId` for a valid `entityType` without checking a
+  row exists, so a typo'd id creates a link nobody can reach.
+- The seed fixture hardcodes kind `pdf` for a Drive-hosted PDF while
+  `detectLinkKind` returns `drive`, so one URL renders with two different icons
+  depending on whether it was seeded or pasted.

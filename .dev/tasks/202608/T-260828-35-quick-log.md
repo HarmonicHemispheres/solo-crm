@@ -1,7 +1,7 @@
 ---
 id: T-260828-35
 title: Build the quick log (⌘L) — who, kind, one line, from anywhere
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-09
 created: 2026-08-28

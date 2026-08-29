@@ -1,11 +1,11 @@
 ---
 id: T-260828-52
 title: Record the search index's shape as an ADR — the union view and the rowid encoding
-status: open
+status: done
 category: docs
 plan_ref: P1-06
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -93,3 +93,32 @@ wrong. Any code change at all.
 - **Recording it as settled** when T-260828-51 may overturn it within the week.
   It should read as "this is what we built, here is the measurement that puts it
   in question".
+
+
+---
+
+## Outcome
+
+Merged as `9861462`. Review non-blocking (1 should-fix, 2 nits).
+
+**Changed:** `.dev/decisions/ADR-008-search-index-shape.md` (new), plus a gotcha
+in `AGENTS.md` and a pointer in migration `0002_search_fts.sql` back to the ADR.
+
+The decision recorded is the one G6 left open: an external-content FTS5 table
+over a `search_source` union view, with a synthetic `rowid * 8 + kind code`
+packing a source table and a source row into the single integer rowid FTS5
+allows. The part worth having written down is the contract — kind codes are
+append-only, and renumbering one without a full rebuild silently repoints every
+already-indexed row of that kind at whatever table now owns the number. It
+surfaces as search results naming the wrong record, nowhere near the change.
+
+The ADR also records what the shape forecloses, which is the input
+T-260828-51 needs: the content view can never be named `search_fts_content`
+(the shadow-table name FTS5 reserves — found the hard way in T-260828-36's
+review), and `content_rowid` being a computed expression is what makes the
+index unservable. Measured cost carried across as measurements, not estimates:
+95 / 488 / 581 ms at 10x volume against a 100 ms budget, versus 13.8 / 124 /
+41 ms self-contained.
+
+**Deferred:** the review noted the ADR's Consequences section could state the
+rebuild procedure concretely rather than by reference. Follow-up, not a blocker.

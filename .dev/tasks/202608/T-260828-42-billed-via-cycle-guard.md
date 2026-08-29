@@ -1,11 +1,11 @@
 ---
 id: T-260828-42
 title: Refuse a billed-via cycle in the repository, as the seed loader already does
-status: open
+status: done
 category: data
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -82,3 +82,39 @@ independent columns and cannot cycle.
 - **§5's modelling note.** Adding a cycle guard makes the pointer feel more like
   a hierarchy; it is not one, and no helper here should start walking it as if
   companies had parents.
+
+
+---
+
+## Outcome
+
+Merged as `dc49bb6`. Review non-blocking (3 should-fix, 3 nits).
+
+**Changed:** `electron/main/db/chain-walk.ts` (new),
+`electron/main/db/repositories/companies.ts` and its test,
+`electron/main/db/seed/index.ts`.
+
+The two-step cycle the database `CHECK` could never catch is refused at the
+repository boundary: create B billed via A, then update A billed via B, and the
+write is refused naming both companies. Three-company cycles are refused at the
+closing edge, legitimate chains are accepted, the walk is bounded so a database
+that already contains a cycle cannot hang the check, and
+`introduced_by_company_id` goes through the same guard. The seed loader and the
+repository now call one traversal instead of two implementations of one rule.
+
+**Deferred (follow-ups, not blockers):**
+
+- A pre-existing cycle is refused with the **depth-exceeded** discriminator and
+  a message claiming the chain "exceeds 50 steps", which is false — the walk
+  detects a 3-cycle at step 3. The task's own acceptance test bakes the
+  conflation in. Two catch branches and two discriminators is the fix, and
+  T-260828-26 needs the distinction to switch on.
+- `chain-walk.ts` has no test file of its own, and its cycle branch is unpinned:
+  replacing the `seen.has(...)` throw with dead code leaves all 58 tests green,
+  because the repository's own `chain.includes(selfId)` and the depth bound
+  between them cover every case the suite exercises.
+- The depth cap is not pinned as a runaway guard — `MAX_CHAIN_DEPTH 50 -> 4`
+  leaves all tests green, which is exactly the "cap becomes a policy" risk the
+  task file names.
+- `getParentId` prepares its SELECT inside the walk closure, so a guarded write
+  compiles the same statement once per step.
