@@ -41,9 +41,7 @@ function Harness() {
           below can open all four. They exist for that test alone — every
           other test here uses the company pair above. */}
       <button onClick={(e) => openSheet('person', e.currentTarget)}>open-sheet-person</button>
-      <button onClick={(e) => openSheet('engagement', e.currentTarget)}>
-        open-sheet-engagement
-      </button>
+      <button onClick={(e) => openSheet('engagement', e.currentTarget)}>open-sheet-engagement</button>
       <button onClick={(e) => openSheet('todo', e.currentTarget)}>open-sheet-todo</button>
       <button onClick={(e) => openLayer('log', e.currentTarget)}>open-log</button>
       <button
