@@ -1,14 +1,21 @@
 /*
- * `/company/:id` (T-260828-29). `.back`, `.dbanner`, `.dhead`, `.dmeta`,
- * `.cmark`, `.field`, `.eng`, `.eng-t`, `.via`, `.endrow`, `.chiprow` are
- * transcribed from planning/solo-crm-mockup.html — the detail-page classes
- * that view shares with the future person-detail route (T-260828-32),
- * ported once here since neither primitive nor shared file for them exists
- * yet. `.company-detail-grid` and everything under "inline edit" below has
- * no mockup source: the mockup never shows an editable detail card, so this
- * view's click-to-edit affordance is new UI, styled to match the mockup's
- * existing `.inp`/`select`/`textarea` look (lines ~248-251) rather than
- * lifted from a selector that isn't there.
+ * `/company/:id` (T-260828-29, extended by T-260828-30). `.back`, `.dbanner`,
+ * `.dhead`, `.dmeta`, `.cmark`, `.field`, `.eng`, `.eng-t`, `.via`, `.endrow`,
+ * `.chiprow` are transcribed from planning/solo-crm-mockup.html — the
+ * detail-page classes that view shares with the future person-detail route
+ * (T-260828-32), ported once here since neither primitive nor shared file
+ * for them exists yet. T-260828-30 adds `.todo`/`.check`/`.due`/`.nextbadge`
+ * (mockup's todo list, lines ~324-345) and `.tl`/`.tli` (mockup's timeline,
+ * lines ~173-182) the same way, for the same reason — no shared home for
+ * either yet, and this is their first consumer. `.company-detail-grid`,
+ * `.next-step-block`/`.next-step-title` and everything under "inline edit"
+ * below have no mockup source: the mockup never shows an editable detail
+ * card or how a next step gets chosen, so both are new UI, styled to match
+ * the mockup's existing look (`.inp`/`select`/`textarea` lines ~248-251;
+ * the next-step block's gold wash reproduces the mockup's inline
+ * `rgba(201,168,76,.05)` — `--gold` is exactly `#C9A84C` — as
+ * `color-mix()`, matching `.dbanner::after`'s own precedent in this file)
+ * rather than lifted from a selector that isn't there.
  */
 
 .company-detail-grid {
@@ -266,4 +273,223 @@ textarea.field-input {
   padding: 11px 15px;
   border-top: 1px solid var(--border);
   margin-top: 0;
+}
+
+/* ── todos (T-260828-30) ─────────────── */
+
+.todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--motion-hover);
+}
+
+.todo:last-child {
+  border-bottom: 0;
+}
+
+.todo:hover,
+.todo:focus-within {
+  background: var(--surface-2);
+}
+
+.check {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border-radius: var(--radius-5);
+  border: 1.5px solid var(--border-bright);
+  background: none;
+  padding: 0;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  transition: border-color var(--motion-hover);
+}
+
+.check:hover,
+.check:focus-visible {
+  border-color: var(--verdigris);
+}
+
+.check.wait {
+  border-color: var(--lapis);
+  border-style: dashed;
+}
+
+.check svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--obsidian);
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+
+.todo .tx {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* The "set as next step" IconButton — never shrunk by the row's flex, and
+   nudged up 2px so its 26px square optically centres against the 17px
+   checkbox on the same `align-items: flex-start` row. */
+.todo .iconbtn {
+  flex: 0 0 auto;
+  margin-top: -2px;
+}
+
+.todo .sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.due {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+
+.due.over {
+  color: var(--red);
+}
+
+.due.soon {
+  color: var(--orange);
+}
+
+.due.later {
+  color: var(--faint);
+}
+
+.due.wait {
+  color: var(--lapis);
+}
+
+.nextbadge {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--gold);
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: var(--radius-4);
+  padding: 1px 5px;
+}
+
+.next-step-block {
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--gold) 5%, transparent);
+}
+
+.next-step-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* ── timeline (T-260828-30) ──────────── */
+
+.tl {
+  padding: 5px 15px 12px;
+}
+
+.tli {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  position: relative;
+}
+
+.tli:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 30px;
+  bottom: -10px;
+  width: 1px;
+  background: var(--border);
+}
+
+.tli .bul {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: var(--radius-7);
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  z-index: 1;
+}
+
+.tli .bul svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--verdigris);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tli .t {
+  font-size: 13px;
+  display: block;
+  line-height: 1.4;
+}
+
+.tli .d {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  margin-top: 3px;
+  display: block;
+  letter-spacing: 0.4px;
+}
+
+.tli .note {
+  font-size: 12.5px;
+  color: var(--mute);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+/* ── contacts (T-260828-30) ──────────── */
+
+.contacts-historical {
+  border-top: 1px solid var(--border);
+}
+
+.contacts-historical summary {
+  padding: 9px 15px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.contacts-historical summary:hover,
+.contacts-historical summary:focus-visible {
+  color: var(--verdigris);
+}
+
+/* Historical rows read as history, not as a second current contacts list —
+   dimmed rather than styled identically to the current list above. */
+.contacts-historical .row {
+  opacity: 0.6;
 }

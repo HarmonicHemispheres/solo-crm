@@ -42,8 +42,20 @@ describe('queryKeys — T-260828-26 entities', () => {
     }
   })
 
-  it('G8: no activity key beyond list/detail — no update or delete scope exists to key', () => {
-    expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'detail', 'list'])
+  it('G8: no activity key beyond list/detail plus the T-260828-30 read scopes — no update or delete scope exists to key', () => {
+    expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'byCompany', 'byEngagement', 'byPerson', 'detail', 'list'])
+  })
+
+  it('T-260828-30: tasks.byCompany and activity.byCompany/byPerson/byEngagement follow [entity, scope, id] and start with all()', () => {
+    expect(queryKeys.tasks.byCompany('c1')).toEqual(['tasks', 'byCompany', 'c1'])
+    expect(queryKeys.tasks.byCompany('c1').slice(0, queryKeys.tasks.all().length)).toEqual(queryKeys.tasks.all())
+
+    expect(queryKeys.activity.byCompany('c1')).toEqual(['activity', 'byCompany', 'c1'])
+    expect(queryKeys.activity.byPerson('p1')).toEqual(['activity', 'byPerson', 'p1'])
+    expect(queryKeys.activity.byEngagement('e1')).toEqual(['activity', 'byEngagement', 'e1'])
+    for (const key of [queryKeys.activity.byCompany('c1'), queryKeys.activity.byPerson('p1'), queryKeys.activity.byEngagement('e1')]) {
+      expect(key.slice(0, queryKeys.activity.all().length)).toEqual(queryKeys.activity.all())
+    }
   })
 })
 

@@ -1,9 +1,12 @@
-import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { parseDateOnly } from '../../shared/format'
+import { useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SVGProps } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { nowTimestamp, parseDateOnly, parseTimestamp } from '../../shared/format'
 import { COMPANY_KINDS, type Company, type CompanyKind, type UpdateCompanyInput } from '../../shared/companies'
 import type { BillingModel, Engagement, EngagementStatus } from '../../shared/engagements'
+import type { Task } from '../../shared/tasks'
+import type { Activity, ActivityKind } from '../../shared/activity'
+import type { Person, PersonAffiliation, PersonWithAffiliations } from '../../shared/people'
 import { ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { Card } from '../components/primitives/Card'
@@ -13,6 +16,9 @@ import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { DecayMeter } from '../components/primitives/DecayMeter'
 import { Toast } from '../components/primitives/Toast'
+import { QuickAdd } from '../components/primitives/QuickAdd'
+import { Row } from '../components/primitives/Row'
+import { IconButton } from '../components/primitives/IconButton'
 import './CompanyDetail.css'
 
 /**
@@ -24,10 +30,16 @@ import './CompanyDetail.css'
  * unfiltered list sliced two ways in this component — that shortcut is
  * exactly the bug whose page still looks plausible.
  *
- * Out of this task's scope (T-260828-30 owns the rest of this page): todos,
- * activity timeline, contacts, links, and any revenue or hours figure —
- * ADR-003 puts every revenue question through `revenue_lines`, not
- * per-billing-model branching rendered here.
+ * T-260828-30 adds the rest of this page below: todos (with the one
+ * exclusive-per-company next step, promoted through `tasks:setNextStep`),
+ * the append-only activity timeline (merged from three independently-
+ * filtered `activity:list` calls — company, its people, its engagements —
+ * for the same reason "billed here"/"delivered here" above are two calls
+ * and not one sliced client-side), and contacts (current affiliations only,
+ * historical ones behind a disclosure). Links and any revenue or hours
+ * figure are still out of this page's scope — ADR-003 puts every revenue
+ * question through `revenue_lines`, not per-billing-model branching
+ * rendered here.
  */
 
 // ---------------------------------------------------------------------------
@@ -75,6 +87,72 @@ function ViaIcon() {
       <path d="M7 7h6a4 4 0 014 4v6M17 17l-3-3M17 17l3-3" />
     </svg>
   )
+}
+
+// ---------------------------------------------------------------------------
+// T-260828-30's own icons — a view's per-kind glyphs stay with the view that
+// uses them (components/icons.tsx's own header), same as `ViaIcon` above.
+// ---------------------------------------------------------------------------
+
+/** The todo checkbox glyph — mockup's `.check svg` path, styled entirely by
+ * `.check`/`.check svg` in CompanyDetail.css rather than inline props. */
+function CheckIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
+
+/** "Promote to next step" — new UI with no mockup source (this task's Risks:
+ * the mockup never shows how a next step gets chosen). A flag, not a star:
+ * `.nextbadge` already reads "next step" in text, so the glyph only needs to
+ * read as "mark this" rather than borrow a meaning (favourite, priority)
+ * that isn't what this button does. */
+function NextStepIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M6 3v18" />
+      <path d="M6 4h12l-3.5 4L18 12H6" />
+    </svg>
+  )
+}
+
+/** `ICONS` (planning/solo-crm-mockup.html line ~935) — same four glyphs,
+ * keyed by `ActivityKind`'s lowercase wire values rather than the mockup's
+ * capitalised display strings. Presentation attributes live once on the
+ * wrapping `<svg>` in `ActivityKindIcon` below (CSS's `.tli .bul svg` rule),
+ * not repeated per path/rect/circle — SVG `fill`/`stroke` inherit down. */
+const ACTIVITY_KIND_PATHS: Record<ActivityKind, ReactNode> = {
+  call: <path d="M5 4h3l2 5-2 1a10 10 0 005 5l1-2 5 2v3a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" />,
+  email: (
+    <>
+      <rect x="3" y="6" width="18" height="13" rx="2" />
+      <path d="M3.5 7.5L12 13l8.5-5.5" />
+    </>
+  ),
+  meeting: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v4l3 2" />
+    </>
+  ),
+  note: <path d="M4 19l1-4 10-10 3 3L8 18z" />
+}
+
+function ActivityKindIcon({ kind }: { kind: ActivityKind }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {ACTIVITY_KIND_PATHS[kind]}
+    </svg>
+  )
+}
+
+const ACTIVITY_KIND_LABEL: Record<ActivityKind, string> = {
+  call: 'Call',
+  email: 'Email',
+  meeting: 'Meeting',
+  note: 'Note'
 }
 
 const KIND_LABEL: Record<CompanyKind, string> = {
@@ -156,6 +234,74 @@ function cadenceState(lastTouchAt: string | null, cadenceDays: number | null, no
   const days = Math.floor((now - new Date(lastTouchAt).getTime()) / DAY_MS)
   const pct = cadenceDays ? days / cadenceDays : Number.POSITIVE_INFINITY
   return { pct, label: days <= 0 ? 'today' : `${days}d` }
+}
+
+// ---------------------------------------------------------------------------
+// Todos — due-date / waiting-since formatting, mockup's `dueInfo()`
+// (planning/solo-crm-mockup.html line ~795) reproduced against this app's
+// own date helpers rather than the mockup's ad hoc `new Date(d+'T09:00:00')`.
+// ---------------------------------------------------------------------------
+
+const MONTH_DAY_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+/** UTC-formatted for the same reason `formatMonthYear` above is: a
+ * `dateOnly` value must never shift a day under the caller's local
+ * timezone. */
+function formatMonthDay(dateOnly: string): string {
+  return MONTH_DAY_FORMAT.format(parseDateOnly(dateOnly))
+}
+
+/** A `dateOnly` value's age in days as of `now` — positive once it's in the
+ * past, matching `cadenceState`'s own `Math.floor` day math above. */
+function daysSinceDateOnly(dateOnly: string, now: number): number {
+  return Math.floor((now - parseDateOnly(dateOnly).getTime()) / DAY_MS)
+}
+
+/** A full timestamp's age in days as of `now` — `waitingSince` is a
+ * `timestampSchema` value (an instant), not a `dateOnly`, so it parses with
+ * `parseTimestamp`, not `parseDateOnly`. */
+function daysSinceTimestamp(timestamp: string, now: number): number {
+  return Math.floor((now - parseTimestamp(timestamp).getTime()) / DAY_MS)
+}
+
+interface DueInfo {
+  readonly cls: 'over' | 'soon' | 'later' | 'wait'
+  readonly label: string
+}
+
+/**
+ * Mockup's `dueInfo()`: a `waiting` task reads its age off `waitingSince`
+ * (§6.6/requirements: waiting items are excluded from the owed count but
+ * age visibly), everything else off `dueOn`. `cls` and `label` are each the
+ * mockup's own ternary chain, kept as two separate chains rather than
+ * merged into one lookup — the mockup itself computes them independently
+ * off the same `d`, and collapsing them would have to invent a combined
+ * table the mockup doesn't have.
+ */
+function taskDueInfo(task: Task, now: number): DueInfo {
+  if (task.status === 'waiting') {
+    const days = task.waitingSince != null ? Math.max(daysSinceTimestamp(task.waitingSince, now), 0) : 0
+    return { cls: 'wait', label: `waiting ${days}d` }
+  }
+  if (task.dueOn == null) return { cls: 'later', label: 'no date' }
+  const d = daysSinceDateOnly(task.dueOn, now)
+  const cls = d > 0 ? 'over' : d === 0 ? 'soon' : d >= -7 ? 'soon' : 'later'
+  const label = d > 0 ? `${d}d overdue` : d === 0 ? 'today' : d === -1 ? 'tomorrow' : formatMonthDay(task.dueOn)
+  return { cls, label }
+}
+
+// ---------------------------------------------------------------------------
+// Activity — `occurredAt` is a genuine instant (`timestampSchema`), not a
+// `dateOnly` value, so it is deliberately formatted in the viewer's local
+// time (no `timeZone: 'UTC'` override) rather than reusing the UTC-pinned
+// formatters above — there is no "which calendar day does this string mean"
+// question for an instant the way there is for a `dateOnly` value.
+// ---------------------------------------------------------------------------
+
+const ACTIVITY_DATE_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
+
+function formatActivityDate(occurredAt: string): string {
+  return ACTIVITY_DATE_FORMAT.format(parseTimestamp(occurredAt))
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +635,231 @@ function EndClientsCard({ companyName, endClients }: { companyName: string; endC
 }
 
 // ---------------------------------------------------------------------------
+// Todos — T-260828-30. The next step (`is_next_step`, exclusive per company,
+// T-260828-23) is pulled out of the ordinary list into its own block above
+// it: a structural and textual distinction (position plus the `.nextbadge`
+// "next step" label), not a colour alone — `.claude/rules/ui-design.md`'s
+// rule this task's Risks section names explicitly.
+// ---------------------------------------------------------------------------
+
+function NextStepBlock({ task, now }: { task: Task; now: number }) {
+  const due = taskDueInfo(task, now)
+  return (
+    <div className="next-step-block">
+      <span className="nextbadge">next step</span>
+      <div className="next-step-title">{task.title}</div>
+      <div className={`due ${due.cls}`} style={{ marginTop: 4 }}>
+        {due.label}
+      </div>
+    </div>
+  )
+}
+
+function TodoRow({
+  task,
+  now,
+  onComplete,
+  onPromote
+}: {
+  task: Task
+  now: number
+  onComplete: (id: string) => void
+  onPromote: (id: string) => void
+}) {
+  const due = taskDueInfo(task, now)
+  return (
+    <div className="todo">
+      <button
+        type="button"
+        className={task.status === 'waiting' ? 'check wait' : 'check'}
+        onClick={() => onComplete(task.id)}
+        aria-label={`Mark "${task.title}" done`}
+      >
+        <CheckIcon />
+      </button>
+      <span className="tx">
+        {task.title}
+        <span className="sub">
+          <span className={`due ${due.cls}`}>{due.label}</span>
+        </span>
+      </span>
+      <IconButton aria-label={`Set "${task.title}" as next step`} onClick={() => onPromote(task.id)}>
+        <NextStepIcon />
+      </IconButton>
+    </div>
+  )
+}
+
+/**
+ * `tasks:list({ companyId })` (this task's Touches — no `open` filter: that
+ * flag's `OPEN_STATUS_SQL` excludes `waiting` too, but the mockup's own
+ * `todosFor()` — and requirements §6.6, "waiting items age visibly" — keeps
+ * waiting tasks in this card, just styled distinctly (`.check.wait`,
+ * `.due.wait`). Only `done` drops out, filtered client-side below.
+ */
+function TodosCard({ companyId, companyName, tasks, now }: { companyId: string; companyName: string; tasks: readonly Task[]; now: number }) {
+  const queryClient = useQueryClient()
+
+  const completeTask = useMutation({
+    mutationFn: (id: string) => ipcMutationFn('tasks:update')({ id, patch: { status: 'done' } }).then(unwrapMutationResult),
+    onSuccess: () => invalidate.tasks(queryClient)
+  })
+  const promoteTask = useMutation({
+    mutationFn: (id: string) => ipcMutationFn('tasks:setNextStep')({ id }).then(unwrapMutationResult),
+    onSuccess: () => invalidate.tasks(queryClient)
+  })
+  const createTask = useMutation({
+    mutationFn: (title: string) => ipcMutationFn('tasks:create')({ title, companyId }).then(unwrapMutationResult),
+    onSuccess: () => invalidate.tasks(queryClient)
+  })
+
+  const openTasks = tasks.filter((task) => task.status !== 'done')
+  const nextStep = openTasks.find((task) => task.isNextStep) ?? null
+  const otherTasks = openTasks.filter((task) => task !== nextStep)
+  const activeError = completeTask.isError ? completeTask.error : promoteTask.isError ? promoteTask.error : createTask.isError ? createTask.error : null
+
+  return (
+    <Card>
+      <Card.Header title="Todos" count={openTasks.length} />
+      {nextStep != null && <NextStepBlock task={nextStep} now={now} />}
+      {otherTasks.length === 0 && nextStep == null ? (
+        <EmptyState>Nothing open.</EmptyState>
+      ) : (
+        otherTasks.map((task) => (
+          <TodoRow key={task.id} task={task} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
+        ))
+      )}
+      <QuickAdd placeholder={`Add a todo for ${companyName}`} onAdd={(value) => createTask.mutate(value)} />
+      <Toast
+        message={activeError?.message ?? null}
+        onDismiss={() => {
+          completeTask.reset()
+          promoteTask.reset()
+          createTask.reset()
+        }}
+      />
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Activity — T-260828-30. Append-only (G8): this card's only mutation is
+// `activity:log` (a create); there is no update or delete channel to call
+// and this card renders no button that implies either. `items` arrives
+// already merged and sorted — see the view's own comment on why three
+// `activity:list` calls feed it instead of one.
+// ---------------------------------------------------------------------------
+
+function ActivityRow({ activity }: { activity: Activity }) {
+  return (
+    <div className="tli">
+      <span className="bul">
+        <ActivityKindIcon kind={activity.kind} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span className="t">{activity.title}</span>
+        <span className="d">
+          {ACTIVITY_KIND_LABEL[activity.kind]} · {formatActivityDate(activity.occurredAt)}
+        </span>
+        {activity.body != null && <div className="note">{activity.body}</div>}
+      </span>
+    </div>
+  )
+}
+
+function ActivityCard({ companyId, companyName, items }: { companyId: string; companyName: string; items: readonly Activity[] }) {
+  const queryClient = useQueryClient()
+
+  const logActivity = useMutation({
+    mutationFn: (title: string) =>
+      ipcMutationFn('activity:log')({
+        occurredAt: nowTimestamp(),
+        kind: 'note',
+        title,
+        body: null,
+        companyId,
+        source: 'manual'
+      }).then(unwrapMutationResult),
+    onSuccess: () => invalidate.activity(queryClient)
+  })
+
+  return (
+    <Card>
+      <Card.Header title="Activity" count={items.length} />
+      <div className="tl">
+        {items.length === 0 ? <EmptyState>Nothing logged.</EmptyState> : items.map((activity) => <ActivityRow key={activity.id} activity={activity} />)}
+      </div>
+      <QuickAdd placeholder={`Log a touch for ${companyName}`} onAdd={(value) => logActivity.mutate(value)} />
+      <Toast message={logActivity.isError ? logActivity.error.message : null} onDismiss={() => logActivity.reset()} />
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Contacts — T-260828-30. Current affiliations only in the main list; a
+// person whose only tie to this company has `ended` shows solely under the
+// `<details>` disclosure below, its subtitle naming when they left rather
+// than reusing their old title — "visibly historical" (this task's
+// Acceptance), not just relocated.
+// ---------------------------------------------------------------------------
+
+interface ContactEntry {
+  readonly person: Person
+  readonly affiliation: PersonAffiliation
+}
+
+function ContactRow({ entry, historical, onClick }: { entry: ContactEntry; historical: boolean; onClick: () => void }) {
+  const subtitle = historical
+    ? entry.affiliation.ended != null
+      ? `left ${formatMonthYear(entry.affiliation.ended)}`
+      : 'former contact'
+    : (entry.affiliation.title ?? undefined)
+  return (
+    <Row
+      onClick={onClick}
+      leading={<CompanyMark name={entry.person.name} size={28} color={hue(entry.person.name)} />}
+      title={entry.person.name}
+      subtitle={subtitle}
+      trailing={!historical && entry.affiliation.isPrimary ? <Tag variant="gold">Primary</Tag> : undefined}
+    />
+  )
+}
+
+function ContactsCard({
+  current,
+  historical
+}: {
+  current: readonly ContactEntry[]
+  historical: readonly ContactEntry[]
+}) {
+  const navigate = useNavigate()
+  const goToPerson = (personId: string) => () => navigate(`/person/${personId}`)
+
+  return (
+    <Card>
+      <Card.Header title="Contacts" count={current.length} />
+      {current.length === 0 && historical.length === 0 ? (
+        <EmptyState action={<Link to="/people">Add a contact</Link>}>No contacts yet.</EmptyState>
+      ) : current.length === 0 ? (
+        <EmptyState>No current contacts.</EmptyState>
+      ) : (
+        current.map((entry) => <ContactRow key={entry.person.id} entry={entry} historical={false} onClick={goToPerson(entry.person.id)} />)
+      )}
+      {historical.length > 0 && (
+        <details className="contacts-historical">
+          <summary>
+            {historical.length} former contact{historical.length === 1 ? '' : 's'}
+          </summary>
+          {historical.map((entry) => (
+            <ContactRow key={entry.person.id} entry={entry} historical onClick={goToPerson(entry.person.id)} />
+          ))}
+        </details>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // The view
 // ---------------------------------------------------------------------------
 
@@ -518,6 +889,84 @@ export function CompanyDetail() {
     queryKey: queryKeys.engagements.byClientCompany(companyId),
     queryFn: ipcQueryFn('engagements:list', { clientCompanyId: companyId }),
     enabled: companyId !== ''
+  })
+
+  // -- Todos (T-260828-30): one company-scoped query, no `open` filter — see
+  // TodosCard's own comment on why `waiting` tasks stay in this list. --
+  const tasksQuery = useQuery({
+    queryKey: queryKeys.tasks.byCompany(companyId),
+    queryFn: ipcQueryFn('tasks:list', { companyId }),
+    enabled: companyId !== ''
+  })
+
+  // -- Contacts (T-260828-30): no `people:list({ companyId })` filter exists
+  // — `people:list` returns bare `Person` rows with no affiliation data at
+  // all — so every person is fetched (cheap: a solo consultancy's whole
+  // contact book) and then `people:get` per person pulls the affiliation
+  // history `people:list` doesn't carry, exactly like `people:get`'s own
+  // response shape already requires for a single person's detail page.
+  // `useQueries` keeps this parallel rather than N sequential round trips. --
+  const peopleListQuery = useQuery({
+    queryKey: queryKeys.people.list(),
+    queryFn: ipcQueryFn('people:list')
+  })
+  const peopleDetailQueries = useQueries({
+    queries: (peopleListQuery.data ?? []).map((person) => ({
+      queryKey: queryKeys.people.detail(person.id),
+      queryFn: ipcQueryFn('people:get', { id: person.id })
+    }))
+  })
+
+  const currentContacts: ContactEntry[] = []
+  const historicalContacts: ContactEntry[] = []
+  for (const result of peopleDetailQueries) {
+    const person: PersonWithAffiliations | null | undefined = result.data
+    if (person == null) continue
+    const atThisCompany = person.affiliations.filter((affiliation) => affiliation.companyId === companyId)
+    if (atThisCompany.length === 0) continue
+    const openStint = atThisCompany.find((affiliation) => affiliation.current)
+    if (openStint != null) {
+      currentContacts.push({ person, affiliation: openStint })
+    } else {
+      // Most recently ended stint at this company — `ended` is never null
+      // here (every entry in `atThisCompany` that isn't `openStint` has one).
+      const mostRecent = [...atThisCompany].sort((a, b) => (b.ended ?? '').localeCompare(a.ended ?? ''))[0]
+      historicalContacts.push({ person, affiliation: mostRecent })
+    }
+  }
+  // Every person this company has ever had an affiliation with — current and
+  // historical alike, matching the Activity section's own "this company's
+  // people" scope (this task's Scope), not only its present-day contacts.
+  const relevantPersonIds = [...currentContacts, ...historicalContacts].map((entry) => entry.person.id)
+
+  // -- Activity (T-260828-30): merged from three independently-filtered
+  // `activity:list` calls — companyId directly, this company's people, this
+  // company's engagements — per this task's Risks ("pulling person and
+  // engagement activity in with three separate queries and merging
+  // client-side out of order"). Engagement ids come straight off the raw
+  // `billedHereQuery`/`clientHereQuery` results (deduped — an engagement
+  // billed and delivered to the same company satisfies both filters) rather
+  // than the post-return `billedHere`/`deliveredElsewhere` locals below,
+  // which don't exist yet this early in the hook order. --
+  const engagementIds = Array.from(
+    new Set([...(billedHereQuery.data ?? []), ...(clientHereQuery.data ?? [])].map((engagement) => engagement.id))
+  )
+  const companyActivityQuery = useQuery({
+    queryKey: queryKeys.activity.byCompany(companyId),
+    queryFn: ipcQueryFn('activity:list', { companyId }),
+    enabled: companyId !== ''
+  })
+  const personActivityQueries = useQueries({
+    queries: relevantPersonIds.map((personId) => ({
+      queryKey: queryKeys.activity.byPerson(personId),
+      queryFn: ipcQueryFn('activity:list', { personId })
+    }))
+  })
+  const engagementActivityQueries = useQueries({
+    queries: engagementIds.map((engagementId) => ({
+      queryKey: queryKeys.activity.byEngagement(engagementId),
+      queryFn: ipcQueryFn('activity:list', { engagementId })
+    }))
   })
 
   if (companyQuery.isPending) return <div className="empty">Loading…</div>
@@ -552,6 +1001,16 @@ export function CompanyDetail() {
       return endClientCompany ? { company: endClientCompany, engagementCount } : null
     })
     .filter((entry): entry is { company: Company; engagementCount: number } => entry != null)
+
+  // Merge + dedupe (an activity row can carry both a matching companyId and
+  // a matching personId/engagementId, landing in more than one of the three
+  // queries above) then sort newest first — a `Map` keyed by id does both in
+  // one pass, and ISO-8601 UTC timestamps sort correctly as plain strings.
+  const activityById = new Map<string, Activity>()
+  for (const activity of companyActivityQuery.data ?? []) activityById.set(activity.id, activity)
+  for (const result of personActivityQueries) for (const activity of result.data ?? []) activityById.set(activity.id, activity)
+  for (const result of engagementActivityQueries) for (const activity of result.data ?? []) activityById.set(activity.id, activity)
+  const activityItems = Array.from(activityById.values()).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
 
   const accent = hue(company.name)
   const decay = cadenceState(company.lastTouchAt, company.cadenceDays, now)
@@ -597,6 +1056,9 @@ export function CompanyDetail() {
           }
         />
         {endClients.length > 0 && <EndClientsCard companyName={company.name} endClients={endClients} />}
+        <TodosCard companyId={company.id} companyName={company.name} tasks={tasksQuery.data ?? []} now={now} />
+        <ActivityCard companyId={company.id} companyName={company.name} items={activityItems} />
+        <ContactsCard current={currentContacts} historical={historicalContacts} />
         <DetailsCard companyId={company.id} company={company} companiesById={companiesById} />
       </div>
     </div>
