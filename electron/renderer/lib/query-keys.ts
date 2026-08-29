@@ -206,6 +206,23 @@ export const queryKeys = {
     all: () => ['favicons'] as const,
     forUrl: (url: string) => ['favicons', 'forUrl', url] as const
   },
+  /**
+   * `branding:get` (T-260829-07) — the operator's own icon and wordmark. One
+   * singleton scope: the channel answers with *both* slots at once
+   * (`BrandingSnapshot`), so there is nothing to address by id and no
+   * per-slot key. A `current()` per slot would be two reads of one row set,
+   * and — worse — two cache entries that can disagree about which of the two
+   * images the rail is currently drawing.
+   *
+   * This key is read by `Rail.tsx` and by `WorkspaceSettings.tsx`'s Branding
+   * card, and that sharing is the whole reason opening Settings does not
+   * issue a second `branding:get` — same arrangement as
+   * `queryKeys.settings.list()` between `Shell.tsx` and the same view.
+   */
+  branding: {
+    all: () => ['branding'] as const,
+    current: () => ['branding', 'current'] as const
+  },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
   settings: {
     all: () => ['settings'] as const,
@@ -271,6 +288,15 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
    * does — not because anything should call it.
    */
   favicons: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.favicons.all() }),
+  /**
+   * Called by `branding:choose` and `branding:clear` (T-260829-07) — and
+   * called rather than written to optimistically on purpose. A pick's result
+   * depends on a native dialog the renderer cannot predict (the operator may
+   * cancel) and on a refusal it cannot anticipate (the bytes are sniffed in
+   * main, so a `.png` that is really an SVG is refused after the click). The
+   * only honest cache entry is the one the channel came back with.
+   */
+  branding: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.branding.all() }),
   settings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
 }
 

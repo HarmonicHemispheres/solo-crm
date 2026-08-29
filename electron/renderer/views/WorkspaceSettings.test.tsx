@@ -6,8 +6,11 @@ import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import { GLOBAL_SHORTCUTS } from '../hooks/useGlobalShortcuts'
 import { formatShortcut } from '../lib/platform'
+import { MemoryRouter } from 'react-router'
+import { Rail } from '../components/shell/Rail'
 import { SETTINGS_KEYS, type SettingsSnapshot } from '../../shared/settings'
-import type { SettingEntry } from '../../shared/ipc-types'
+import type { CrmApi, SettingEntry } from '../../shared/ipc-types'
+import type { BrandingSlot, BrandingSlotState } from '../../shared/branding'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -300,5 +303,194 @@ describe('WorkspaceSettings', () => {
       </QueryClientProvider>
     )
     await waitFor(() => expect(screen.getByText('boom')).toBeTruthy())
+  })
+
+  // -------------------------------------------------------------------------
+  // Branding (T-260829-07)
+  // -------------------------------------------------------------------------
+
+  describe('the Branding card', () => {
+    function presentSlot(slot: BrandingSlot): BrandingSlotState {
+      return {
+        state: 'present',
+        slot,
+        contentType: 'image/png',
+        dataUrl: `data:image/png;base64,${slot === 'icon' ? 'aWNvbg==' : 'bG9nbw=='}`,
+        // Exactly 34 KB, so the state line's own rounding is asserted rather
+        // than whatever the formatter happens to do to an awkward number.
+        byteLength: 34 * 1024,
+        updatedAt: '2026-08-29T00:00:00.000Z'
+      }
+    }
+
+    function absentSlot(slot: BrandingSlot): BrandingSlotState {
+      return { state: 'absent', slot }
+    }
+
+    function brandingGet(icon: BrandingSlotState, logo: BrandingSlotState): Partial<CrmApi> {
+      return { 'branding:get': vi.fn(async () => ({ ok: true as const, data: { icon, logo } })) }
+    }
+
+    /** `branding:get` reading back what `branding:clear` wrote, so a Remove can be asserted through the invalidation rather than only at the channel. */
+    function statefulBranding(initial: { icon: BrandingSlotState; logo: BrandingSlotState }) {
+      const slots = { ...initial }
+      const clear = vi.fn(async ({ slot }: { slot: BrandingSlot }) => {
+        slots[slot] = absentSlot(slot)
+        return { ok: true as const, data: { ok: true as const, data: slots[slot] } }
+      })
+      return {
+        clear,
+        overrides: {
+          'branding:get': vi.fn(async () => ({ ok: true as const, data: { ...slots } })),
+          'branding:clear': clear
+        } satisfies Partial<CrmApi>
+      }
+    }
+
+    function renderBranding(overrides: Partial<CrmApi> = {}) {
+      window.crm = stubCrm({
+        'settings:getAll': vi.fn(async () => ({ ok: true as const, data: { ...DEFAULT_SNAPSHOT } })),
+        ...overrides
+      })
+      return render(
+        <QueryClientProvider client={createQueryClient()}>
+          <WorkspaceSettings />
+        </QueryClientProvider>
+      )
+    }
+
+    it('shows the built-in default in both rows when nothing is set, and offers no Remove', async () => {
+      renderBranding()
+      const iconRow = await screen.findByRole('group', { name: 'Icon' })
+      const logoRow = screen.getByRole('group', { name: 'Logo' })
+
+      for (const row of [iconRow, logoRow]) {
+        expect(within(row).getByText('Solo CRM default')).toBeTruthy()
+        // The built-in mark and wordmark are inline SVG, drawn from the same
+        // components the rail draws — not an <img>, which is what a custom
+        // slot renders and what these tests tell the two states apart by.
+        expect(row.querySelector('svg')).toBeTruthy()
+        expect(row.querySelector('img')).toBeNull()
+        expect(within(row).getByRole('button', { name: 'Upload…' })).toBeTruthy()
+        expect(within(row).queryByRole('button', { name: 'Remove' })).toBeNull()
+      }
+    })
+
+    it('shows a custom slot as its own image, with format and size, and offers Replace and Remove', async () => {
+      renderBranding(brandingGet(presentSlot('icon'), presentSlot('logo')))
+      const iconRow = await screen.findByRole('group', { name: 'Icon' })
+      await waitFor(() => expect(iconRow.querySelector('img')).toBeTruthy())
+
+      // `data:` is the only image transport the renderer's CSP admits.
+      expect(iconRow.querySelector('img')?.getAttribute('src')?.startsWith('data:image/')).toBe(true)
+      expect(iconRow.querySelector('img')?.getAttribute('alt')).toBe('')
+      expect(within(iconRow).getByText('Custom · PNG · 34 KB')).toBeTruthy()
+      expect(within(iconRow).getByRole('button', { name: 'Replace…' })).toBeTruthy()
+      expect(within(iconRow).getByRole('button', { name: 'Remove' })).toBeTruthy()
+      expect(within(iconRow).queryByRole('button', { name: 'Upload…' })).toBeNull()
+    })
+
+    it('never names a file — the channel returns no path and the card must not invent one', async () => {
+      renderBranding(brandingGet(presentSlot('icon'), presentSlot('logo')))
+      const iconRow = await screen.findByRole('group', { name: 'Icon' })
+      await waitFor(() => expect(iconRow.querySelector('img')).toBeTruthy())
+      expect(iconRow.textContent).not.toMatch(/[\\/]|\.png/i)
+    })
+
+    it('keeps the two slots independent — a custom icon renders one image and one built-in SVG', async () => {
+      renderBranding(brandingGet(presentSlot('icon'), absentSlot('logo')))
+      const iconRow = await screen.findByRole('group', { name: 'Icon' })
+      await waitFor(() => expect(iconRow.querySelector('img')).toBeTruthy())
+
+      const logoRow = screen.getByRole('group', { name: 'Logo' })
+      expect(logoRow.querySelector('img')).toBeNull()
+      expect(logoRow.querySelector('svg.wordmark')).toBeTruthy()
+      expect(within(logoRow).getByText('Solo CRM default')).toBeTruthy()
+      expect(within(logoRow).queryByRole('button', { name: 'Remove' })).toBeNull()
+    })
+
+    it('Remove clears that slot alone, and the row returns to the built-in default', async () => {
+      const branding = statefulBranding({ icon: presentSlot('icon'), logo: presentSlot('logo') })
+      renderBranding(branding.overrides)
+      const iconRow = await screen.findByRole('group', { name: 'Icon' })
+      await waitFor(() => expect(iconRow.querySelector('img')).toBeTruthy())
+
+      fireEvent.click(within(iconRow).getByRole('button', { name: 'Remove' }))
+      await waitFor(() => expect(within(iconRow).getByText('Solo CRM default')).toBeTruthy())
+
+      expect(branding.clear).toHaveBeenCalledWith({ slot: 'icon' })
+      expect(iconRow.querySelector('img')).toBeNull()
+      expect(screen.getByRole('group', { name: 'Logo' }).querySelector('img')).toBeTruthy()
+    })
+
+    it('shows a refusal beside the row that failed, and nowhere else', async () => {
+      const message = 'That image is not a format Solo CRM can store. SVG is not accepted.'
+      renderBranding({
+        'branding:choose': vi.fn(async () => ({
+          ok: true as const,
+          data: { ok: false as const, error: { code: 'validation' as const, message } }
+        }))
+      })
+      const iconRow = await screen.findByRole('group', { name: 'Icon' })
+      fireEvent.click(within(iconRow).getByRole('button', { name: 'Upload…' }))
+
+      await waitFor(() => expect(within(iconRow).getByRole('alert').textContent).toBe(message))
+      expect(within(screen.getByRole('group', { name: 'Logo' })).queryByRole('alert')).toBeNull()
+    })
+
+    it('a cancelled picker produces no error state anywhere in the card', async () => {
+      // Cancellation arrives as `{ ok: true, data: { outcome: 'cancelled' } }`
+      // — a success branch, not an error — so nothing must appear.
+      const choose = vi.fn(async () => ({
+        ok: true as const,
+        data: { ok: true as const, data: { outcome: 'cancelled' as const } }
+      }))
+      renderBranding({ 'branding:choose': choose })
+      const iconRow = await screen.findByRole('group', { name: 'Icon' })
+      fireEvent.click(within(iconRow).getByRole('button', { name: 'Upload…' }))
+
+      await waitFor(() => expect(choose).toHaveBeenCalledWith({ slot: 'icon' }))
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(within(iconRow).getByText('Solo CRM default')).toBeTruthy()
+    })
+
+    it('says what is accepted, the cap, and that SVG is not one of them', async () => {
+      renderBranding()
+      await waitFor(() => expect(screen.getByText('Branding')).toBeTruthy())
+      const caption = screen.getByText(/SVG is not one of them/)
+      expect(caption.textContent).toContain('512 KB')
+      for (const format of ['PNG', 'JPEG', 'WebP', 'GIF', 'BMP', 'ICO']) {
+        expect(caption.textContent).toContain(format)
+      }
+    })
+
+    it('shares one branding:get with the rail — opening settings issues no second fetch', async () => {
+      // The acceptance criterion, pinned behaviourally rather than by grepping
+      // for the key: `staleTime` is Infinity, so two *different* keys would
+      // each fetch exactly once and this count would be 2. It is 1 only while
+      // Rail.tsx and WorkspaceSettings.tsx name the same
+      // `queryKeys.branding.current()`, which is precisely what a later
+      // refactor can separate without anything else failing.
+      const get = vi.fn(async () => ({
+        ok: true as const,
+        data: { icon: absentSlot('icon'), logo: absentSlot('logo') }
+      }))
+      window.crm = stubCrm({
+        'branding:get': get,
+        'settings:getAll': vi.fn(async () => ({ ok: true as const, data: { ...DEFAULT_SNAPSHOT } }))
+      })
+      render(
+        <QueryClientProvider client={createQueryClient()}>
+          <MemoryRouter initialEntries={['/workspace/settings']}>
+            <Rail open={false} onNavigate={() => {}} />
+            <WorkspaceSettings />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+
+      await screen.findByRole('group', { name: 'Icon' })
+      await waitFor(() => expect(get).toHaveBeenCalled())
+      expect(get).toHaveBeenCalledTimes(1)
+    })
   })
 })

@@ -19,7 +19,20 @@
   padding: 19px 17px 16px;
 }
 
-.brand .mark {
+/* `.mark` and `.wordmark` are both declared unscoped, and both are used in two
+ * places: the rail's brand block, and the Branding card's preview in
+ * `/workspace/settings` (T-260829-07). That card's whole job is to show the
+ * operator what the rail will look like, so the two must be the same box — one
+ * declaration is how they cannot disagree, rather than a second copy of `25px`
+ * and `104px` in WorkspaceSettings.css and a test to keep the copies honest.
+ * Rail is mounted on every route, so the rule is always present, the same
+ * argument WorkspaceSettings.css already makes for borrowing `.field`.
+ *
+ * Both boxes are fixed in BOTH dimensions, which is the point. An operator's
+ * image is not the built-in one's aspect ratio; without a fixed height the nav
+ * below would step down the moment `branding:get` resolved, and the app would
+ * look broken for a frame on every start. */
+.mark {
   width: 25px;
   height: 25px;
   flex: 0 0 25px;
@@ -27,8 +40,27 @@
   filter: drop-shadow(0 0 14px color-mix(in srgb, var(--verdigris) 22%, transparent));
 }
 
+/* Whatever fills the mark box — the built-in SVG or an operator's own image —
+ * fills it exactly and is letterboxed rather than stretched or cropped. */
+.mark > svg,
+.mark > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
 .wordmark {
   width: 104px;
+  /* 183 / 33 is the built-in wordmark's own viewBox ratio, so this is exactly
+   * the height it already rendered at — stating it makes the box a box rather
+   * than a width with whatever height the current image happens to imply. An
+   * operator's wordmark of any other ratio is letterboxed into the same box
+   * instead of resizing the brand row. A tall or near-square image therefore
+   * renders small inside it, which is correct and is why the settings preview
+   * shows it at this size before the operator finds out from the rail. */
+  aspect-ratio: 183 / 33;
+  object-fit: contain;
   fill: currentColor;
   color: var(--papyrus);
   display: block;
