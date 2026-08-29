@@ -27,7 +27,7 @@ that surfaced them. Each names the review it came from.
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260829-12](T-260829-12-post-rename-drizzle-snapshot.md) | Check in a real post-rename drizzle snapshot, so the schema is not a derivation inside a test | 🗄 data | — |
-| ○ open | [T-260829-11](T-260829-11-drop-unread-sheet-title.md) | Delete the sheet title nothing reads, and the openSheet parameter that feeds it | 🎨 ui | — |
+| ◐ in-progress | [T-260829-11](T-260829-11-drop-unread-sheet-title.md) | Delete the sheet title nothing reads, and the openSheet parameter that feeds it | 🎨 ui | — |
 
 ### Workspace — the two blank pages
 

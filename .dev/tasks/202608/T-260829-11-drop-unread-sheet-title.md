@@ -1,7 +1,7 @@
 ---
 id: T-260829-11
 title: Delete the sheet title nothing reads, and the openSheet parameter that feeds it
-status: open
+status: in-progress
 category: ui
 created: 2026-08-29
 closed:
