@@ -17,14 +17,18 @@
 // Outputs:
 //   build/icon.ico              — 16/24/32/48/64/128/256, from assets/solocrm-mark.svg
 //   build/installerSidebar.bmp  — 164x314, 24bpp, from assets/solocrm-sidebar.svg
-//   build/installerHeader.bmp   — 150x57, 24bpp, from assets/solocrm-logo.svg
 //
-// NSIS's MUI welcome/header bitmaps require classic 24-bit BMP3
-// (BITMAPINFOHEADER, no alpha channel) — a 32-bit BMP renders as a black or
-// garbled block at install time, not a build-time failure. See this task's
-// Risks section. That's why the BMP writer below hand-builds a
-// BITMAPFILEHEADER + 40-byte BITMAPINFOHEADER and drops the alpha byte from
-// every pixel, rather than reusing any higher-level image encoder.
+// (T-260828-45: installerHeader.bmp was dropped — full-bleed obsidian painted
+// as a dark slab at the right end of MUI's white header strip, per
+// MUI_HEADERIMAGE_RIGHT. package.json no longer sets nsis.installerHeader, so
+// MUI falls back to its default text-only header instead.)
+//
+// NSIS's MUI welcome bitmap requires classic 24-bit BMP3 (BITMAPINFOHEADER,
+// no alpha channel) — a 32-bit BMP renders as a black or garbled block at
+// install time, not a build-time failure. See this task's Risks section.
+// That's why the BMP writer below hand-builds a BITMAPFILEHEADER + 40-byte
+// BITMAPINFOHEADER and drops the alpha byte from every pixel, rather than
+// reusing any higher-level image encoder.
 
 import { app, BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
@@ -47,6 +51,20 @@ app.commandLine.appendSwitch('disable-gpu')
 app.commandLine.appendSwitch('disable-gpu-compositing')
 app.commandLine.appendSwitch('disable-software-rasterizer')
 app.commandLine.appendSwitch('in-process-gpu')
+// Pin the capture to 1x regardless of the host display's DPI setting.
+// webContents.capturePage() returns a bitmap at the window's actual
+// deviceScaleFactor — on a HiDPI display that's a 2x (or higher) physical
+// pixel buffer, while crop() above works in DIP and bgraToBmp24() below
+// assumes the buffer it receives is exactly `width` x `height` at 1x. Left
+// unpinned, a regeneration on a HiDPI laptop produces a BMP with the
+// correct byte count and header (bgraToBmp24 always emits width*height
+// pixels) but garbled content, because it reads a 1x-sized window into a
+// buffer that is really 2x-sized. Chromium reads switches from a
+// process-wide map keyed by name, so this appendSwitch wins even if the
+// script is invoked with an explicit --force-device-scale-factor of its
+// own (e.g. to simulate a HiDPI box for testing) — the value set here,
+// applied after Electron's own argv parsing, is the one Chromium sees.
+app.commandLine.appendSwitch('force-device-scale-factor', '1')
 
 // A single hidden window, reused for every render below. In this
 // environment (no real GPU/compositor — see the --disable-gpu switches
@@ -125,6 +143,18 @@ function readAsset(name) {
 // ---- BMP (24bpp BITMAPINFOHEADER, no alpha) -------------------------------
 
 function bgraToBmp24(bgra, width, height) {
+  // Defense in depth alongside the force-device-scale-factor pin above: if
+  // a future Electron version ever hands back a differently-scaled buffer
+  // despite that pin, fail loudly here instead of silently emitting a
+  // correctly-sized, wrong-content BMP (the exact failure this task exists
+  // to close off).
+  const expectedBytes = width * height * 4
+  if (bgra.length !== expectedBytes) {
+    throw new Error(
+      `bgraToBmp24: expected a ${width}x${height} BGRA buffer (${expectedBytes} bytes) but got ` +
+        `${bgra.length} bytes — the capture ran at an unexpected device scale factor`
+    )
+  }
   const rowBytes = width * 3
   const rowPadded = Math.ceil(rowBytes / 4) * 4
   const pixelDataSize = rowPadded * height
@@ -247,24 +277,6 @@ async function main() {
     bgraToBmp24(sidebarImage.toBitmap(), 164, 314)
   )
   console.log('wrote build/installerSidebar.bmp — 164x314 24bpp')
-
-  // --- installerHeader.bmp (150 x 57) ---
-  const logoSvg = readAsset('solocrm-logo.svg')
-  // Preserve the lockup's own aspect ratio (322:112) inside the 150x57 slot
-  // rather than distorting it — render oversized-but-bounded and let the
-  // default preserveAspectRatio="xMidYMid meet" letterbox it; the page
-  // background matches the artwork's own ground so the letterbox is
-  // invisible.
-  const headerImage = await renderSvg(sizedSvg(logoSvg, 150, 57), {
-    width: 150,
-    height: 57,
-    background: '#0B0E14'
-  })
-  writeFileSync(
-    resolve(buildDir, 'installerHeader.bmp'),
-    bgraToBmp24(headerImage.toBitmap(), 150, 57)
-  )
-  console.log('wrote build/installerHeader.bmp — 150x57 24bpp')
 
   if (sharedWindow) sharedWindow.destroy()
   app.exit(0)

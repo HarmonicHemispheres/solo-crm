@@ -41,8 +41,10 @@ export default tseslint.config(
       'electron.vite.config.ts',
       // scripts/brand-assets.mjs (T-260828-16) runs as an Electron main
       // process (Buffer, console — same runtime as electron/main/**), not
-      // as browser/renderer code.
-      'scripts/**/*.mjs'
+      // as browser/renderer code. scripts/**/*.ts (T-260828-45) covers its
+      // Vitest test file, same Node runtime.
+      'scripts/**/*.mjs',
+      'scripts/**/*.ts'
     ],
     languageOptions: {
       globals: globals.node
