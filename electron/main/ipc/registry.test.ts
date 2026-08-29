@@ -416,3 +416,77 @@ describe("'db:query'", () => {
     expect(registry['db:query'].request.safeParse({ statement: 'SELECT 1', timeoutMs: 600_000 }).success).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// T-260828-37: the command palette's read.
+//
+// The FTS index itself, its query plan and its latency budget belong to
+// T-260828-36/51 (`db/repositories/search.test.ts` and
+// `search.latency.test.ts`). What is covered here is the wire: that a real
+// match, an empty result and a refused payload each behave correctly through
+// this channel's own request and response schemas, which `callChannel` parses
+// both halves of.
+// ---------------------------------------------------------------------------
+
+describe("'search:query'", () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-search-'))
+    openDatabase({ userDataDir: tmpDir })
+  })
+
+  afterEach(() => {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('finds a record written through another channel, and reports which table it came from', async () => {
+    const company = expectOk(await callChannel('companies:create', { name: 'Sand Sage' }))
+
+    const results = await callChannel('search:query', { query: 'sand' })
+
+    expect(results).toContainEqual({ kind: 'company', id: company.id, text: 'Sand Sage' })
+  })
+
+  it('answers across kinds in one call — a company, a person and a todo all naming the same thing', async () => {
+    const company = expectOk(await callChannel('companies:create', { name: 'Nimbus' }))
+    const person = expectOk(await callChannel('people:create', { name: 'Nimbus Vega' }))
+    const task = expectOk(await callChannel('tasks:create', { title: 'Call Nimbus back' }))
+
+    const results = await callChannel('search:query', { query: 'nimbus' })
+
+    expect(results.map((row) => `${row.kind}:${row.id}`).sort()).toEqual(
+      [`company:${company.id}`, `person:${person.id}`, `task:${task.id}`].sort()
+    )
+  })
+
+  it('a query matching nothing is an empty list, not an error — and neither is one with nothing searchable in it', async () => {
+    expectOk(await callChannel('companies:create', { name: 'Acme' }))
+
+    expect(await callChannel('search:query', { query: 'zzzznothing' })).toEqual([])
+    // Punctuation and whitespace carry no FTS5 token; `searchAll`
+    // short-circuits rather than issuing a MATCH that would itself be a
+    // syntax error.
+    expect(await callChannel('search:query', { query: '   ' })).toEqual([])
+    expect(await callChannel('search:query', { query: '"*(' })).toEqual([])
+  })
+
+  it('honours the caller-supplied cap, and refuses a payload the shared schema does not describe', async () => {
+    for (const name of ['Acme One', 'Acme Two', 'Acme Three']) {
+      expectOk(await callChannel('companies:create', { name }))
+    }
+
+    expect(await callChannel('search:query', { query: 'acme', limit: 2 })).toHaveLength(2)
+
+    // The request schema *is* `searchQueryInputSchema`
+    // (electron/shared/search.ts) — strict, and shared with the repository —
+    // so an unknown key, a non-positive limit or one past its ceiling is
+    // refused at the wire rather than reaching SQLite.
+    expect(registry['search:query'].request.safeParse({ query: 'acme' }).success).toBe(true)
+    expect(registry['search:query'].request.safeParse({ query: 'acme', kind: 'company' }).success).toBe(false)
+    expect(registry['search:query'].request.safeParse({ query: 'acme', limit: 0 }).success).toBe(false)
+    expect(registry['search:query'].request.safeParse({ query: 'acme', limit: 10_000 }).success).toBe(false)
+    expect(registry['search:query'].request.safeParse({ limit: 5 }).success).toBe(false)
+  })
+})

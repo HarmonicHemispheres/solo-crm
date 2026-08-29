@@ -71,6 +71,11 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     'activity:get': vi.fn(async () => ({ ok: true as const, data: null })),
     'activity:log': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_ACTIVITY } })),
 
+    // T-260828-37's palette read. Default is an empty result set — the same
+    // "nothing here yet" every list channel above answers with, and the
+    // honest answer for a test that never seeded anything to match.
+    'search:query': vi.fn(async () => ({ ok: true as const, data: [] })),
+
     'settings:get': vi.fn(async () => ({ ok: true as const, data: { key: 'workspace.name' as const, value: '' } })),
     'settings:getAll': vi.fn(async () => ({ ok: true as const, data: STUB_SETTINGS_SNAPSHOT })),
     'settings:set': vi.fn(async () => ({

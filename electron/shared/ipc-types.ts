@@ -19,6 +19,7 @@ import {
   updateAffiliationInputSchema,
   updatePersonInputSchema
 } from './people'
+import { SEARCH_KINDS, searchQueryInputSchema } from './search'
 import { SETTINGS_KEYS, SETTINGS_REGISTRY } from './settings'
 import type { SettingKey, SettingsSnapshot, SettingValue } from './settings'
 import { createTaskInputSchema, taskFilterSchema, taskSchema, updateTaskInputSchema } from './tasks'
@@ -295,6 +296,34 @@ const settingsSnapshotSchema = z
     }
   }) as unknown as z.ZodType<SettingsSnapshot>
 
+// ---------------------------------------------------------------------------
+// search:query — the command palette's read (T-260828-37, plan item P1-10).
+//
+// The request shape is `searchQueryInputSchema` itself (electron/shared/search.ts),
+// imported per ADR-007 rather than restated here — the repository already
+// validates that exact object, and `search.ts`'s own header names this
+// channel as the reason its input is one structured-clone object rather than
+// positional arguments.
+//
+// The response is declared here rather than in `search.ts` because
+// `SearchResult` there is a hand-written interface, not a `z.infer`, and this
+// is the only place that shape has to cross the wire. It cannot drift
+// silently: `registry.ts`'s handler returns `readonly SearchResult[]` and its
+// `satisfies` clause checks that against `z.infer` of the schema below, so a
+// field added to (or retyped in) `SearchResult` without a matching change
+// here fails `npm run typecheck`.
+// ---------------------------------------------------------------------------
+
+const searchResultSchema = z
+  .object({
+    /** Which of the five indexed source tables the row came from — the kind codes' own order (`SEARCH_KINDS`). */
+    kind: z.enum(SEARCH_KINDS),
+    id: z.string(),
+    /** The indexed text: a company/person/engagement name, a task title, an activity body. Nullable because the source columns are. */
+    text: z.string().nullable()
+  })
+  .strict()
+
 /**
  * The one place a channel's name and wire shape are declared. `registry.ts`
  * is where its *behaviour* is declared — see that file's header comment for
@@ -398,6 +427,12 @@ export const CHANNEL_CONTRACTS = {
   'activity:list': { request: activityFiltersSchema.optional(), response: z.array(activitySchema).readonly() },
   'activity:get': { request: idRequestSchema, response: activitySchema.nullable() },
   'activity:log': { request: logActivityInputSchema, response: mutationResultSchema(activitySchema) },
+
+  // -- search — one read, no writes. The index maintains itself through the
+  // triggers `0002_search_fts.sql` installs (ADR-008/ADR-009), so there is
+  // no reindex channel to add here. ---------------------------------------
+
+  'search:query': { request: searchQueryInputSchema, response: z.array(searchResultSchema).readonly() },
 
   // -- settings ---------------------------------------------------------
 

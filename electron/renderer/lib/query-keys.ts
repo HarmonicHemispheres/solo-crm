@@ -158,6 +158,24 @@ export const queryKeys = {
     byPerson: (personId: string) => ['activity', 'byPerson', personId] as const,
     byEngagement: (engagementId: string) => ['activity', 'byEngagement', engagementId] as const
   },
+  /**
+   * `search:query` (T-260828-37's command palette). `scope` is the channel's
+   * own word — a search is not a list of an entity, it is one answer to one
+   * question — and the question itself is the third element, in the `id`
+   * position, because that is exactly what it addresses: this query string,
+   * at this row cap, and nothing else. Two different query strings are two
+   * different cache entries, which is what lets the palette re-render an
+   * already-typed prefix from cache instead of re-asking main (the one-frame
+   * budget, §8/X-07).
+   *
+   * `limit` is part of the key rather than left implicit: the same query at a
+   * different cap is a different answer, and a cache that conflated them
+   * would serve a 5-row result to a caller that asked for 25.
+   */
+  search: {
+    all: () => ['search'] as const,
+    query: (query: string, limit: number) => ['search', 'query', { query, limit }] as const
+  },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
   settings: {
     all: () => ['settings'] as const,
@@ -195,6 +213,16 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
   engagements: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.engagements.all() }),
   tasks: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all() }),
   activity: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.activity.all() }),
+  /**
+   * Every cached search answer at once — there is no useful narrower unit,
+   * since a newly created company can match a query string nobody has typed
+   * yet and the index is written by triggers rather than by anything this
+   * layer can see. Nothing calls this today (the palette is the only reader,
+   * and it holds its own short `staleTime` for the same reason); it exists so
+   * a future create-and-search-again path has the entity's helper already
+   * pointed at the whole prefix, per this file's header.
+   */
+  search: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.search.all() }),
   settings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
 }
 
