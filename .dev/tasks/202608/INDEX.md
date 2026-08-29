@@ -36,7 +36,6 @@ that surfaced them. Each names the review it came from.
 | ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
 | ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
 | ○ open | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | *(review)* |
-| ◐ in-progress | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | 🎨 ui | *(review)* |
 
 ### Workspace — the two blank pages
 
@@ -94,3 +93,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | 📦 build | R-260828-02 |
 | ● done | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | 🗄 data | R-260828-03 |
 | ● done | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | 🗄 data | R-260828-03 |
+| ● done | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | 🎨 ui | R-260828-03 |
