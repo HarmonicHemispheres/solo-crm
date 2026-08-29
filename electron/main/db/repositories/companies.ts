@@ -209,6 +209,9 @@ interface ChainGuardSpec {
   /** Matches the existing `SELF_REFERENCE_CHECK_NAME` refusal's `reason` for `billed_via_company_id` (T-260828-20) — preserved so a caller that already switches on it does not see the reason change out from under it. `introduced_by_company_id` has no such precedent (no database `CHECK` ever guarded it), so it gets its own. */
   readonly selfReferenceReason: string
   readonly transitiveCycleReason: string
+  /** The chain ALREADY sitting in the database loops back on itself, independent of this write. A different fact from `depthExceededReason` — the walk closed a loop at a known node, it did not merely run out of steps (T-260828-56). */
+  readonly preexistingCycleReason: string
+  /** The chain ALREADY sitting in the database ran past `MAX_CHAIN_DEPTH` without terminating and without repeating a node — absurdly long, not (as far as the walk saw) looping. */
   readonly depthExceededReason: string
 }
 
@@ -217,14 +220,19 @@ const BILLED_VIA_CHAIN_GUARD: ChainGuardSpec = {
   fieldLabel: 'billedViaCompanyId',
   selfReferenceReason: 'self-reference',
   transitiveCycleReason: 'billed-via-cycle',
+  preexistingCycleReason: 'billed-via-chain-cycle',
   depthExceededReason: 'billed-via-chain-depth-exceeded'
 }
 
 const INTRODUCED_BY_CHAIN_GUARD: ChainGuardSpec = {
   column: 'introduced_by_company_id',
   fieldLabel: 'introducedByCompanyId',
-  selfReferenceReason: 'introduced-by-cycle',
+  // Distinct from the transitive reason: "you pointed this row at itself" and
+  // "this pointer would close a loop through other rows" are different facts
+  // and a caller may want to say different things about them (T-260828-56).
+  selfReferenceReason: 'introduced-by-self-reference',
   transitiveCycleReason: 'introduced-by-cycle',
+  preexistingCycleReason: 'introduced-by-chain-cycle',
   depthExceededReason: 'introduced-by-chain-depth-exceeded'
 }
 
@@ -251,10 +259,13 @@ function assertNoChainCycle(db: Database.Database, spec: ChainGuardSpec, selfId:
     )
   }
 
+  // Prepared once per guarded write, not once per step of the walk: a
+  // 50-deep chain compiled this identical one-column SELECT 50 times before
+  // T-260828-56. better-sqlite3 statements are reusable, and `spec.column`
+  // is a fixed literal from the two specs above — never caller input.
+  const selectParent = db.prepare(`SELECT ${spec.column} AS parent FROM companies WHERE id = ?`)
   const getParentId = (id: string): string | null => {
-    const row = db.prepare(`SELECT ${spec.column} AS parent FROM companies WHERE id = ?`).get(id) as
-      | { parent: string | null }
-      | undefined
+    const row = selectParent.get(id) as { parent: string | null } | undefined
     return row?.parent ?? null
   }
 
@@ -262,16 +273,28 @@ function assertNoChainCycle(db: Database.Database, spec: ChainGuardSpec, selfId:
   try {
     chain = walkChain(targetId, getParentId, (id) => id, MAX_CHAIN_DEPTH)
   } catch (error) {
-    if (error instanceof ChainCycleError || error instanceof ChainDepthExceededError) {
-      // The EXISTING chain from the proposed target already loops or runs
-      // past MAX_CHAIN_DEPTH without resolving, independent of this write —
-      // a pre-existing bad chain already sitting in the database (this
-      // task's Risks: bounded so that case cannot hang the check itself).
-      // Refuse rather than let the walk (or a later one) run unbounded.
+    // Two different facts about a chain this write did not create, each with
+    // its own discriminator and its own sentence (T-260828-56). Conflating
+    // them told the operator their data "already exceeds 50 steps" when the
+    // walk had in fact closed a 3-cycle at step 3.
+    if (error instanceof ChainCycleError) {
+      // The EXISTING chain from the proposed target loops back on itself,
+      // independent of this write — a bad chain already sitting in the
+      // database, which nothing here could have refused going in.
       throw new RefusalError(
         `${spec.fieldLabel} could not be set: the existing ${spec.column} chain starting from the ` +
-          `proposed company already exceeds ${MAX_CHAIN_DEPTH} steps without resolving, which means it ` +
-          'already loops somewhere. Refusing rather than risking a hang; that pre-existing chain needs ' +
+          'proposed company already loops back on itself, so this write cannot be verified safe. ' +
+          'That pre-existing cycle needs fixing on its own first.',
+        { reason: spec.preexistingCycleReason }
+      )
+    }
+    if (error instanceof ChainDepthExceededError) {
+      // Not looping as far as the walk saw — just longer than the runaway
+      // bound, so the walk stopped rather than running on unbounded.
+      throw new RefusalError(
+        `${spec.fieldLabel} could not be set: the existing ${spec.column} chain starting from the ` +
+          `proposed company runs more than ${MAX_CHAIN_DEPTH} steps without reaching a company that ` +
+          'bills directly. Refusing rather than walking it unbounded; that pre-existing chain needs ' +
           'fixing on its own before this write can be verified safe.',
         { reason: spec.depthExceededReason }
       )
