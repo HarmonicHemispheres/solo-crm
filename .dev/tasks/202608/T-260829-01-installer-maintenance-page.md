@@ -1,11 +1,11 @@
 ---
 id: T-260829-01
 title: Offer repair or remove when the installer finds an existing installation
-status: in-progress
+status: done
 category: build
 plan_ref: X-09
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -151,3 +151,89 @@ stops trusting with their client data.
 **Review:** what `code-review` found and what was done about each finding.
 
 **Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+
+
+---
+
+## Outcome
+
+Merged. Built by a subagent under the build-only process; reviewed and verified
+by the orchestrator at merge.
+
+**Changed:** `build/installer.nsh` (new), `scripts/installer-script.test.ts`
+(new). **`package.json` is unchanged** — see below.
+
+### What it does
+
+An NSIS maintenance page: when the installer finds an existing Solo CRM, it
+offers repair-or-update and remove instead of silently reinstalling over the
+top. The removal path never deletes anything itself — it invokes the existing
+install's own uninstaller through `ExecWait`, passing `_?=` so the uninstaller
+runs in place and the exit code is really observed rather than lost to the
+copy-and-relaunch NSIS normally does.
+
+Both macros are wrapped in `!ifndef BUILD_UNINSTALLER`, which is what made
+`npm run dist` pass.
+
+### Two scope errors found against the real config, not assumed
+
+The scope was written by a different session, and the builder was told to treat
+the repository as the authority where the two disagree. Both disagreements were
+real:
+
+1. **The scope said to read `InstallLocation`, `UninstallString` and
+   `DisplayVersion` from `${INSTALL_REGISTRY_KEY}`. Those live under two
+   different keys.** `registryAddInstallInfo` writes `InstallLocation` under
+   `${INSTALL_REGISTRY_KEY}` (`Software\${APP_GUID}`), and `UninstallString` and
+   `DisplayVersion` under `${UNINSTALL_REGISTRY_KEY}`
+   (`…\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}`). Reading all three from
+   one key would have found nothing and **the page would simply never have
+   appeared** — a silent no-op, not an error. Confirmed against the live install
+   on this machine, and both key names are now asserted in the test.
+2. **The scope did not anticipate the uninstaller compile pass.** The first
+   `npm run dist` failed with *"warning 6001: Variable solocrmExistingRoot not
+   referenced or never set"* — the header is compiled twice, and neither macro is
+   inserted for the uninstaller, so every `Var` was unreferenced there. Fixed by
+   guarding the whole include, **not** by weakening `nsis.warningsAsErrors`.
+
+### `package.json` deliberately untouched
+
+`NsisTarget.js` resolves `installer.nsh` out of `buildResources` by convention,
+so no configuration was needed. The builder checked the shadowing hazard that
+convention creates — `installSection.nsh` does `!include installer.nsh` wanting
+the template's own file of that name, and `buildResourcesDir` is on the include
+path — and the successful build proves it does not collide.
+
+Instead of editing `package.json` it added assertions that `buildResources`,
+`nsis.include` and `nsis.warningsAsErrors` are all left at their defaults, since
+setting any of them elsewhere would **silently unhook this file**. That is the
+better test: it guards the coupling rather than restating it.
+
+**Verified at merge:** typecheck clean across all three passes, lint clean,
+`catch-all` project 5 files / 56 tests green (the new test lands there — no
+tsconfig edit was needed, `tsconfig.node.json` already includes `scripts/**`).
+
+`npm run dist` exits 0 with `warningsAsErrors` at its default, producing
+`release/Solo CRM-Setup-0.1.0.exe` (121 MB).
+
+## What is NOT verified, and why it is a separate task
+
+**Five of this task's seven acceptance criteria need a human at a GUI** — the
+page appearing, the Repair path, the Remove path, the exit code, and
+`%APPDATA%\solo-crm\solocrm.db` surviving a Remove. None of them were met.
+
+They were not skipped for convenience. An agent session cannot drive an NSIS
+dialog, and the only machine available already carries a real Solo CRM 0.1.0
+per-user install that an automated run should not gamble with. NSIS compiles
+every branch, so the script is proven *syntactically*; its runtime behaviour is
+unobserved.
+
+This task closes for the artefact it produced. The verification it still owes is
+**[T-260829-03](T-260829-03-installer-maintenance-qa.md)**, which stays open
+until a person runs it — including the explicit instruction to say whether the
+per-machine (HKLM) branch was tested rather than let it pass silently as covered.
+Closing this one as `done` while quietly carrying five unmet criteria would have
+been the dishonest option.
+
+`CHANGELOG.md` still needs an entry for this change; it is named in the
+follow-up's Touches.

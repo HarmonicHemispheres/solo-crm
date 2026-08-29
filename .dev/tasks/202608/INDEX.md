@@ -9,8 +9,8 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 |---|---|---|---|---|
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
 | ○ open | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | P0-03 |
-| ◐ in-progress | [T-260829-01](T-260829-01-installer-maintenance-page.md) | Offer repair or remove when the installer finds an existing installation | 📦 build | X-09 |
 | ○ open | [T-260829-02](T-260829-02-release-versioning.md) | Give each release a distinct version so two installers are never the same file name | 📦 build | X-09 |
+| ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
 
 ### Phase 1 — the spine
 
@@ -94,3 +94,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | R-260828-03 |
 | ● done | [T-260828-39](T-260828-39-readonly-query-channel.md) | Open a genuinely read-only query channel — second connection plus statement refusal | 🔌 ipc | R-260828-03 |
 | ● done | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | R-260828-03 |
+| ● done | [T-260829-01](T-260829-01-installer-maintenance-page.md) | Offer repair or remove when the installer finds an existing installation | 📦 build | R-260828-03 |
