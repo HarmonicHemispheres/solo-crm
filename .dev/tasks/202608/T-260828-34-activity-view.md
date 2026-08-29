@@ -1,11 +1,11 @@
 ---
 id: T-260828-34
 title: Build the Activity view — the append-only log across companies, people and engagements
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-17
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -72,3 +72,23 @@ Calendar-derived rows (P4-xx).
   looking correct.
 - **Loading the whole table.** Activity is unbounded; the first slow view in
   this app will be this one.
+
+
+---
+
+## Outcome
+
+Merged as `4a870c5`, resolving a `query-keys.ts` conflict
+against T-260828-31. Review non-blocking.
+
+**Changed:** `views/Activity.tsx`, its CSS and test, one line of `routes.tsx`,
+and `queryKeys.activity.list` made filter-aware.
+
+**Conflict resolution worth recording:** T-260828-31 added `activity.byPerson`
+and this task made `activity.list` take an optional filter. They are
+complementary rather than competing, so both were kept — `byPerson` has a live
+caller in PersonDetail, and a distinct prefix keeps a person's timeline
+invalidatable without touching the Activity view's cached pages.
+
+G8 holds: the view offers no edit and no delete affordance, asserted over the
+rendered output.

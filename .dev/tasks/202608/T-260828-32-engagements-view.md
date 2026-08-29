@@ -1,11 +1,11 @@
 ---
 id: T-260828-32
 title: Build the Engagements view — cards grouped by status, progress per billing model
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-15
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -83,3 +83,19 @@ is a decision, not an omission). Filters and saved views (P2-08).
 - **Reintroducing Pipeline** because a status-grouped card view looks like it
   wants to be a board. ADR-005 is the record; re-litigating it is a decision
   task, not this one.
+
+
+---
+
+## Outcome
+
+Merged as `fe7f9aa`, resolving a one-line `routes.tsx` import
+conflict. Review non-blocking.
+
+**Changed:** `views/Engagements.tsx`, its CSS and test, one line of `routes.tsx`.
+
+Under ADR-005 this is the only view of engagement state, so the review checked
+what it fails to show as hard as what it shows. Confirmed clean on ADR-003 — no
+`SUM`, no per-month projection, no branching on `billing_model` to produce a
+money figure, which is what AGENTS.md names the highest-risk carry-over in the
+project and what the mockup does with hardcoded arrays.

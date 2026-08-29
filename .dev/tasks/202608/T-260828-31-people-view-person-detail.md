@@ -1,11 +1,11 @@
 ---
 id: T-260828-31
 title: Build the People view and person detail — affiliation history made visible
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-14
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -77,3 +77,18 @@ stored.
   schema; the form is where it comes back.
 - **Reimplementing the card/list toggle** instead of sharing T-260828-28's. Two
   implementations means two persistence keys and two behaviours.
+
+
+---
+
+## Outcome
+
+Merged as `036d187`. Review non-blocking.
+
+**Changed:** `views/People.tsx`, `PersonDetail.tsx`, their CSS and tests, one
+line of `routes.tsx`, and `queryKeys.activity.byPerson`.
+
+The affiliation history is visible, which was the point — a person with two
+affiliations shows both, the closed one marked historical with its date range,
+and their activity follows them across employers rather than being filtered by
+the company the row happens to carry.

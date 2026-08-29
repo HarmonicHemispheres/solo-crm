@@ -1,11 +1,11 @@
 ---
 id: T-260828-33
 title: Build the Todos view — grouped by date or client, inline completion and quick-add
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-16
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -79,3 +79,22 @@ not ask for it and it is a large amount of interaction for a single-user tool.
 - **Quick-add inheriting the group only visually** — the row appears in the
   right place until the next refetch moves it.
 - **Colour as the only overdue signal** — `.claude/rules/ui-design.md`.
+
+
+---
+
+## Outcome
+
+Merged as `8854794`, resolving a one-line `routes.tsx` import
+conflict. Review non-blocking.
+
+**Changed:** `views/Todos.tsx`, its CSS and test, one line of `routes.tsx`, and a
+new `view.todos.groupBy` settings key.
+
+The owed count comes from `tasks:countOpen` rather than a filter written in the
+view, so waiting items stay out of it — the "open defined twice" risk that
+T-260828-23's review already had to remove once at the repository layer.
+
+**Note:** this task's new settings key is what broke T-260828-38 on the merged
+tree — see that task's outcome. Working as intended: the exhaustiveness test
+caught a registry key nothing accounted for.

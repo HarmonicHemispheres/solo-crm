@@ -1,11 +1,11 @@
 ---
 id: T-260828-30
 title: Build company detail — todos with the next step, activity timeline, contacts
-status: in-progress
+status: done
 category: ui
 plan_ref: P1-13
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -80,3 +80,35 @@ land, but neither blocks the other. Cadence nudges (P2-05).
   has to get right.
 - **Colour as the only status signal** — `.claude/rules/ui-design.md` forbids it
   and it loads automatically for renderer work.
+
+
+---
+
+## Outcome
+
+Merged as `5f86f32`, resolving a `query-keys.ts` conflict by
+union. Review **blocking**; fixed before merge.
+
+**Changed:** `views/CompanyDetail.tsx` and its test, `queryKeys.tasks.byCompany`
+and `queryKeys.activity.{byCompany,byPerson,byEngagement}`.
+
+1. *(blocking)* **A timezone off-by-one.** `daysSinceDateOnly` subtracted a
+   UTC-midnight `parseDateOnly(dueOn)` from a local wall-clock `Date.now()`,
+   mixing two frames — so every due-date label was wrong by a day for any user
+   west of UTC from roughly 17:00 local onward. This machine runs UTC-7, so it
+   was wrong here most evenings. Now compares calendar date to calendar date,
+   with a test pinned to a late-evening local time west of UTC; a test at midday
+   would have passed either way, which is exactly why it survived.
+2. `NextStepBlock` rendered no completion checkbox and no promote control — the
+   one todo the page exists to draw attention to was the only one you could not
+   tick off.
+3. A former contact's activity at their **new** employer leaked into their old
+   company's timeline; `activity:list({ personId })` was bounded by neither the
+   company nor the affiliation date range.
+4. Six mutants survived in one uncovered block — the due-label chain, its class
+   chain, the waiting-since age, two activity-kind maps and the contacts count.
+
+**Deferred:** the per-person IPC fan-out (contacts and activity issue round
+trips proportional to the whole database rather than to this company), an
+unreachable `.check svg` rule, and `.contacts-historical` dimming the focus ring
+to 60% along with the text.
