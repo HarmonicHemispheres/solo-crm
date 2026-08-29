@@ -879,9 +879,103 @@ describe('deleteEngagement: referential refusals — all five foreign keys migra
   })
 })
 
+// ---------------------------------------------------------------------------
+// The ADR-003 guard
+//
+// This is a backstop for review, not a replacement for it. It matches three
+// shapes a per-billing-model money helper takes, and a determined author can
+// still write one it does not see (a lookup table keyed by model, arithmetic
+// spelled `Math.imul`, a helper in another file). What it does buy is that
+// the *obvious* form — the `monthlyValue(engagement)` that branches on
+// `billingModel` and multiplies hours by a rate, named as the highest-risk
+// carry-over in this project — cannot land here unnoticed. Widened by
+// T-260828-46: the original grepped only `/\bSUM\s*\(/i`, which catches an
+// aggregate but not that helper, which contains no `SUM` at all.
+// ---------------------------------------------------------------------------
+
+/** Comments removed. Nothing here is about what the file *says*, only what it executes — the header comment names `SUM` and every billing model in prose. */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n')
+}
+
+/**
+ * String and template literals emptied too. Every SQL string in this
+ * repository is a literal, and `SELECT * FROM engagements` is not
+ * arithmetic; emptying a template also drops the code in its `${…}` holes,
+ * which today is only `columns.join(', ')`-shaped SQL assembly.
+ */
+function withoutCommentsOrStrings(source: string): string {
+  return withoutComments(source)
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+}
+
+/** Returns one line per rule this source breaks — empty means the source is clean. */
+function adr003Violations(source: string): string[] {
+  const violations: string[] = []
+
+  // 1. An aggregate. The original rule, unchanged.
+  if (/\bSUM\s*\(/i.test(source)) {
+    violations.push('SUM( — an aggregate belongs in the revenue-lines generator (P3-05), not here')
+  }
+
+  // 2. Arithmetic in executable code. This repository reads and writes stored
+  //    columns; it multiplies nothing by anything. `+` is deliberately not
+  //    listed — every refusal message in the file concatenates strings with
+  //    it, so it carries no signal.
+  const arithmetic = withoutCommentsOrStrings(source).match(/[*/%]/g)
+  if (arithmetic) {
+    violations.push(`arithmetic (${arithmetic.join(' ')}) — this repository computes no figure, it returns stored columns`)
+  }
+
+  // 3. A branch on a billing-model literal. `parsed.billingModel !==
+  //    currentRow.billing_model` (updateEngagement's "is the model actually
+  //    changing" test) compares two columns, names no model, and passes;
+  //    `if (e.billingModel === 'retainer')` does not.
+  const models = String.raw`retainer|fixed|tm|equity|none`
+  const executable = withoutComments(source)
+  const branches = [
+    ...(executable.match(new RegExp(String.raw`(?:===|!==|==|!=|case)\s*(['"\`])(?:${models})\1`, 'g')) ?? []),
+    ...(executable.match(new RegExp(String.raw`(['"\`])(?:${models})\1\s*(?:===|!==|==|!=)`, 'g')) ?? [])
+  ]
+  if (branches.length > 0) {
+    violations.push(`a branch on a billing-model literal (${branches.join(', ')}) — per-model money branching lives only in P3-05`)
+  }
+
+  return violations
+}
+
 describe('this file computes no summed, projected or per-month figure (ADR-003 / this task Risks)', () => {
-  it('contains no SUM in its source — every revenue question stays in the revenue-lines generator (P3-05)', () => {
-    const source = readFileSync(join(__dirname, 'engagements.ts'), 'utf8')
-    expect(source).not.toMatch(/\bSUM\s*\(/i)
+  it('engagements.ts breaks none of the three rules — every revenue question stays in the revenue-lines generator (P3-05)', () => {
+    expect(adr003Violations(readFileSync(join(__dirname, 'engagements.ts'), 'utf8'))).toEqual([])
+  })
+
+  it('the guard catches a monthlyValue helper that branches on billingModel and contains no SUM', () => {
+    // The exact shape the Risks section names, and the exact shape the
+    // SUM-only rule let through. Kept as a fixture rather than pasted into
+    // engagements.ts and deleted again, so the guard stays measured rather
+    // than assumed after the next edit to either file.
+    const synthetic = [
+      'function monthlyValue(engagement: Engagement): number {',
+      "  if (engagement.billingModel === 'retainer') return engagement.agreedRateCents ?? 0",
+      "  if (engagement.billingModel === 'tm') return (engagement.hourlyRateCents ?? 0) * (engagement.estimatedHours ?? 0)",
+      '  return 0',
+      '}'
+    ].join('\n')
+
+    expect(synthetic).not.toMatch(/\bSUM\s*\(/i)
+    const violations = adr003Violations(synthetic)
+    expect(violations).toHaveLength(2)
+    expect(violations.join('\n')).toContain('arithmetic')
+    expect(violations.join('\n')).toContain('billing-model literal')
+  })
+
+  it('leaves the comparison updateEngagement actually makes alone', () => {
+    expect(adr003Violations('const changing = parsed.billingModel !== currentRow.billing_model')).toEqual([])
   })
 })

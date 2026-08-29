@@ -252,6 +252,11 @@ export function deletePerson(db: Database.Database, id: string): void {
         table: 'affiliations',
         column: 'person_id',
         reason: 'affiliations',
+        // The route this sentence names is `deleteAffiliation` below, which
+        // exists (T-260828-46). Until it did, this message sent an operator
+        // looking for a control nobody had built — the refusal was honest
+        // about *why* and dishonest about *what to do next*. Never reword
+        // this to promise a route without checking the route exists.
         describe: (count) =>
           `Cannot delete "${person.name}": ${count} affiliation${count === 1 ? '' : 's'} reference them. ` +
           'Remove those affiliations before deleting this person.'
@@ -331,6 +336,14 @@ export function listAffiliationsForCompany(db: Database.Database, companyId: str
 // ---------------------------------------------------------------------------
 // affiliations: is_primary — scoped to the company, not the person
 //
+// Recorded outside this comment as ADR-009 (T-260828-46): §5 says only
+// `is_primary boolean`, and the acceptance criterion this was built against
+// reads equally well per-person, so the choice below is a decision, not a
+// reading of the spec. T-260828-31 (person detail) and T-260828-26 (the IPC
+// contract) both consume it. `people.test.ts`'s "is_primary is scoped to the
+// company, not the person (ADR-009)" case fails if the per-person reading is
+// ever implemented instead.
+//
 // A person's "current job" is already `ended IS NULL`; a second flag scoped
 // to the person would only re-derive that. What is_primary answers instead
 // is a real, separate question a company can have several open affiliations
@@ -409,6 +422,26 @@ export function addAffiliation(db: Database.Database, input: unknown): Affiliati
   return mapAffiliationRow(run())
 }
 
+/**
+ * The explicit correction verb for a stint's dates (T-260828-46, scope item
+ * 3). Two edges that used to be unstated and untested are decided here:
+ *
+ * - `{ ended: <a date> }` on an **already-ended** affiliation overwrites the
+ *   old `ended`. That is deliberate: a mistyped leaving date has no other
+ *   way out, and this function is the place a caller says "I mean to change
+ *   this date" in so many words. `endAffiliation` — the verb that reads as
+ *   "close this stint", not "correct this date" — refuses that same write
+ *   instead; see its own comment.
+ * - `{ ended: null }` **reopens** a closed stint, for the same reason: an
+ *   affiliation ended by accident (or by a `movePerson` that should not have
+ *   run) is otherwise stuck closed forever. Reopening leaves `started`
+ *   alone, so no history is lost, and the row rejoins the `ended IS NULL`
+ *   set that `getPerson`'s `current` flag and `clearOtherPrimaries` read.
+ *
+ * Neither is a silent overwrite of history: `personId`/`companyId` remain
+ * unpatchable (the schema rejects them), so the one fact §5 built this table
+ * to keep — which company, from when — cannot be rewritten through here.
+ */
 export function updateAffiliation(db: Database.Database, id: string, patch: unknown): Affiliation {
   const parsed = parseInput(updateAffiliationInputSchema, patch)
 
@@ -463,10 +496,68 @@ export function updateAffiliation(db: Database.Database, id: string, patch: unkn
   return mapAffiliationRow(run())
 }
 
-/** Convenience wrapper over `updateAffiliation` that only ever touches `ended`. */
+/**
+ * Convenience wrapper over `updateAffiliation` that only ever touches
+ * `ended` — and, since T-260828-46, refuses on an affiliation that is
+ * already closed rather than silently overwriting the date it closed on.
+ *
+ * Probing a real database found this verb turning a 2021 leaving date into a
+ * 2023 one with no signal at all. "End this stint" applied to a stint that
+ * already ended is far more often a stale id or a double-submit than an
+ * intended correction, and the two are indistinguishable once the old value
+ * is gone. Correcting the date is `updateAffiliation({ ended })`, which the
+ * refusal names; reopening is `updateAffiliation({ ended: null })`.
+ */
 export function endAffiliation(db: Database.Database, id: string, endedOn: unknown): Affiliation {
   const parsedEndedOn = parseInput(endAffiliationInputSchema, endedOn)
+
+  const existing = getAffiliationRow(db, id)
+  if (!existing) {
+    throw new NotFoundError('Affiliation', id)
+  }
+  if (existing.ended !== null) {
+    throw new RefusalError(
+      `This affiliation already ended on ${existing.ended}. ` +
+        'Use updateAffiliation to change that date deliberately, or to reopen the stint with ended: null.',
+      { reason: 'already-ended' }
+    )
+  }
+
   return updateAffiliation(db, id, { ended: parsedEndedOn })
+}
+
+/**
+ * The one way an affiliation row leaves the database (T-260828-46) — and the
+ * route `deletePerson`'s and `deleteCompany`'s refusal messages name. Before
+ * it existed, a person or company that had ever been referenced by an
+ * affiliation was permanently undeletable, because no caller had any way to
+ * satisfy the refusal.
+ *
+ * This is for the affiliation that should never have existed: a typo, a row
+ * attached to the wrong person, a duplicate. It is deliberately **not** how
+ * a finished stint is recorded — that is `endAffiliation`, which keeps the
+ * row and stamps `ended`, and `movePerson`, which closes the old stint
+ * rather than replacing it. Deleting a real stint erases the fact that
+ * someone worked somewhere, which is the history §5 gave affiliations their
+ * own table to keep. The repository cannot tell a typo from a stint, so the
+ * choice stays with the caller and this function does exactly what it is
+ * asked, nothing more.
+ *
+ * No cascade in either direction, on purpose. Nothing in migration 0001 has
+ * a foreign key pointing at `affiliations.id`, so there is no blocker list
+ * to run; and `deletePerson`/`deleteCompany` still refuse rather than
+ * sweeping affiliations away on the caller's behalf — every erased stint is
+ * an explicit call to this function, one row at a time.
+ */
+export function deleteAffiliation(db: Database.Database, id: string): void {
+  const run = db.transaction(() => {
+    if (!getAffiliationRow(db, id)) {
+      throw new NotFoundError('Affiliation', id)
+    }
+    db.prepare('DELETE FROM affiliations WHERE id = ?').run(id)
+  })
+
+  run()
 }
 
 /**

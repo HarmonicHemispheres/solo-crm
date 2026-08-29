@@ -645,6 +645,12 @@ describe('deleteCompany: referential refusals — all eight foreign keys migrati
 
       expect(thrown).toBeInstanceOf(RefusalError)
       expect((thrown as RefusalError).blocker).toEqual({ reason: 'affiliations', count: 1 })
+      // Word-for-word `deletePerson`'s affiliation refusal (T-260828-46), and
+      // deliberately no longer offering to "reassign": an affiliation's
+      // person/company pair is fixed at creation, so the only route out is
+      // `deleteAffiliation` — which exists, and is what "remove" means here.
+      expect((thrown as RefusalError).message).toContain('Remove those affiliations before deleting this company')
+      expect((thrown as RefusalError).message).not.toContain('Reassign')
       expect(getCompany(db, company.id)).not.toBeNull()
     })
   })
