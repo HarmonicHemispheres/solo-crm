@@ -4,6 +4,7 @@ import { Companies } from './views/Companies'
 import { CompanyDetail } from './views/CompanyDetail'
 import { People } from './views/People'
 import { PersonDetail } from './views/PersonDetail'
+import { Engagements } from './views/Engagements'
 
 /**
  * A minimal stand-in for a view body — this task's scope is the shell, not
@@ -33,7 +34,7 @@ export function AppRoutes() {
         <Route path="people" element={<People />} />
         <Route path="person/:id" element={<PersonDetail />} />
         <Route path="services" element={<ViewPlaceholder title="Catalogue" />} />
-        <Route path="engagements" element={<ViewPlaceholder title="Engagements" />} />
+        <Route path="engagements" element={<Engagements />} />
         <Route path="workspace" element={<Outlet />}>
           <Route index element={<Navigate to="settings" replace />} />
           <Route path="settings" element={<ViewPlaceholder title="Settings" />} />
