@@ -341,11 +341,11 @@ describe('is_primary: setting one clears the others at the same company', () => 
     })
   })
 
-  it('is_primary is scoped to the company, not the person (ADR-009): one person can be primary at two companies at once', () => {
+  it('is_primary is scoped to the company, not the person (ADR-010): one person can be primary at two companies at once', () => {
     // The test the two readings disagree on, and the reason it uses ONE
     // person where the "different company" case above uses two. §5 says only
     // `is_primary boolean`; a per-person reading ("this person's main
-    // employer") would have the second call clear the first. ADR-009 records
+    // employer") would have the second call clear the first. ADR-010 records
     // the per-company reading — "the main point of contact at this company" —
     // and this case fails if the other one is ever implemented.
     withDatabase((db) => {

@@ -1,5 +1,5 @@
 ---
-id: ADR-009
+id: ADR-010
 title: is_primary on an affiliation is scoped to the company, not the person
 status: accepted
 date: 2026-08-29
@@ -52,7 +52,7 @@ correct, not a bug to fix.
   can be cleared by a later primary write at that company. That is the
   intended reading: it is an open affiliation again.
 - **Pinned by a test, not by prose.** `people.test.ts`'s case *"is_primary is
-  scoped to the company, not the person (ADR-009): one person can be primary at
+  scoped to the company, not the person (ADR-010): one person can be primary at
   two companies at once"* fails if the per-person reading is ever implemented.
   It deliberately uses one person across two companies — the pre-existing
   "different company" case uses two people and passes under either reading.

@@ -147,6 +147,46 @@ for (const month of months) {
   }
 }
 
+
+// Two tasks scoped in parallel both pick "the next free ADR number", because
+// each looked at a main where it was free. Their filenames differ, so git
+// merges both without a conflict and nothing downstream complains — you end up
+// with two ADR-009s, and every code comment citing ADR-009 becomes ambiguous
+// rather than wrong, which is the harder kind to notice. T-260828-46 and
+// T-260828-51 did exactly this in run R-260828-03.
+//
+// Checked here rather than in a new script because this one already runs at
+// every merge (the index-gate hook), in `verify`, and in `run-tasks`.
+const DECISIONS_DIR = '.dev/decisions'
+if (existsSync(DECISIONS_DIR)) {
+  const byNumber = new Map()
+  for (const name of readdirSync(DECISIONS_DIR).filter((n) => n.endsWith('.md'))) {
+    const path = join(DECISIONS_DIR, name)
+    const declared = frontmatterField(readFileSync(path, 'utf8'), 'id')
+    const fromName = name.match(/^(ADR-\d+)/)?.[1]
+
+    // The filename is what a reader greps for and what a link resolves to, so
+    // a file whose frontmatter disagrees with its own name is its own defect.
+    if (declared && fromName && declared !== fromName) {
+      problems.push(`${path}: frontmatter says "${declared}" but the filename says "${fromName}"`)
+    }
+    const id = fromName ?? declared
+    if (!id) {
+      problems.push(`${path}: no ADR number in the filename or the frontmatter`)
+      continue
+    }
+    byNumber.set(id, [...(byNumber.get(id) ?? []), name])
+  }
+
+  for (const [id, names] of byNumber) {
+    if (names.length > 1) {
+      problems.push(
+        `${id}: claimed by ${names.length} files (${names.join(', ')}) — two decisions with one number, so every citation of ${id} is ambiguous. Renumber the later one and update its references.`
+      )
+    }
+  }
+}
+
 if (problems.length) {
   console.error(`Task index drift — ${problems.length} problem${problems.length === 1 ? '' : 's'}:\n`)
   for (const problem of problems) console.error(`  ${problem}`)

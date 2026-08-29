@@ -336,12 +336,12 @@ export function listAffiliationsForCompany(db: Database.Database, companyId: str
 // ---------------------------------------------------------------------------
 // affiliations: is_primary — scoped to the company, not the person
 //
-// Recorded outside this comment as ADR-009 (T-260828-46): §5 says only
+// Recorded outside this comment as ADR-010 (T-260828-46): §5 says only
 // `is_primary boolean`, and the acceptance criterion this was built against
 // reads equally well per-person, so the choice below is a decision, not a
 // reading of the spec. T-260828-31 (person detail) and T-260828-26 (the IPC
 // contract) both consume it. `people.test.ts`'s "is_primary is scoped to the
-// company, not the person (ADR-009)" case fails if the per-person reading is
+// company, not the person (ADR-010)" case fails if the per-person reading is
 // ever implemented instead.
 //
 // A person's "current job" is already `ended IS NULL`; a second flag scoped

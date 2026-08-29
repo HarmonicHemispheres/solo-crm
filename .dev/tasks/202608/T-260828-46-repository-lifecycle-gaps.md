@@ -1,11 +1,11 @@
 ---
 id: T-260828-46
 title: Close the repository lifecycle gaps review found but left out of scope
-status: in-progress
+status: done
 category: data
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -104,3 +104,87 @@ the meaning already implemented.
 - **An ADR-003 guard that greps for names.** Matching on `monthlyValue` catches
   one spelling. The guard is a backstop for review, not a replacement — say so
   where it lives.
+
+
+---
+
+## Outcome
+
+Merged. Built by a subagent under the build-only process; reviewed and verified
+by the orchestrator at merge, with an ADR number collision resolved on top.
+
+**Changed:** `electron/main/db/repositories/{people,companies,engagements}.ts`
+and their tests, plus `.dev/decisions/ADR-010-is-primary-scope.md` (new).
+
+### Decisions the scope left open, each settled in the code
+
+- **`deleteAffiliation` deletes any affiliation, open or closed.** The
+  acceptance criterion requires `deletePerson`'s refusal message to be
+  *satisfiable*, and under a closed-stints-are-undeletable rule a person whose
+  affiliations had all ended would be permanently undeletable. The history risk
+  is handled instead by keeping the delete explicit and cascade-free —
+  `deletePerson` and `deleteCompany` still refuse, and nothing holds a foreign
+  key to `affiliations.id`, so there is no blocker list to maintain.
+- **`endAffiliation` now refuses an already-ended affiliation.**
+  `updateAffiliation` is the deliberate correction verb; both overwriting an end
+  date and reopening a stint (`{ ended: null }`) go through it, and both are
+  tested.
+- **A refusal message stopped naming a route that does not exist.**
+  `companies.ts`'s affiliation refusal said "Reassign or…", but
+  `updateAffiliation` rejects `personId` and `companyId`, so reassigning was a
+  second nonexistent escape in the same sentence. The two messages are now
+  word-for-word parallel, pinned by an assertion.
+
+### ADR-010: `is_primary` is scoped to the company, not the person
+
+§5 of the requirements says only `is_primary boolean`, and T-260828-21's
+acceptance — "setting one primary clears the others" — reads equally well as
+*which company is this person's main affiliation* or *which of the people we
+know at this client is the main contact.* T-260828-21 implemented the
+per-company reading and recorded why in a code comment; this promotes it to a
+decision, and pins it with a test asserting one person can be primary at two
+companies at once.
+
+### The ADR-003 guard now catches the shape it was written for
+
+The original rule grepped `/\bSUM\s*\(/i` — which catches an aggregate but
+**not** the `monthlyValue(engagement)` helper that branches on `billingModel`
+and multiplies hours by a rate, named in the task plan as the highest-risk
+carry-over in this project and containing no `SUM` at all.
+
+It now checks three shapes against source with comments and string literals
+stripped: an aggregate, arithmetic in executable code, and a comparison or
+`case` against a billing-model literal. `+` is deliberately exempt because every
+refusal message concatenates with it.
+
+**Proven, not asserted.** A synthetic `monthlyValue` fixture lives in the test
+and is required to trip exactly two rules while matching no `SUM` — so the guard
+stays measured after the next edit to either file, rather than being pasted into
+`engagements.ts` and deleted again. Its header says plainly that it is a backstop
+for review and not a replacement: a determined author can still evade it with a
+lookup table keyed by model, or a helper in another file.
+
+**Verified at merge:** typecheck clean across all three passes;
+`node` + `runtime-boot-node`, 29 files / 627 tests green on the merged tree.
+
+## The ADR number collision, and the gate now standing where it happened
+
+This branch created `ADR-009-is-primary-scope.md`. T-260828-51, built in the
+same wave, created `ADR-009-search-content-table.md` and merged first. **Both
+were right when they chose** — each cut from a main where 009 was free — and
+because the filenames differ, git merged both without a conflict and nothing
+downstream complained.
+
+The result is the harder kind of wrong: not a broken link, but two decisions
+sharing one number, so every code comment citing ADR-009 becomes *ambiguous*
+rather than incorrect. This one is renumbered **ADR-010**, with its frontmatter
+and all four citations in `people.ts` and `people.test.ts` moved with it.
+
+`npm run check:index` now refuses a duplicate ADR number, and also refuses a file
+whose frontmatter `id` disagrees with its own filename — the filename is what a
+reader greps and what a link resolves to, so a mismatch is its own defect. It
+lives in that script rather than a new one because that script already runs at
+every merge (the `index-gate` hook), in `verify`, and in `run-tasks`.
+
+**Verified by probe:** a duplicate ADR-009 dropped into `.dev/decisions/` trips
+both new rules; removed, the check is clean.

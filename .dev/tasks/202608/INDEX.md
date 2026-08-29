@@ -32,7 +32,6 @@ that surfaced them. Each names the review it came from.
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ◐ in-progress | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
-| ◐ in-progress | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
 | ◐ in-progress | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | *(review)* |
 
 ### Workspace — the two blank pages
@@ -94,3 +93,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-53](T-260828-53-wave-d-ui-followups.md) | Restore the focus ring in the sheets, and close wave D UI review findings | 🎨 ui | R-260828-03 |
 | ● done | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | R-260828-03 |
 | ● done | [T-260828-39](T-260828-39-readonly-query-channel.md) | Open a genuinely read-only query channel — second connection plus statement refusal | 🔌 ipc | R-260828-03 |
+| ● done | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | R-260828-03 |
