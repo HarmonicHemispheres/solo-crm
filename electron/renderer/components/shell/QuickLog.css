@@ -1,0 +1,81 @@
+/*
+ * Quick log (T-260828-35). Everything else this overlay needs is already
+ * ported — `.scrim`/`.sheet` (Sheet.css), `.f-lab`/`.inp`/`.chiprow`
+ * (sheets/fields.css), `.chip` (Chip.css), `.toast` (Toast.css). What is
+ * here is the two things the mockup's own quick log has no port of:
+ *
+ * 1. The "who" result list. planning/solo-crm-mockup.html draws a result row
+ *    as `.pal-i` (`.ki` + `.tx`) inside `.pal-list`, but those belong to the
+ *    command palette, which ships with T-260828-37 and has no stylesheet yet
+ *    — these are the mockup's own values under this component's names, so
+ *    neither task has to edit the other's file. The mockup's quick log used a
+ *    plain `<select>` of companies; this list exists because the field has to
+ *    match people too, typed rather than scrolled.
+ * 2. The mockup's bare `textarea{resize:vertical;min-height:72px;
+ *    line-height:1.5}` rule (its line ~251), which sits alongside the
+ *    `.inp,select,textarea` block `fields.css` ported as `.inp`. This is the
+ *    first textarea in the app to wear `.inp`, so the remainder of that rule
+ *    lands here rather than being pushed into the shared sheet stylesheet
+ *    for a single consumer.
+ */
+
+.qlog-note {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+/* In flow under the input rather than an absolutely-positioned dropdown:
+   `.sheet-b` already scrolls (`overflow:auto`, Sheet.css) and `.sheet` clips
+   (`overflow:hidden`), so a floating layer would need z-index and clip
+   management to buy nothing the keyboard path uses. */
+.qlog-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px;
+  max-height: 168px;
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+}
+
+.qlog-opt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border-radius: var(--radius-10);
+  color: var(--mute);
+  cursor: pointer;
+}
+
+/* The mockup's `.pal-i.sel` — the row ↵ would take. `.qlog-list` already
+   sits on `--surface-2`, so the highlight reads against it with `--surface`
+   rather than the mockup's own inverse pairing. */
+.qlog-opt.sel {
+  background: var(--surface);
+  color: var(--papyrus);
+}
+
+.qlog-opt .ki {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--faint);
+  width: 50px;
+  flex: 0 0 50px;
+}
+
+.qlog-opt .tx {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+}
+
+.qlog-none {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  margin: 6px 0 0;
+}

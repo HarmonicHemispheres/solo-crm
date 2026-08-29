@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { AppRoutes } from './routes'
@@ -108,5 +108,20 @@ describe('AppRoutes', () => {
   it('does not render the Pipeline nav item or route (ADR-005)', () => {
     renderAt('/')
     expect(screen.queryByRole('link', { name: /pipeline/i })).toBeNull()
+  })
+
+  it('opens the quick log with ⌘L from every route in the table, detail routes included', () => {
+    // T-260828-35's acceptance. `ShellLayout` registers the shortcut once for
+    // the whole tree (`useGlobalShortcuts`), so this is really a check that
+    // no route escapes that layout — a view rendered outside it would be the
+    // one place ⌘L silently does nothing. Every path ROUTE_META names, which
+    // is every leaf plus `company/:id` and `person/:id`.
+    for (const meta of ROUTE_META) {
+      const path = meta.path.replace(':id', 'test-id')
+      const { unmount } = renderAt(path)
+      fireEvent.keyDown(document, { key: 'l', metaKey: true })
+      expect(screen.getByRole('dialog', { name: 'Log a touch' })).toBeTruthy()
+      unmount()
+    }
   })
 })

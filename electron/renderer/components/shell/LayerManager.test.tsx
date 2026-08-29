@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createQueryClient } from '../../lib/query-client'
+import { stubCrm } from '../../lib/test-support/stub-crm'
 import { LayerManager } from './LayerManager'
 import { useLayerManager } from './layer-manager-context'
+
+afterEach(() => {
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
+  delete window.crm
+})
 
 /** Exercises the context API directly through real buttons — the layer
  * manager's own consumers (Topbar, NewMenu, useGlobalShortcuts) each open a
@@ -60,11 +68,23 @@ function Harness() {
   )
 }
 
+/**
+ * The `log` layer holds P1-09's real quick log now (T-260828-35) rather than
+ * this task's empty shell, and that form reads companies/people/engagements
+ * through TanStack Query — so opening it here needs the same
+ * `QueryClientProvider` + `window.crm` stub `App.tsx` provides in production,
+ * exactly as `routes.test.tsx` already does for its query-backed views. The
+ * default `stubCrm()` answers every list with `[]`, which is all these tests
+ * (about the stack, not the form) need.
+ */
 function renderHarness() {
+  window.crm = stubCrm()
   return render(
-    <LayerManager>
-      <Harness />
-    </LayerManager>
+    <QueryClientProvider client={createQueryClient()}>
+      <LayerManager>
+        <Harness />
+      </LayerManager>
+    </QueryClientProvider>
   )
 }
 

@@ -8,6 +8,7 @@ import { CompanySheet } from '../sheets/CompanySheet'
 import { PersonSheet } from '../sheets/PersonSheet'
 import { EngagementSheet } from '../sheets/EngagementSheet'
 import { TodoSheet } from '../sheets/TodoSheet'
+import { QuickLog } from './QuickLog'
 import './LayerManager.css'
 
 /** Layers that close `menu` and `popover` when they open — the mockup's own
@@ -25,8 +26,9 @@ const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'she
  * `layer-manager-context.ts` for the `LayerKind`/context types and
  * `useLayerManager`.
  *
- * `sheet` and `log` are two instances of the same `<Sheet>` primitive
- * (T-260828-11), rendered with `closeOnEscape={false}`: the primitive's
+ * `sheet` and `log` are both built on the same `<Sheet>` primitive
+ * (T-260828-11) — `log` through `QuickLog` (T-260828-35), which renders one
+ * — and every instance passes `closeOnEscape={false}`: the primitive's
  * standalone default is its own document-level Escape listener, which would
  * fire alongside the central handler here and close a sheet that isn't
  * topmost — one Esc taking two layers with it, the exact failure this
@@ -220,28 +222,12 @@ export function LayerManager({ children }: { children: ReactNode }) {
     },
     {
       kind: 'log',
-      node: (
-        <Sheet
-          open={isOpen('log')}
-          onClose={() => closeLayer('log')}
-          closeOnEscape={false}
-          title="Log a touch"
-          aria-label="Log a touch"
-          footerNote="resets the cadence clock"
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => closeLayer('log')}>
-                Cancel
-              </Button>
-              <Button variant="primary" disabled>
-                Save
-              </Button>
-            </>
-          }
-        >
-          <EmptyState>Quick-log ships with its own task (P1-09).</EmptyState>
-        </Sheet>
-      )
+      // P1-09's real quick log (T-260828-35), in place of this task's empty
+      // shell. `QuickLog` takes `open` rather than being mounted only while
+      // the layer is open, unlike the four create sheets above: it owns the
+      // confirmation toast that has to outlive the overlay closing, and
+      // mounts its own form fresh internally so each open still starts blank.
+      node: <QuickLog open={isOpen('log')} onClose={() => closeLayer('log')} />
     }
   ]
 
