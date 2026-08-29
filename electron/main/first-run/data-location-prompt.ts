@@ -1,8 +1,14 @@
-import { existsSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, dialog as electronDialog } from 'electron'
+import { databasePathIn } from '../db/connection'
 import { DATA_ROOT_POINTER_FILENAME, writeDataRootPointer } from '../db/data-root'
-import { findSyncFolderMatch, type SyncFolderMatch } from '../db/sync-folder-guard'
+import {
+  findBlockingSyncFolderMatch,
+  SYNC_FOLDER_GUARD_OVERRIDE_ENV,
+  type SyncFolderMatch
+} from '../db/sync-folder-guard'
 
 /**
  * T-260828-18: the one place a human is asked, once, where Solo CRM should
@@ -12,12 +18,17 @@ import { findSyncFolderMatch, type SyncFolderMatch } from '../db/sync-folder-gua
  * chicken-and-egg ADR-006 exists to avoid). Everything here is native
  * `dialog` calls plus T-260828-17's already-built pieces
  * (`resolveDataRoot`'s pointer filename, `writeDataRootPointer`,
- * `findSyncFolderMatch`) — this task does the *choosing*, not the resolving
- * or the writing mechanics.
+ * `findBlockingSyncFolderMatch`) — this task does the *choosing*, not the
+ * resolving or the writing mechanics.
+ *
+ * T-260828-57 closed the three ways this file had drifted away from that
+ * rule: it had its own copy of the database filename, its own half of the
+ * sync-folder guard (which ignored the documented override), and it
+ * committed a pointer file before anything had proven the chosen folder was
+ * writable. Each is now the shared thing instead of a local copy — see
+ * `resolveUnguardedDatabasePath`, `findBlockingSyncFolderMatch` and
+ * `probeWritable` below.
  */
-
-/** Mirrors `resolveDatabasePath`'s private `DB_FILENAME` in connection.ts — duplicated rather than exported/imported because that constant is deliberately kept private to `connection.ts` (T-260828-05), and the literal already appears in several other modules' comments/tests. */
-const DB_FILENAME = 'solocrm.db'
 
 const BUTTON_USE_DEFAULT = 0
 const BUTTON_CHOOSE_FOLDER = 1
@@ -44,7 +55,18 @@ export interface FirstRunDialog {
     cancelId?: number
     noLink?: boolean
   }): Promise<{ response: number }>
-  showOpenDialog(options: { properties: Array<'openDirectory' | 'createDirectory'> }): Promise<{
+  showOpenDialog(options: {
+    properties: Array<'openDirectory' | 'createDirectory'>
+    /**
+     * All three are carried because the picker opens immediately after a
+     * message box that carefully explained which folder is being asked for,
+     * and a generic OS title ("Open") throws that context away at the
+     * moment the user has to act on it.
+     */
+    title?: string
+    defaultPath?: string
+    buttonLabel?: string
+  }): Promise<{
     canceled: boolean
     filePaths: string[]
   }>
@@ -63,10 +85,10 @@ export interface FirstRunDataLocationOptions {
    */
   skip: boolean
   /**
-   * Overrides `app.getPath('userData')` — both where the pointer file and
-   * `solocrm.db` are looked for, and the root `writeDataRootPointer` writes
-   * against when the user picks "Use the default". Tests only, mirroring
-   * `OpenDatabaseOptions`/`DataRootOptions`: production never passes this.
+   * Overrides `app.getPath('userData')` — where the pointer file and
+   * `solocrm.db` are looked for, and the root the pointer is written
+   * against. Tests only, mirroring `OpenDatabaseOptions`/`DataRootOptions`:
+   * production never passes this.
    */
   userDataDir?: string
   /**
@@ -89,7 +111,10 @@ export type FirstRunOutcome =
    * their data.
    */
   | { readonly kind: 'existing-install' }
-  /** "Use the default" — the pointer now names the default root explicitly. */
+  /**
+   * "Use the default" — and, deliberately, **no pointer file was written**.
+   * See `runChoiceLoop` for why that is the choice that matches ADR-006.
+   */
   | { readonly kind: 'default-chosen' }
   /** "Choose a folder…" with a valid pick — the pointer names `dataRoot`. */
   | { readonly kind: 'folder-chosen'; readonly dataRoot: string }
@@ -101,10 +126,6 @@ export type FirstRunOutcome =
    * uses for its own error rather than calling `app.exit` itself.
    */
   | { readonly kind: 'quit' }
-
-function defaultDatabasePathUnder(userDataDir: string): string {
-  return join(userDataDir, DB_FILENAME)
-}
 
 function buildChoiceMessageBox(defaultDbPath: string): Parameters<FirstRunDialog['showMessageBox']>[0] {
   return {
@@ -123,6 +144,18 @@ function buildChoiceMessageBox(defaultDbPath: string): Parameters<FirstRunDialog
   }
 }
 
+function buildOpenDialogOptions(defaultDataRoot: string): Parameters<FirstRunDialog['showOpenDialog']>[0] {
+  return {
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Choose the folder for Solo CRM’s data',
+    // Opens the picker where the message box just said the data would go by
+    // default, so "somewhere else" is a move from a known starting point
+    // rather than from wherever the OS last happened to leave the picker.
+    defaultPath: defaultDataRoot,
+    buttonLabel: 'Use this folder'
+  }
+}
+
 function buildSyncFolderRefusalMessageBox(match: SyncFolderMatch): Parameters<FirstRunDialog['showMessageBox']>[0] {
   return {
     type: 'warning',
@@ -131,7 +164,28 @@ function buildSyncFolderRefusalMessageBox(match: SyncFolderMatch): Parameters<Fi
     detail:
       `"${match.resolvedPath}" runs through a "${match.marker}" folder. File-sync services (Google Drive, ` +
       `Dropbox, iCloud, OneDrive) and SQLite write to the same file at the same time and corrupt each other — ` +
-      `this is not a database bug, it only shows up later as one. Choose a different folder.`,
+      `this is not a database bug, it only shows up later as one. Choose a different folder.\n\n` +
+      // The override is what would allow this exact pick, so the refusal
+      // names it rather than leaving the user to find it in a source file
+      // (T-260828-57: the same sentence `SyncFolderGuardError` already
+      // carries at boot, said at the moment the choice is being made).
+      `If you understand the risk and want this folder anyway, quit, set the environment variable ` +
+      `${SYNC_FOLDER_GUARD_OVERRIDE_ENV}=1, and start Solo CRM again.`,
+    buttons: ['OK'],
+    defaultId: 0,
+    cancelId: 0
+  }
+}
+
+function buildNotWritableMessageBox(chosen: string, reason: string): Parameters<FirstRunDialog['showMessageBox']>[0] {
+  return {
+    type: 'warning',
+    title: 'That folder cannot be used',
+    message: 'That folder cannot be used',
+    detail:
+      `Solo CRM could not create a file in "${chosen}", so it would not be able to create its database ` +
+      `there either — ${reason}\n\nThis can happen with a read-only folder, a disconnected drive, or a ` +
+      `network share that is not available. Choose a different folder.`,
     buttons: ['OK'],
     defaultId: 0,
     cancelId: 0
@@ -139,12 +193,51 @@ function buildSyncFolderRefusalMessageBox(match: SyncFolderMatch): Parameters<Fi
 }
 
 /**
+ * Proves the chosen folder can actually be written to, *before* the pointer
+ * naming it is committed. Without this, a read-only or disconnected pick
+ * fails later inside `openDatabase()` — by which time the pointer is on
+ * disk, so every subsequent launch reports `existing-install`, never
+ * re-prompts, and dies on a raw better-sqlite3 "unable to open database
+ * file": an unbootable install with no way back through the interface
+ * (T-260828-57's Why).
+ *
+ * A uniquely-named zero-byte file, removed in a `finally`, so nothing is
+ * left behind in a folder the user is only considering (this task's Risks).
+ * It deliberately does not write `solocrm.db` itself: creating the real
+ * database as a side effect of *looking* at a folder is the same mistake in
+ * a different direction.
+ *
+ * Returns `null` when the folder is writable, or the reason it is not.
+ */
+function probeWritable(folder: string): string | null {
+  const probePath = join(folder, `.solocrm-write-test-${randomUUID()}`)
+  try {
+    writeFileSync(probePath, '', 'utf-8')
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  } finally {
+    // `force: true` so a probe that never got created is not itself an
+    // error, and so a cleanup failure can never turn a *successful* probe
+    // into a refusal.
+    try {
+      rmSync(probePath, { force: true })
+    } catch {
+      // A folder we could write to but not delete from is still writable
+      // enough to hold a database; the stray zero-byte file is the lesser
+      // problem and is not worth refusing the user's choice over.
+    }
+  }
+}
+
+/**
  * Drives the choice → (optional) folder pick → (optional) refusal loop until
- * the user reaches a terminal outcome. Cancelling the folder picker, and a
- * sync-folder refusal, both loop back to the top-level choice rather than
- * falling through to any default — this task's Scope is explicit that a
- * cancelled pick is not the same as choosing the default, and Risks is
- * explicit that a rejected sync-folder pick must never be allowed to commit.
+ * the user reaches a terminal outcome. Cancelling the folder picker, a
+ * sync-folder refusal, and an unwritable folder all loop back to the
+ * top-level choice rather than falling through to any default — this task's
+ * Scope is explicit that a cancelled pick is not the same as choosing the
+ * default, and Risks is explicit that a rejected pick must never be allowed
+ * to commit.
  */
 async function runChoiceLoop(
   dialog: FirstRunDialog,
@@ -159,7 +252,18 @@ async function runChoiceLoop(
     }
 
     if (choice.response === BUTTON_USE_DEFAULT) {
-      writeDataRootPointer(userDataDir, { userDataDir })
+      // Deliberately writes **no** pointer file (T-260828-57). ADR-006
+      // Decision item 1 states that no pointer present *is* the default and
+      // is byte-for-byte the behaviour every install already had; writing
+      // one that names the default root would bake an absolute path into
+      // the profile, so a profile that later moves — a new machine, a
+      // renamed user, a roaming profile — would resolve to a folder that no
+      // longer exists rather than to wherever `app.getPath('userData')` now
+      // points. "Use the default" means *keep* the default, and the honest
+      // representation of that is the absence of a pointer, not a pointer
+      // that happens to agree today. `data-location-prompt.test.ts` checks
+      // this against ADR-006's own text so the two cannot drift apart
+      // silently.
       return { kind: 'default-chosen' }
     }
 
@@ -170,21 +274,28 @@ async function runChoiceLoop(
       throw new Error(`unexpected dialog response from the first-run choice: ${String(choice.response)}`)
     }
 
-    const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+    const picked = await dialog.showOpenDialog(buildOpenDialogOptions(userDataDir))
     if (picked.canceled || picked.filePaths.length === 0) {
       continue
     }
 
     const chosen = picked.filePaths[0]
 
-    // Checked at pick time with the *existing* guard — never a second,
-    // unchecked way to decide whether a path is safe to open a database in
-    // (AGENTS.md). Checked against the exact path `solocrm.db` would end up
-    // at, so the resolved path a refusal names here matches what
-    // `openDatabase()`'s own boot-time guard would have named later.
-    const match = findSyncFolderMatch(defaultDatabasePathUnder(chosen))
+    // Checked at pick time with the *whole* existing guard — the match and
+    // the documented override together (`findBlockingSyncFolderMatch`), so
+    // this screen reaches the same verdict `openDatabase()` will reach a
+    // moment later rather than a stricter one of its own. Checked against
+    // the exact path `solocrm.db` would end up at, so the resolved path a
+    // refusal names here matches what the boot-time guard would name.
+    const match = findBlockingSyncFolderMatch(databasePathIn(chosen))
     if (match) {
       await dialog.showMessageBox(buildSyncFolderRefusalMessageBox(match))
+      continue
+    }
+
+    const notWritable = probeWritable(chosen)
+    if (notWritable !== null) {
+      await dialog.showMessageBox(buildNotWritableMessageBox(chosen, notWritable))
       continue
     }
 
@@ -210,9 +321,25 @@ export async function runFirstRunDataLocationPrompt(options: FirstRunDataLocatio
 
   const userDataDir = options.userDataDir ?? app.getPath('userData')
   const pointerPath = join(userDataDir, DATA_ROOT_POINTER_FILENAME)
-  const defaultDbPath = defaultDatabasePathUnder(userDataDir)
 
-  if (existsSync(pointerPath) || existsSync(defaultDbPath)) {
+  // The pointer check comes first and returns before the path below is
+  // resolved — not just for speed. A pointer present means this is an
+  // existing install whatever it names, and resolving through it would
+  // start applying the pointer's own validation (and its directory
+  // creation) on a code path whose entire job is to answer "has this
+  // profile been set up before".
+  if (existsSync(pointerPath)) {
+    return { kind: 'existing-install' }
+  }
+
+  // The default root, not the resolved one — with no pointer file (ruled
+  // out immediately above) they are the same folder, and asking the
+  // resolver would be circular: this check is what decides whether this
+  // profile has ever been configured. `databasePathIn` is `connection.ts`'s
+  // own expression for the database's location, so this can no longer drift
+  // from where `openDatabase()` will actually look (T-260828-57's Why).
+  const defaultDbPath = databasePathIn(userDataDir)
+  if (existsSync(defaultDbPath)) {
     return { kind: 'existing-install' }
   }
 

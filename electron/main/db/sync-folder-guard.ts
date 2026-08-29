@@ -183,3 +183,56 @@ export class SyncFolderGuardError extends Error {
     this.match = match
   }
 }
+
+/**
+ * The guard as a *decision*. `findSyncFolderMatch` above answers "does this
+ * path run through a sync folder", which is a fact about the string alone;
+ * this answers "may this app put a live database here", which additionally
+ * honours the one documented escape hatch.
+ *
+ * Returns the match that blocks the path, or `null` when the path is
+ * allowed — either because nothing matched, or because
+ * `SOLOCRM_ALLOW_SYNC_FOLDER_DB=1` is set and the user has accepted the
+ * stated risk. T-260828-57: this exists because "find the match, then check
+ * the override" had been written out twice with different answers —
+ * `connection.ts` honoured the override, the first-run chooser did not, so
+ * a user who had deliberately set it could not pick the folder they had
+ * just enabled, and the refusal did not mention the override at all. One
+ * function, so there is one answer.
+ *
+ * The warning fires only when the override actually *suppressed* a match.
+ * That is the breadcrumb that explains a corruption report weeks later;
+ * logging on every allowed path would bury it in noise.
+ */
+export function findBlockingSyncFolderMatch(targetPath: string): SyncFolderMatch | null {
+  const match = findSyncFolderMatch(targetPath)
+  if (!match) return null
+
+  if (isSyncFolderGuardOverridden()) {
+    console.warn(
+      `[db] ${SYNC_FOLDER_GUARD_OVERRIDE_ENV}=1 — sync-folder guard skipped for ${match.resolvedPath} ` +
+        `(matched "${match.marker}")`
+    )
+    return null
+  }
+
+  return match
+}
+
+/**
+ * `findBlockingSyncFolderMatch` as an assertion, for the caller that is
+ * about to open the database rather than ask a question about a path.
+ * Throws `SyncFolderGuardError`, whose message names the path, the reason
+ * and the override, and is written to be shown verbatim by
+ * `electron/main/index.ts`'s startup-failure dialog.
+ *
+ * Called from exactly one place — `resolveDatabasePath()` in
+ * `connection.ts`. See that function for why the guard belongs in the path
+ * resolver rather than beside each call that constructs a connection.
+ */
+export function assertPathOutsideSyncFolder(targetPath: string): void {
+  const match = findBlockingSyncFolderMatch(targetPath)
+  if (match) {
+    throw new SyncFolderGuardError(match)
+  }
+}

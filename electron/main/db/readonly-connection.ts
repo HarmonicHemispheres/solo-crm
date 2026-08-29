@@ -1,11 +1,5 @@
 import Database from 'better-sqlite3'
 import { resolveDatabasePath } from './connection'
-import {
-  findSyncFolderMatch,
-  isSyncFolderGuardOverridden,
-  SYNC_FOLDER_GUARD_OVERRIDE_ENV,
-  SyncFolderGuardError
-} from './sync-folder-guard'
 
 /**
  * The second connection to `solocrm.db` — opened **readonly**, held apart
@@ -54,8 +48,9 @@ import {
  * ## The write connection is unreachable from here
  *
  * This module imports exactly one thing from `./connection` —
- * `resolveDatabasePath`, a pure path function that opens nothing — so the
- * write handle is out of reach by construction rather than by discipline.
+ * `resolveDatabasePath`, which resolves and guards a path and opens
+ * nothing — so the write handle is out of reach by construction rather than
+ * by discipline.
  * `readonly-connection.test.ts` asserts that structurally, against this
  * file's own source, so a later edit that reaches for `getDatabase()` fails
  * a test rather than a code review.
@@ -109,35 +104,15 @@ export function openReadOnlyDatabase(options: ReadOnlyConnectionOptions = {}): D
     )
   }
 
+  // T-260828-06's sync-folder guard covers this connection because
+  // `resolveDatabasePath` itself runs it (T-260828-57) — a refused path
+  // throws out of the line above rather than reaching the constructor
+  // below. Until then the guard lived in `openDatabase()` alone, so this
+  // module was a second, unchecked way to open the database (T-260828-39's
+  // review), and the first fix for that was a second copy of the guard
+  // here. One resolver, one guard: there is no longer anything for a future
+  // opener to remember to call.
   const dbPath = resolveDatabasePath(options)
-
-  // T-260828-06 sync-folder guard, run here as well as in openDatabase()
-  // (T-260828-39 review). resolveDatabasePath() only joins a filename onto the
-  // resolved data root — the guard lives inside openDatabase(), not inside the
-  // path helper — so without this the read-only connection is a second, and an
-  // unchecked, way to open the database. That is the exact shape AGENTS.md
-  // warns about.
-  //
-  // In practice the write connection opens at boot and would already have
-  // refused a sync-folder path, so this is belt to that braces. But the
-  // protection was resting on an ordering invariant nothing enforced: anything
-  // that opened this connection earlier — a first-run diagnostic, a future
-  // repair path — would have bypassed the guard silently, and file-sync
-  // daemons corrupt SQLite whether one connection is attached or two.
-  //
-  // Imported from ./sync-folder-guard directly, never through ./connection, so
-  // the write handle stays unreachable from this module by construction and
-  // the structural test that asserts it still holds.
-  if (isSyncFolderGuardOverridden()) {
-    console.warn(
-      `[db] ${SYNC_FOLDER_GUARD_OVERRIDE_ENV}=1 — sync-folder guard skipped for the read-only connection to ${dbPath}`
-    )
-  } else {
-    const match = findSyncFolderMatch(dbPath)
-    if (match) {
-      throw new SyncFolderGuardError(match)
-    }
-  }
 
   const db = new Database(dbPath, {
     readonly: true,
