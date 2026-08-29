@@ -1,7 +1,7 @@
 ---
 id: T-260828-54
 title: Stop the suite failing under concurrency — cap workers, pool the slow files
-status: open
+status: in-progress
 category: build
 plan_ref: 
 created: 2026-08-28

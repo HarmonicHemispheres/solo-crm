@@ -26,13 +26,19 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 ### Follow-ups from review
 
-Real findings from T-260828-20's review, deferred rather than widening its diff.
+Real findings from review, deferred rather than widening the diff of the task
+that surfaced them. Each names the review it came from.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
-| ○ open | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | *(review)* |
+| ◐ in-progress | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | *(review)* |
 | ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
+| ◐ in-progress | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | 🔧 build | *(review)* |
+| ○ open | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | 🗄 data | *(review)* |
+| ○ open | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | 🗄 data | *(review)* |
+| ○ open | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | *(review)* |
+| ○ open | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | 🎨 ui | *(review)* |
 
 ### Workspace — the two blank pages
 
@@ -40,11 +46,6 @@ Real findings from T-260828-20's review, deferred rather than widening its diff.
 |---|---|---|---|---|
 | ○ open | [T-260828-39](T-260828-39-readonly-query-channel.md) | Open a genuinely read-only query channel — second connection plus statement refusal | 🔌 ipc | X-02 |
 | ○ open | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | X-01 · X-03 |
-| ○ open | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | build | — |
-| ○ open | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | data | — |
-| ○ open | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | data | — |
-| ○ open | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | data | — |
-| ○ open | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | ui | — |
 
 ## Closed this month
 

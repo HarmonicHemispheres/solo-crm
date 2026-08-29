@@ -1,7 +1,7 @@
 ---
 id: T-260828-43
 title: Extract the repository machinery every repository is currently copying
-status: open
+status: in-progress
 category: data
 plan_ref:
 created: 2026-08-28
