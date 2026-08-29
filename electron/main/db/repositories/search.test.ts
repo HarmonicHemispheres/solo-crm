@@ -154,8 +154,14 @@ describe('0002_search_fts: applies cleanly on a database already migrated by 000
       const ftsTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'search_fts'").get()
       expect(ftsTable).toBeDefined()
 
+      // Scoped to the search trigger set rather than counting every trigger
+      // in the database: T-260828-41's migration 0004 installs five triggers
+      // of its own (the polymorphic attachment cascade, ADR-010), which have
+      // nothing to do with this migration. The assertion is unchanged in
+      // strength — still exactly fifteen, still one per (table, event), and
+      // still named individually below.
       const triggers = db
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name")
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'trg%search%' ORDER BY name")
         .all() as { name: string }[]
       expect(triggers).toHaveLength(15)
       for (const table of ['companies', 'people', 'engagements', 'tasks', 'activity']) {
