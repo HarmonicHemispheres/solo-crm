@@ -28,6 +28,24 @@ const STUB_COMPANY_ROW = {
   updatedAt: '2026-08-28T00:00:00.000Z'
 }
 
+/** The one company `companies:list` offers as a billing partner / introducer in these tests. */
+const PARTNER_CO = {
+  id: 'partner-1',
+  name: 'Partner Co',
+  kind: null,
+  website: null,
+  billsDirectly: true,
+  billedViaCompanyId: null,
+  introducedByCompanyId: null,
+  cadenceDays: null,
+  lastTouchAt: null,
+  budgetNote: null,
+  notes: null,
+  since: null,
+  createdAt: '2026-08-28T00:00:00.000Z',
+  updatedAt: '2026-08-28T00:00:00.000Z'
+}
+
 function renderSheet(onClose = vi.fn(), overrides: Parameters<typeof stubCrm>[0] = {}) {
   window.crm = stubCrm(overrides)
   render(
@@ -70,27 +88,7 @@ describe('CompanySheet', () => {
     })
     renderSheet(vi.fn(), {
       'companies:create': create,
-      'companies:list': vi.fn(async () => ({
-        ok: true as const,
-        data: [
-          {
-            id: 'partner-1',
-            name: 'Partner Co',
-            kind: null,
-            website: null,
-            billsDirectly: true,
-            billedViaCompanyId: null,
-            introducedByCompanyId: null,
-            cadenceDays: null,
-            lastTouchAt: null,
-            budgetNote: null,
-            notes: null,
-            since: null,
-            createdAt: '2026-08-28T00:00:00.000Z',
-            updatedAt: '2026-08-28T00:00:00.000Z'
-          }
-        ]
-      }))
+      'companies:list': vi.fn(async () => ({ ok: true as const, data: [PARTNER_CO] }))
     })
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Acme Co' } })
@@ -125,6 +123,38 @@ describe('CompanySheet', () => {
     })
   })
 
+  it('sends no billing partner once "Who invoices" is switched back to direct', async () => {
+    // The `billsDirectly ? null : billedVia || null` guard, tested directly:
+    // with it deleted, `billedVia || null` still holds 'partner-1' from the
+    // moment it was picked, and a company that bills directly is written
+    // with a billing partner — the row says two contradictory things at once.
+    const create = vi.fn(async (input: unknown) => {
+      void input
+      return { ok: true as const, data: { ok: true as const, data: STUB_COMPANY_ROW } }
+    })
+    renderSheet(vi.fn(), {
+      'companies:create': create,
+      'companies:list': vi.fn(async () => ({ ok: true as const, data: [PARTNER_CO] }))
+    })
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Acme Co' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Billed through a partner' }))
+    const billingPartner = (await screen.findByLabelText('Billing partner')) as HTMLSelectElement
+    await waitFor(() => expect(within(billingPartner).getByText('Partner Co')).toBeTruthy())
+    fireEvent.change(billingPartner, { target: { value: 'partner-1' } })
+
+    // Changed their mind: they pay me directly after all.
+    fireEvent.click(screen.getByRole('button', { name: 'They pay me directly' }))
+    expect(screen.queryByLabelText('Billing partner')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    const payload = create.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.billsDirectly).toBe(true)
+    expect(payload.billedViaCompanyId).toBeNull()
+  })
+
   it('names the field on a validation failure and does not close the sheet or lose input', async () => {
     const create = vi.fn()
     const { onClose } = renderSheet(vi.fn(), { 'companies:create': create })
@@ -133,7 +163,11 @@ describe('CompanySheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/name/i)
+    // Against the Name field, under the label the form gives it.
+    expect(alert.textContent).toBe('Name is required')
+    const nameField = screen.getByLabelText('Name')
+    expect(nameField.getAttribute('aria-invalid')).toBe('true')
+    expect(nameField.getAttribute('aria-describedby')).toBe(alert.id)
     expect(create).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog')).toBeTruthy()

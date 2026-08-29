@@ -61,7 +61,17 @@ export default tseslint.config(
     // typecheck under tsconfig.node.json and run in vitest's 'node'
     // project, not jsdom); this mirrors it for no-renderer-node-access
     // below rather than letting the two conventions disagree.
-    ignores: ['electron/renderer/styles/tokens.test.ts', 'electron/renderer/styles/base.test.ts'],
+    // components/sheets/fields.test.ts is the same species and joins them
+    // (T-260828-53): it reads base.css and fields.css off disk to resolve
+    // which `outline` rule actually wins on a focused field, which is the
+    // only form of that check that would have caught `.inp { outline: none }`
+    // suppressing the app's focus ring. It is carved out of
+    // tsconfig.web.json and into tsconfig.node.json alongside the two above.
+    ignores: [
+      'electron/renderer/styles/tokens.test.ts',
+      'electron/renderer/styles/base.test.ts',
+      'electron/renderer/components/sheets/fields.test.ts'
+    ],
     languageOptions: {
       globals: globals.browser
     },

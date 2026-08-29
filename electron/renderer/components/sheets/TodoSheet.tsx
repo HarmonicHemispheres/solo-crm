@@ -18,6 +18,15 @@ export interface TodoSheetProps {
   onClose: () => void
 }
 
+/** See `CompanySheet`'s `FIELD_LABELS` for the rule this table follows. */
+const FIELD_LABELS = {
+  title: 'What needs doing',
+  dueOn: 'Due',
+  companyId: 'Company',
+  engagementId: 'Engagement',
+  personId: 'Person'
+} as const
+
 /**
  * `.sheet` content for `FORMS.todo` (planning/solo-crm-mockup.html). Not
  * wired into `NewMenu.tsx` — the mockup's own New menu has no Todo item
@@ -46,11 +55,12 @@ export function TodoSheet({ onClose }: TodoSheetProps) {
   const [engagementId, setEngagementId] = useState('')
   const [personId, setPersonId] = useState('')
 
-  const { mutation, error, setError } = useSheetMutation(
+  const { mutation, error, setError, errorFor } = useSheetMutation(
     'tasks',
     (input: CreateTaskInput) => callCrm('tasks:create', input).then(unwrapMutationResult),
     onClose,
-    'Could not save this todo.'
+    'Could not save this todo.',
+    FIELD_LABELS
   )
 
   const handleSubmit = (event: FormEvent) => {
@@ -59,7 +69,7 @@ export function TodoSheet({ onClose }: TodoSheetProps) {
     if (mutation.isPending) return
     const trimmedTitle = title.trim()
     if (!trimmedTitle) {
-      setError('title: title is required')
+      setError({ field: 'title', message: `${FIELD_LABELS.title} is required` })
       return
     }
     setError(null)
@@ -94,12 +104,13 @@ export function TodoSheet({ onClose }: TodoSheetProps) {
       }
     >
       <form id={formId} className="sheet-form" onSubmit={handleSubmit}>
-        {error && (
+        {/* Only a failure no field owns — see CompanySheet's identical banner. */}
+        {error?.field == null && error && (
           <div className="field-error" role="alert">
-            {error}
+            {error.message}
           </div>
         )}
-        <Field label="What needs doing">
+        <Field label="What needs doing" error={errorFor('title')}>
           <input
             className="inp"
             value={title}
@@ -108,10 +119,10 @@ export function TodoSheet({ onClose }: TodoSheetProps) {
           />
         </Field>
         <div className="two">
-          <Field label="Due">
+          <Field label="Due" error={errorFor('dueOn')}>
             <input className="inp" type="date" value={dueOn} onChange={(event) => setDueOn(event.target.value)} />
           </Field>
-          <Field label="Company">
+          <Field label="Company" error={errorFor('companyId')}>
             <select className="inp" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>
               <option value="">— none —</option>
               {companies.map((company) => (
@@ -123,7 +134,7 @@ export function TodoSheet({ onClose }: TodoSheetProps) {
           </Field>
         </div>
         <div className="two">
-          <Field label="Engagement">
+          <Field label="Engagement" error={errorFor('engagementId')}>
             <select className="inp" value={engagementId} onChange={(event) => setEngagementId(event.target.value)}>
               <option value="">— none —</option>
               {engagements.map((engagement) => (
@@ -133,7 +144,7 @@ export function TodoSheet({ onClose }: TodoSheetProps) {
               ))}
             </select>
           </Field>
-          <Field label="Person">
+          <Field label="Person" error={errorFor('personId')}>
             <select className="inp" value={personId} onChange={(event) => setPersonId(event.target.value)}>
               <option value="">— none —</option>
               {people.map((person) => (

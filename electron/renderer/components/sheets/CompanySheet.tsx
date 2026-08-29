@@ -24,6 +24,24 @@ const BILLS_OPTIONS = [
 /** 7/14/30/90 — FORMS.company's own cadence chips. */
 const CADENCE_OPTIONS = [7, 14, 30, 90].map((days) => ({ value: days, label: `${days} days` }))
 
+/**
+ * `companies:create` payload key -> the label this form gives that field, so
+ * a `ValidationError` naming a column renders against the right control under
+ * the name the user sees (field-errors.ts). Only keys with a `Field` that
+ * renders `errorFor` belong here: a key listed without one would place its
+ * message on a field that never shows it. `kind`/`billsDirectly`/
+ * `cadenceDays` are chip groups over closed enumerations this file owns, so
+ * they cannot carry a user-caused failure and are deliberately absent.
+ */
+const FIELD_LABELS = {
+  name: 'Name',
+  website: 'Website',
+  budgetNote: 'Budget note',
+  billedViaCompanyId: 'Billing partner',
+  introducedByCompanyId: 'Introduced by',
+  since: 'Since'
+} as const
+
 export interface CompanySheetProps {
   onClose: () => void
 }
@@ -58,11 +76,12 @@ export function CompanySheet({ onClose }: CompanySheetProps) {
   const [budgetNote, setBudgetNote] = useState('')
   const [since, setSince] = useState('')
 
-  const { mutation, error, setError } = useSheetMutation(
+  const { mutation, error, setError, errorFor } = useSheetMutation(
     'companies',
     (input: CreateCompanyInput) => callCrm('companies:create', input).then(unwrapMutationResult),
     onClose,
-    'Could not save this company.'
+    'Could not save this company.',
+    FIELD_LABELS
   )
 
   const handleSubmit = (event: FormEvent) => {
@@ -75,7 +94,7 @@ export function CompanySheet({ onClose }: CompanySheetProps) {
     if (mutation.isPending) return
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setError('name: name is required')
+      setError({ field: 'name', message: `${FIELD_LABELS.name} is required` })
       return
     }
     setError(null)
@@ -113,12 +132,14 @@ export function CompanySheet({ onClose }: CompanySheetProps) {
       }
     >
       <form id={formId} className="sheet-form" onSubmit={handleSubmit}>
-        {error && (
+        {/* Only a failure no field owns — every other message renders against
+            its own control below (T-260828-53 item 2). */}
+        {error?.field == null && error && (
           <div className="field-error" role="alert">
-            {error}
+            {error.message}
           </div>
         )}
-        <Field label="Name">
+        <Field label="Name" error={errorFor('name')}>
           <input className="inp" value={name} onChange={(event) => setName(event.target.value)} placeholder="Acme Co" />
         </Field>
         <ChipField label="Relationship" value={kind} onChange={setKind} options={KIND_OPTIONS} />
@@ -129,7 +150,7 @@ export function CompanySheet({ onClose }: CompanySheetProps) {
           options={BILLS_OPTIONS}
         />
         {!billsDirectly && (
-          <Field label="Billing partner">
+          <Field label="Billing partner" error={errorFor('billedViaCompanyId')}>
             <select className="inp" value={billedVia} onChange={(event) => setBilledVia(event.target.value)}>
               <option value="">— none —</option>
               {companies.map((company) => (
@@ -141,10 +162,10 @@ export function CompanySheet({ onClose }: CompanySheetProps) {
           </Field>
         )}
         <div className="two">
-          <Field label="Website">
+          <Field label="Website" error={errorFor('website')}>
             <input className="inp" value={website} onChange={(event) => setWebsite(event.target.value)} placeholder="acme.com" />
           </Field>
-          <Field label="Budget note">
+          <Field label="Budget note" error={errorFor('budgetNote')}>
             <input
               className="inp"
               value={budgetNote}
@@ -153,7 +174,7 @@ export function CompanySheet({ onClose }: CompanySheetProps) {
             />
           </Field>
         </div>
-        <Field label="Introduced by">
+        <Field label="Introduced by" error={errorFor('introducedByCompanyId')}>
           <select className="inp" value={introducedBy} onChange={(event) => setIntroducedBy(event.target.value)}>
             <option value="">— none —</option>
             {companies.map((company) => (
@@ -164,7 +185,7 @@ export function CompanySheet({ onClose }: CompanySheetProps) {
           </select>
         </Field>
         <ChipField label="Reach out every" value={cadenceDays} onChange={setCadenceDays} options={CADENCE_OPTIONS} />
-        <Field label="Since">
+        <Field label="Since" error={errorFor('since')}>
           <input className="inp" type="date" value={since} onChange={(event) => setSince(event.target.value)} />
         </Field>
       </form>

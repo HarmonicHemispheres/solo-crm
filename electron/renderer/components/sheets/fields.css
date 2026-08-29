@@ -27,12 +27,34 @@
   color: var(--papyrus);
   font-family: inherit;
   font-size: 13.5px;
-  outline: none;
   transition: border-color var(--motion-hover);
 }
 
 .inp:focus {
   border-color: var(--verdigris);
+}
+
+/*
+ * The mockup's `.inp` sets `outline: none` outright. Ported verbatim, that
+ * cost every input, date field, select and textarea in all four sheets its
+ * keyboard focus ring: base.css's global
+ * `:focus-visible { outline: 2px solid var(--verdigris) }` has the same
+ * specificity as a bare `.inp`, and this stylesheet is applied after
+ * base.css, so the later rule won and X-06 ("focus visible on every
+ * interactive element") was violated silently — a keyboard user filling in
+ * the engagement form could not see where they were.
+ *
+ * Scoped rather than deleted (T-260828-53's Risks): what the mockup was
+ * hiding is the ring a *pointer* focus leaves behind, and
+ * `:focus:not(:focus-visible)` names exactly that state. A keyboard focus
+ * matches `:focus-visible`, never this rule, and keeps base.css's ring.
+ *
+ * fields.test.ts resolves this cascade the way a browser does — specificity
+ * then source order, across both stylesheets — rather than asserting a class
+ * name, because a class-name assertion would have passed against the defect.
+ */
+.inp:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .chiprow {
@@ -58,9 +80,13 @@
 
 /* A validation failure — client-side or the repository's own ValidationError
  * message — rendered inside the sheet body so it names the field without
- * closing the sheet or discarding what was typed (acceptance: T-260828-27). */
+ * closing the sheet or discarding what was typed (acceptance: T-260828-27).
+ * Usually rendered by `Field` directly beneath the control that caused it
+ * (T-260828-53 item 2); the same class still styles the sheet-level banner
+ * for a failure no single field owns. */
 .field-error {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--red);
+  margin-top: 5px;
 }

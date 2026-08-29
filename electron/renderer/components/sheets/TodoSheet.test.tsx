@@ -113,7 +113,11 @@ describe('TodoSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/title/i)
+    // Against the field, under the label the form gives it (T-260828-53 item 2).
+    expect(alert.textContent).toBe('What needs doing is required')
+    const titleField = screen.getByLabelText('What needs doing')
+    expect(titleField.getAttribute('aria-invalid')).toBe('true')
+    expect(titleField.getAttribute('aria-describedby')).toBe(alert.id)
     expect(create).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
     expect((screen.getByLabelText('Due') as HTMLInputElement).value).toBe('2026-09-15')

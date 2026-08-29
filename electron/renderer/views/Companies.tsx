@@ -11,7 +11,7 @@ import { DecayMeter } from '../components/primitives/DecayMeter'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
 import { useLayerManager } from '../components/shell/layer-manager-context'
-import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
+import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import type { Company, CompanyKind } from '../../shared/companies'
 import type { Engagement } from '../../shared/engagements'
@@ -202,21 +202,28 @@ export function Companies() {
     queryFn: ipcQueryFn('settings:get', { key: MODE_SETTING_KEY })
   })
 
+  // The cache is written before the round trip so the toggle feels instant
+  // (§6.13: the choice is "remembered per view" and survives a restart, which
+  // is what settings:set is for). Through `optimisticUpdate` rather than a
+  // bare `setQueryData` at the call site: that had no `onError`, so a failed
+  // settings:set left the optimistic value on screen while main still held
+  // the old one — the view claiming a preference the app had not stored
+  // (T-260828-53 item 6). `optimisticUpdate` snapshots, rolls back on
+  // failure, and reconciles through `invalidate.settings` either way.
   const setModeMutation = useMutation({
     mutationFn: (value: ViewPresentationMode) =>
       callCrm('settings:set', { key: MODE_SETTING_KEY, value }).then(unwrapMutationResult),
-    onSuccess: () => invalidate.settings(queryClient)
+    ...optimisticUpdate<SettingEntry, ViewPresentationMode>(
+      queryClient,
+      queryKeys.settings.detail(MODE_SETTING_KEY),
+      (_current, value) => ({ key: MODE_SETTING_KEY, value }),
+      invalidate.settings
+    )
   })
 
   const mode = modeFromEntry(modeQuery.data)
 
   function handleModeChange(next: ViewPresentationMode) {
-    // Written to the cache immediately so the toggle feels instant — the
-    // mutation below still round-trips through settings:set to persist it
-    // (§6.13: "remembered per view" survives a restart), and its onSuccess
-    // invalidation reconciles this same key with whatever main actually
-    // stored.
-    queryClient.setQueryData(queryKeys.settings.detail(MODE_SETTING_KEY), { key: MODE_SETTING_KEY, value: next })
     setModeMutation.mutate(next)
   }
 
@@ -340,10 +347,38 @@ export function Companies() {
   )
 }
 
+/**
+ * `VIEWTOG` (planning/solo-crm-mockup.html:1465) — two icon buttons, not the
+ * words "Card"/"List". `.claude/rules/ui-design.md`: icon buttons by default,
+ * text labels reserved for a view's primary action. The label each button
+ * still needs lives on the `<svg role="img" aria-label>` itself, which is
+ * what gives the button its accessible name ("Card view" / "List view",
+ * the mockup's own wording) without `Toggle` — a shared primitive this task
+ * does not own — needing a per-option label prop.
+ */
 const PRESENTATION_OPTIONS = [
-  { value: 'card' as const, label: 'Card' },
-  { value: 'list' as const, label: 'List' }
+  { value: 'card' as const, label: <CardViewGlyph /> },
+  { value: 'list' as const, label: <ListViewGlyph /> }
 ]
+
+function CardViewGlyph() {
+  return (
+    <svg className="vtog-icon" viewBox="0 0 24 24" role="img" aria-label="Card view">
+      <rect x="3" y="3" width="8" height="8" rx="2" />
+      <rect x="13" y="3" width="8" height="8" rx="2" />
+      <rect x="3" y="13" width="8" height="8" rx="2" />
+      <rect x="13" y="13" width="8" height="8" rx="2" />
+    </svg>
+  )
+}
+
+function ListViewGlyph() {
+  return (
+    <svg className="vtog-icon" viewBox="0 0 24 24" role="img" aria-label="List view">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  )
+}
 
 function CompaniesGlyph() {
   return (

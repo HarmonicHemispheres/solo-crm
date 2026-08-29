@@ -55,6 +55,26 @@ export interface EngagementSheetProps {
 }
 
 /**
+ * See `CompanySheet`'s `FIELD_LABELS` for the rule. This is the form the
+ * finding was written against: `parseCents` throws
+ * `contractValueCents: "$28,500" is not a valid amount`, and this table is
+ * what turns that into "Contract value: …" rendered under the Contract value
+ * input instead of a banner naming a column.
+ */
+const FIELD_LABELS = {
+  name: 'Name',
+  billingCompanyId: 'Billed to',
+  clientCompanyId: 'Work is for',
+  startedOn: 'Starts',
+  endsOn: 'Ends',
+  hoursIncluded: 'Hours included',
+  contractValueCents: 'Contract value',
+  hourlyRateCents: 'Hourly rate',
+  estimatedHours: 'Estimated hours',
+  notToExceedCents: 'Not to exceed'
+} as const
+
+/**
  * `.sheet` content for `FORMS.engagement` — the one form with a schema
  * decision in it (this task's Why): "Billed to" (`billingCompanyId`) and
  * "Work is for" (`clientCompanyId`) are two separate selects, never
@@ -110,11 +130,12 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
     if (!clientTouched) setClientCompanyId(billingCompanyId)
   }
 
-  const { mutation, error, setError } = useSheetMutation(
+  const { mutation, error, setError, setRawError, errorFor } = useSheetMutation(
     'engagements',
     (input: CreateEngagementInput) => callCrm('engagements:create', input).then(unwrapMutationResult),
     onClose,
-    'Could not save this engagement.'
+    'Could not save this engagement.',
+    FIELD_LABELS
   )
 
   const handleSubmit = (event: FormEvent) => {
@@ -123,11 +144,11 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
     if (mutation.isPending) return
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setError('name: name is required')
+      setError({ field: 'name', message: `${FIELD_LABELS.name} is required` })
       return
     }
     if (!startedOn) {
-      setError('startedOn: startedOn is required')
+      setError({ field: 'startedOn', message: `${FIELD_LABELS.startedOn} is required` })
       return
     }
 
@@ -160,7 +181,10 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
       setError(null)
       mutation.mutate(payload)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Check the amounts entered.')
+      // `parseCents`/`parseHours` throw `<payload key>: <detail>`, the same
+      // shape a repository ValidationError arrives in, so both are placed
+      // against their own field by the same table.
+      setRawError(err instanceof Error ? err.message : 'Check the amounts entered.')
     }
   }
 
@@ -185,16 +209,17 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
       }
     >
       <form id={formId} className="sheet-form" onSubmit={handleSubmit}>
-        {error && (
+        {/* Only a failure no field owns — see CompanySheet's identical banner. */}
+        {error?.field == null && error && (
           <div className="field-error" role="alert">
-            {error}
+            {error.message}
           </div>
         )}
-        <Field label="Name">
+        <Field label="Name" error={errorFor('name')}>
           <input className="inp" value={name} onChange={(event) => setName(event.target.value)} placeholder="Fixed scope SOW" />
         </Field>
         <div className="two">
-          <Field label="Billed to">
+          <Field label="Billed to" error={errorFor('billingCompanyId')}>
             <select className="inp" value={billingCompanyId} onChange={(event) => setBillingCompanyId(event.target.value)}>
               <option value="">— none —</option>
               {companies.map((company) => (
@@ -204,7 +229,7 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
               ))}
             </select>
           </Field>
-          <Field label="Work is for">
+          <Field label="Work is for" error={errorFor('clientCompanyId')}>
             <select
               className="inp"
               value={clientCompanyId}
@@ -224,7 +249,7 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
         </div>
         <ChipField label="Billing model" value={billingModel} onChange={setBillingModel} options={BILLING_MODEL_OPTIONS} />
         {billingModel === 'retainer' && (
-          <Field label="Hours included">
+          <Field label="Hours included" error={errorFor('hoursIncluded')}>
             <input
               className="inp"
               value={hoursIncluded}
@@ -234,7 +259,7 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
           </Field>
         )}
         {billingModel === 'fixed' && (
-          <Field label="Contract value">
+          <Field label="Contract value" error={errorFor('contractValueCents')}>
             <input
               className="inp"
               value={contractValue}
@@ -246,7 +271,7 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
         {billingModel === 'tm' && (
           <>
             <div className="two">
-              <Field label="Hourly rate">
+              <Field label="Hourly rate" error={errorFor('hourlyRateCents')}>
                 <input
                   className="inp"
                   value={hourlyRate}
@@ -254,7 +279,7 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
                   placeholder="165"
                 />
               </Field>
-              <Field label="Estimated hours">
+              <Field label="Estimated hours" error={errorFor('estimatedHours')}>
                 <input
                   className="inp"
                   value={estimatedHours}
@@ -263,7 +288,7 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
                 />
               </Field>
             </div>
-            <Field label="Not to exceed">
+            <Field label="Not to exceed" error={errorFor('notToExceedCents')}>
               <input
                 className="inp"
                 value={notToExceed}
@@ -275,10 +300,10 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
         )}
         <ChipField label="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
         <div className="two">
-          <Field label="Starts">
+          <Field label="Starts" error={errorFor('startedOn')}>
             <input className="inp" type="date" value={startedOn} onChange={(event) => setStartedOn(event.target.value)} />
           </Field>
-          <Field label="Ends">
+          <Field label="Ends" error={errorFor('endsOn')}>
             <input className="inp" type="date" value={endsOn} onChange={(event) => setEndsOn(event.target.value)} />
           </Field>
         </div>

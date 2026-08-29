@@ -17,5 +17,9 @@
     "noEmit": true
   },
   "include": ["electron/renderer/**/*", "electron/shared/**/*"],
-  "exclude": ["electron/renderer/styles/tokens.test.ts", "electron/renderer/styles/base.test.ts"]
+  "exclude": [
+    "electron/renderer/styles/tokens.test.ts",
+    "electron/renderer/styles/base.test.ts",
+    "electron/renderer/components/sheets/fields.test.ts"
+  ]
 }
