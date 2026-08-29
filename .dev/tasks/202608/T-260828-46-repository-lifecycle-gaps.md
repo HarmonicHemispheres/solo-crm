@@ -1,7 +1,7 @@
 ---
 id: T-260828-46
 title: Close the repository lifecycle gaps review found but left out of scope
-status: open
+status: in-progress
 category: data
 plan_ref:
 created: 2026-08-28

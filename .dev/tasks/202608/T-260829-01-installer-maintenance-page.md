@@ -1,7 +1,7 @@
 ---
 id: T-260829-01
 title: Offer repair or remove when the installer finds an existing installation
-status: open
+status: in-progress
 category: build
 plan_ref: X-09
 created: 2026-08-29

@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { SyncFolderGuardError } from './sync-folder-guard'
+
 // `./connection` imports `app` from 'electron' at its own top level (for the
 // no-override `resolveDatabasePath` path, unused here since every test passes
 // an explicit `userDataDir`). Mocking the module keeps this file an ordinary
@@ -406,5 +408,38 @@ describe('the row cap and the statement timeout', () => {
     expect(outcome.ok).toBe(true)
     if (!outcome.ok) throw new Error(outcome.error.message)
     expect(outcome.data.rowCount).toBe(100)
+  })
+})
+
+describe('the sync-folder guard covers this connection too (T-260828-39 review)', () => {
+  // AGENTS.md: the database must never live in a Drive, Dropbox or iCloud
+  // folder, and no path may reach the better-sqlite3 constructor without
+  // passing the guard. `openDatabase()` runs it; `resolveDatabasePath()`
+  // does not — it only joins a filename onto the resolved data root — so a
+  // second opener calling the path helper alone would be an unchecked way in.
+  //
+  // In production the write connection opens at boot and would already have
+  // refused such a path, so this is belt to that braces. But that is an
+  // ordering invariant, not a guarantee: anything opening this connection
+  // earlier would have bypassed the guard silently. This asserts the
+  // guarantee instead of the ordering.
+  it('refuses to open a read-only connection inside a sync folder', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'solo-crm-readonly-sync-'))
+    tmpDirs.push(parent)
+    const syncedUserDataDir = join(parent, 'Dropbox', 'userData')
+
+    let thrown: unknown
+    try {
+      openReadOnlyDatabase({ userDataDir: syncedUserDataDir })
+    } catch (error) {
+      thrown = error
+    }
+
+    // Not merely "it threw": `fileMustExist: true` would also throw here, for
+    // an entirely different and much weaker reason. The guard is what must
+    // have refused it, and it must have refused before better-sqlite3 got a
+    // chance to create anything.
+    expect(thrown).toBeInstanceOf(SyncFolderGuardError)
+    expect((thrown as SyncFolderGuardError).message).toContain('Dropbox')
   })
 })
