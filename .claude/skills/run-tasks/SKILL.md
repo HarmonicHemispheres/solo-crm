@@ -62,10 +62,19 @@ report the commit it ended up on.
 
 | Role | Model | Effort | Why |
 |---|---|---|---|
-| Orchestrator | `opus` | `xhigh` | Planning and merge judgement, 1M context for many task files |
-| Implementation | `opus` | `high` | See below — the rework was costing more than the tokens saved |
-| Review, architecture | `opus` | `xhigh` | A missed defect costs more than the tokens |
+| Orchestrator | `opus` | `xhigh` | Planning and merge judgement, 1M context for many task files. Not a subagent — this is the session itself |
+| Implementation | `opus` | `medium` | See below — the rework was costing more than the tokens saved |
+| Verify | `opus` | `low` | Running commands and reporting output faithfully; no judgement to make |
+| Review, architecture | `opus` | `medium` | A missed defect costs more than the tokens |
 | Index and summary edits | `haiku` | `low` | Mechanical |
+
+**Opus subagents run at `medium` or below.** `high` and `xhigh` buy deliberation
+this pipeline does not need from a subagent: the scope is already written down,
+the acceptance criteria are already explicit, and the review lens is handed over
+in the prompt. What they cost is wall-clock on every task in the wave at once,
+which is the thing actually constraining this project. Reserve `xhigh` for the
+orchestrator, which is doing the open-ended work — dependency order, merge
+judgement, deciding what a failure means.
 
 Implementation was `sonnet` through the first two runs, on the reasoning that it
 codes well at a fraction of the cost. Measured against what actually happened,
