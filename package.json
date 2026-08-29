@@ -31,7 +31,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.ico"
+      "icon": "icon.ico"
     },
     "nsis": {
       "artifactName": "${productName}-Setup-${version}.${ext}",
@@ -41,11 +41,10 @@
       "createDesktopShortcut": true,
       "shortcutName": "Solo CRM",
       "uninstallDisplayName": "Solo CRM",
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerSidebar": "build/installerSidebar.bmp",
-      "uninstallerSidebar": "build/installerSidebar.bmp",
-      "installerHeader": "build/installerHeader.bmp"
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerSidebar": "installerSidebar.bmp",
+      "uninstallerSidebar": "installerSidebar.bmp"
     }
   },
   "devDependencies": {

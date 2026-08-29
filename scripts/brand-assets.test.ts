@@ -4,14 +4,21 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * T-260828-16: the installer's welcome/header bitmaps are NSIS MUI images,
- * which require classic 24-bit BMP3 (BITMAPINFOHEADER, no alpha channel) at
- * an exact pixel size — a 32-bit BMP, or a BMP of the wrong dimensions,
- * renders as a black/garbled block at install time rather than failing the
- * build (see the task's Risks section). This test reads the actual bytes of
- * the committed binaries — not the generator script's own idea of what it
- * wrote — so a wrong-format regeneration fails this gate instead of
- * shipping silently.
+ * T-260828-16: the installer's welcome bitmap is an NSIS MUI image, which
+ * requires classic 24-bit BMP3 (BITMAPINFOHEADER, no alpha channel) at an
+ * exact pixel size — a 32-bit BMP, or a BMP of the wrong dimensions, renders
+ * as a black/garbled block at install time rather than failing the build
+ * (see the task's Risks section). This test reads the actual bytes of the
+ * committed binaries — not the generator script's own idea of what it wrote
+ * — so a wrong-format regeneration fails this gate instead of shipping
+ * silently.
+ *
+ * T-260828-45: shape (header fields) isn't enough — a regeneration on a
+ * HiDPI display with the device scale factor unpinned produces a BMP with a
+ * correct header and byte count but wrong pixel content, so the pixel
+ * content block below checks actual colour, not just structure. This is
+ * also where installerHeader.bmp was dropped: it painted as a dark slab
+ * against MUI's white header strip, and package.json no longer wires it.
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -42,6 +49,48 @@ function readBmpHeader(path: string): BmpHeader {
     bitsPerPixel: buf.readUInt16LE(28),
     compression: buf.readUInt32LE(30)
   }
+}
+
+type Rgb = [number, number, number]
+
+/**
+ * Read one pixel's colour from a 24bpp BMP3 buffer (bottom-up row order,
+ * BGR triples, each row padded to a 4-byte boundary — see bgraToBmp24 in
+ * brand-assets.mjs, which writes exactly this layout). (x, y) are in
+ * top-down image coordinates, matching how the source SVG is authored.
+ *
+ * T-260828-45: this is what a header/byte-count check cannot catch. A
+ * generator run under an unpinned device scale factor produces a BMP with
+ * the right dimensions and the right total size (bgraToBmp24 always emits
+ * exactly width*height pixels) but reads the wrong bytes into them — the
+ * header is correct and the picture is garbage. Sampling actual pixel
+ * colour is the only check that sees the difference.
+ */
+function readBmpPixel(buf: Buffer, header: BmpHeader, x: number, y: number): Rgb {
+  const rowBytes = header.width * 3
+  const rowPadded = Math.ceil(rowBytes / 4) * 4
+  const dataOffset = buf.readUInt32LE(10)
+  const srcRow = header.height - 1 - y // bottom-up storage
+  const idx = dataOffset + srcRow * rowPadded + x * 3
+  return [buf[idx + 2], buf[idx + 1], buf[idx]] // stored B,G,R -> R,G,B
+}
+
+/**
+ * Anti-aliasing shifts a handful of levels between Chromium versions even
+ * on an identical flat-colour region, so this compares within a tolerance
+ * rather than requiring an exact match (see this task's Risks section) —
+ * loose enough to absorb that, tight enough that a scale-factor
+ * misindexing (which lands on entirely unrelated image content, not a
+ * slightly-off shade of the same colour) still fails it.
+ */
+function expectColorNear(actual: Rgb, expected: Rgb, path: string, label: string): void {
+  const [r, g, b] = actual
+  const [er, eg, eb] = expected
+  const delta = Math.max(Math.abs(r - er), Math.abs(g - eg), Math.abs(b - eb))
+  expect(
+    delta,
+    `${path}: ${label} — expected rgb(${expected.join(',')}), got rgb(${actual.join(',')})`
+  ).toBeLessThanOrEqual(6)
 }
 
 interface IcoEntry {
@@ -75,7 +124,8 @@ function readIcoEntries(path: string): IcoEntry[] {
 }
 
 describe('build/installerSidebar.bmp', () => {
-  const header = readBmpHeader(resolve(buildDir, 'installerSidebar.bmp'))
+  const path = resolve(buildDir, 'installerSidebar.bmp')
+  const header = readBmpHeader(path)
 
   it('is exactly 164 x 314', () => {
     expect(header.width).toBe(164)
@@ -86,19 +136,28 @@ describe('build/installerSidebar.bmp', () => {
     expect(header.bitsPerPixel).toBe(24)
     expect(header.compression).toBe(0) // BI_RGB
   })
-})
 
-describe('build/installerHeader.bmp', () => {
-  const header = readBmpHeader(resolve(buildDir, 'installerHeader.bmp'))
+  // T-260828-45: content, not just shape. A generator run with the device
+  // scale factor unpinned produces a file that is the right size with the
+  // wrong picture in it — see readBmpPixel's doc comment above. These
+  // sample points are flat interior regions (checked several pixels deep
+  // on every side), not edges, so ordinary anti-aliasing can't trip them.
+  describe('pixel content', () => {
+    const buf = readFileSync(path)
 
-  it('is exactly 150 x 57', () => {
-    expect(header.width).toBe(150)
-    expect(header.height).toBe(57)
-  })
+    it('the obsidian ground reads correctly in a corner clear of any artwork', () => {
+      // (10, 10): top-left corner, well outside the cadence-ring mark
+      // (which starts around x=26/y=43) and the wordmark below it.
+      expectColorNear(readBmpPixel(buf, header, 10, 10), [0x0b, 0x0e, 0x14], path, 'ground at (10,10)')
+    })
 
-  it('is 24 bits per pixel, uncompressed (no alpha channel)', () => {
-    expect(header.bitsPerPixel).toBe(24)
-    expect(header.compression).toBe(0)
+    it('the cadence ring reads as verdigris on its stroked arc', () => {
+      // (113, 99): the ring's 3 o'clock point (see solocrm-sidebar.svg's
+      // <circle cx="48" cy="48" r="34"> under its translate/scale chain),
+      // squarely inside the dashed arc's stroked (not gapped) portion and
+      // several pixels from either edge of the ~5px-wide stroke.
+      expectColorNear(readBmpPixel(buf, header, 113, 99), [0x5b, 0xa4, 0xa4], path, 'ring at (113,99)')
+    })
   })
 })
 
@@ -132,19 +191,26 @@ describe('package.json build config', () => {
     }
   }
 
-  it('wires build/icon.ico as the app icon and installer/uninstaller icon', () => {
-    expect(pkg.build.win.icon).toBe('build/icon.ico')
-    expect(pkg.build.nsis.installerIcon).toBe('build/icon.ico')
-    expect(pkg.build.nsis.uninstallerIcon).toBe('build/icon.ico')
+  // T-260828-45: no "build/" prefix — directories.buildResources already
+  // defaults to "build", so app-builder-lib resolves these against it
+  // (falling back to projectDir) without the path being spelled out here.
+  it('wires icon.ico as the app icon and installer/uninstaller icon', () => {
+    expect(pkg.build.win.icon).toBe('icon.ico')
+    expect(pkg.build.nsis.installerIcon).toBe('icon.ico')
+    expect(pkg.build.nsis.uninstallerIcon).toBe('icon.ico')
   })
 
   it('wires the sidebar banner, reused for the uninstaller', () => {
-    expect(pkg.build.nsis.installerSidebar).toBe('build/installerSidebar.bmp')
-    expect(pkg.build.nsis.uninstallerSidebar).toBe('build/installerSidebar.bmp')
+    expect(pkg.build.nsis.installerSidebar).toBe('installerSidebar.bmp')
+    expect(pkg.build.nsis.uninstallerSidebar).toBe('installerSidebar.bmp')
   })
 
-  it('wires the header lockup', () => {
-    expect(pkg.build.nsis.installerHeader).toBe('build/installerHeader.bmp')
+  // T-260828-45: installerHeader was dropped rather than fixed — the
+  // artwork is full-bleed obsidian and MUI_HEADERIMAGE_RIGHT paints it as a
+  // dark slab at the right end of an otherwise-white header strip. MUI's
+  // default (no header image) replaces it.
+  it('does not wire a header image', () => {
+    expect(pkg.build.nsis.installerHeader).toBeUndefined()
   })
 
   it('turns off oneClick, which is required for the sidebar banner to show at all', () => {
