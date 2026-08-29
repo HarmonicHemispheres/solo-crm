@@ -1,21 +1,40 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createQueryClient } from '../../lib/query-client'
+import { stubCrm } from '../../lib/test-support/stub-crm'
 import { LayerManager } from './LayerManager'
 import { Topbar } from './Topbar'
 
+/**
+ * The `QueryClientProvider` and the `window.crm` stub are here for the
+ * layers, not the topbar: the `palette` layer holds P1-10's real command
+ * palette now (T-260828-37) and it reads through TanStack Query, exactly as
+ * the `log` layer's quick log already did in `LayerManager.test.tsx`. The
+ * default `stubCrm()` answers every read with nothing, which is all these
+ * tests — about the topbar, not the palette — need.
+ */
 function renderTopbar(path = '/todos', onToggleRail = vi.fn()) {
+  window.crm = stubCrm()
   return {
     onToggleRail,
     ...render(
       <MemoryRouter initialEntries={[path]}>
-        <LayerManager>
-          <Topbar onToggleRail={onToggleRail} />
-        </LayerManager>
+        <QueryClientProvider client={createQueryClient()}>
+          <LayerManager>
+            <Topbar onToggleRail={onToggleRail} />
+          </LayerManager>
+        </QueryClientProvider>
       </MemoryRouter>
     )
   }
 }
+
+afterEach(() => {
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
+  delete window.crm
+})
 
 describe('Topbar', () => {
   it('shows the breadcrumb for the current route', () => {

@@ -1,0 +1,58 @@
+/*
+ * .pal-i and its three columns — planning/solo-crm-mockup.html (lines
+ * 237-241), verbatim. The panel chrome around them (`.pal`, `.pal-in`,
+ * `.pal-list`, `.pal-foot`) already lives in LayerManager.css, which put the
+ * palette's shell in place; this file adds only what the rows themselves
+ * need, so the two never both own a declaration.
+ */
+.pal-i {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  width: 100%;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--mute);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* The keyboard highlight and the hover state are one state, not two: the
+ * palette is a keyboard surface first (X-06), and the mouse moves the same
+ * selection Enter acts on (`onMouseEnter` sets the highlight) rather than
+ * painting a second, competing one. */
+.pal-i.sel {
+  background: var(--surface-2);
+  color: var(--papyrus);
+}
+
+/* Fixed-width so the kind labels line up as a column — what makes two records
+ * with the same name tellable apart at a glance (acceptance). */
+.pal-i .ki {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--faint);
+  width: 50px;
+  flex: 0 0 50px;
+  letter-spacing: 1px;
+}
+
+.pal-i .tx {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  /* The mockup pairs `.tx` with its global `.trunc`; spelled out here so the
+   * row does not depend on Row.css having been loaded by some other view. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pal-i .hint {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}

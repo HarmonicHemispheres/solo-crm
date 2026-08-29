@@ -2,8 +2,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { Sheet } from '../primitives/Sheet'
 import { EmptyState } from '../primitives/EmptyState'
 import { Button } from '../primitives/Button'
-import { SearchIcon } from './icons'
 import { LayerManagerContext, type LayerKind, type LayerManagerContextValue, type SheetKind } from './layer-manager-context'
+import { CommandPalette } from './CommandPalette'
 import { CompanySheet } from '../sheets/CompanySheet'
 import { PersonSheet } from '../sheets/PersonSheet'
 import { EngagementSheet } from '../sheets/EngagementSheet'
@@ -163,7 +163,15 @@ export function LayerManager({ children }: { children: ReactNode }) {
   // overlay renders null, so where the sort places it is irrelevant
   // (`indexOf` -1 sorts it before every open layer).
   const overlays: ReadonlyArray<{ kind: LayerKind; node: ReactNode }> = [
-    { kind: 'palette', node: <PaletteShell open={isOpen('palette')} onClose={() => closeLayer('palette')} /> },
+    {
+      kind: 'palette',
+      // P1-10's real command palette (T-260828-37), in place of this task's
+      // empty shell. It renders the same `.scrim`/`.pal` markup the shell did
+      // — including Esc being *absent* from it, since this file owns Esc for
+      // every layer — and mounts only while the layer is open so each ⌘K
+      // starts on a blank query.
+      node: <CommandPalette open={isOpen('palette')} onClose={() => closeLayer('palette')} />
+    },
     {
       kind: 'sheet',
       // T-260828-27 fills in the four real forms; a caller that opened
@@ -240,48 +248,5 @@ export function LayerManager({ children }: { children: ReactNode }) {
           <Fragment key={kind}>{node}</Fragment>
         ))}
     </LayerManagerContext.Provider>
-  )
-}
-
-/**
- * `.scrim` + `.pal` from the mockup — search's empty shell. Unlike `sheet`
- * and `log` above this is not built on the `Sheet` primitive: the mockup's
- * palette is its own shape (a search input + result list + footer hint row,
- * no `.sheet-h`/`.sheet-f`) and Esc is handled centrally by this file, not
- * per-instance, so it doesn't need Sheet's own listener. Content (the
- * actual search/create list) is P1-10's.
- */
-function PaletteShell({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    inputRef.current?.focus()
-  }, [open])
-
-  if (!open) return null
-
-  return (
-    <div
-      className="scrim open"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <div className="pal" role="dialog" aria-label="Search" aria-modal="true">
-        <div className="pal-in">
-          <SearchIcon width={16} height={16} />
-          <input ref={inputRef} placeholder="Search or create…" autoComplete="off" aria-label="Search or create" />
-        </div>
-        <div className="pal-list">
-          <EmptyState>Search and quick-create ship with the command palette (P1-10).</EmptyState>
-        </div>
-        <div className="pal-foot">
-          <span>↑↓ move</span>
-          <span>↵ open</span>
-          <span>esc close</span>
-        </div>
-      </div>
-    </div>
   )
 }

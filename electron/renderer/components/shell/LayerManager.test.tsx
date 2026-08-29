@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createQueryClient } from '../../lib/query-client'
 import { stubCrm } from '../../lib/test-support/stub-crm'
@@ -77,14 +78,23 @@ function Harness() {
  * default `stubCrm()` answers every list with `[]`, which is all these tests
  * (about the stack, not the form) need.
  */
+/**
+ * The `MemoryRouter` is the same accommodation one layer on: the `palette`
+ * layer holds P1-10's real command palette now (T-260828-37), and Enter on a
+ * result navigates — so the palette calls `useNavigate`, which needs a router
+ * above it exactly as the query hooks need a client. Nothing below asserts on
+ * routing.
+ */
 function renderHarness() {
   window.crm = stubCrm()
   return render(
-    <QueryClientProvider client={createQueryClient()}>
-      <LayerManager>
-        <Harness />
-      </LayerManager>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={createQueryClient()}>
+        <LayerManager>
+          <Harness />
+        </LayerManager>
+      </QueryClientProvider>
+    </MemoryRouter>
   )
 }
 

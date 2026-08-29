@@ -9,6 +9,7 @@ import { Button } from '../components/primitives/Button'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
 import { useLayerManager } from '../components/shell/layer-manager-context'
+import { engagementAnchorId } from '../nav'
 import { ipcQueryFn } from '../lib/ipc'
 import { queryKeys } from '../lib/query-keys'
 import { centsToDecimalString, parseDateOnly } from '../../shared/format'
@@ -223,7 +224,12 @@ function EngagementCardRow({
 }) {
   const showClient = engagement.clientCompanyId != null && engagement.clientCompanyId !== engagement.billingCompanyId
   return (
-    <div className="eng">
+    // The scroll target for a command-palette engagement result
+    // (T-260828-37): an engagement has no detail route of its own, so ⌘K
+    // lands on this view and scrolls to the row. The id is built by
+    // `engagementAnchorId` rather than written out here, so the two halves of
+    // the anchor cannot drift.
+    <div className="eng" id={engagementAnchorId(engagement.id)}>
       <div className="eng-t">
         <span className="nm trunc">{engagement.name}</span>
         {isTaggableModel(engagement.billingModel) && <ModelTag model={engagement.billingModel}>{MODEL_LABEL[engagement.billingModel]}</ModelTag>}

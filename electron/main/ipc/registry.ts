@@ -33,6 +33,7 @@ import {
   updateTask
 } from '../db/repositories/tasks'
 import { getActivity, listActivity, logActivity } from '../db/repositories/activity'
+import { searchAll } from '../db/repositories/search'
 import { getAllSettings, getSetting, resetSetting, setSetting } from '../db/repositories/settings'
 import type { SettingKey } from '../db/repositories/settings'
 import { RefusalError, RepositoryError } from '../db/repositories/errors'
@@ -338,6 +339,33 @@ export const registry = {
   'activity:log': defineChannel({
     ...CHANNEL_CONTRACTS['activity:log'],
     handler: (input) => runMutation(() => logActivity(getDatabase(), input))
+  }),
+
+  // ---------------------------------------------------------------------
+  // search — the command palette's one read (T-260828-37).
+  // ---------------------------------------------------------------------
+
+  /**
+   * `searchAll` over `search_fts` (T-260828-36, reshaped by T-260828-51 —
+   * `search_source` is a materialised table now, so this is a rowid seek and
+   * not a five-table rescan per returned row; `search.latency.test.ts` holds
+   * the budget).
+   *
+   * No `runMutation` wrapper: this is a read, and the one input it can be
+   * given that has no answer — a query with no searchable tokens — is
+   * `[]` from the repository rather than a thrown `RepositoryError`
+   * (`search.ts`'s own contract). Nothing here has a refusal to carry back
+   * as data.
+   *
+   * The whole validated payload is passed straight through: `searchAll`
+   * takes `input: unknown` and re-parses it against the same
+   * `searchQueryInputSchema` this channel's request schema *is* — one
+   * schema, applied on both sides of the call, not a second transcription
+   * of the query's shape.
+   */
+  'search:query': defineChannel({
+    ...CHANNEL_CONTRACTS['search:query'],
+    handler: (input) => searchAll(getDatabase(), input)
   }),
 
   // ---------------------------------------------------------------------

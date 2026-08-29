@@ -1,4 +1,5 @@
-import { matchPath } from 'react-router'
+import { matchPath, type To } from 'react-router'
+import type { SearchKind } from '../shared/search'
 
 /**
  * The ten views the mockup ships, minus Pipeline (ADR-005, T-260828-02) — the
@@ -78,6 +79,53 @@ export const ROUTE_META: readonly RouteMeta[] = [
   { path: '/workspace/settings', navId: 'settings', breadcrumb: 'Workspace' },
   { path: '/workspace/data', navId: 'data', breadcrumb: 'Workspace / Data' }
 ]
+
+/**
+ * DOM id of one engagement's row on `/engagements` (T-260828-37).
+ *
+ * An engagement has no detail route of its own — ADR-005 made the list view
+ * the only view of engagement state — so a command-palette result for one
+ * navigates to `/engagements` with this id as the location hash and scrolls
+ * to the row. It lives here, beside the route table, because it is the same
+ * kind of fact: where a record is found in the UI. Both halves (the palette
+ * building the hash, `Engagements.tsx` rendering the id) call this, so
+ * neither can drift from the other.
+ */
+export function engagementAnchorId(id: string): string {
+  return `engagement-${id}`
+}
+
+/**
+ * Where the command palette lands for one search result (T-260828-37's
+ * acceptance: one assertion per result kind). Here rather than in
+ * `CommandPalette.tsx` because it is a statement about *routes*, made of the
+ * same paths `ROUTE_META` above lists — and because a component file may not
+ * export a non-component (`react-refresh/only-export-components`, the same
+ * rule that split this whole module out of `routes.tsx`).
+ *
+ * Companies and people have their own detail routes. Engagements, todos and
+ * activity notes do not — each lives inside its list view — so the target is
+ * that list, with a hash naming the engagement's own row (see
+ * `engagementAnchorId`) since that is the one the palette scrolls to.
+ *
+ * The catalogue is deliberately absent: `SEARCH_KINDS`
+ * (`electron/shared/search.ts`) indexes five source tables and services is
+ * not one of them, so there is no such result to route.
+ */
+export function targetForSearchResult(kind: SearchKind, id: string): To {
+  switch (kind) {
+    case 'company':
+      return { pathname: `/company/${id}` }
+    case 'person':
+      return { pathname: `/person/${id}` }
+    case 'engagement':
+      return { pathname: '/engagements', hash: `#${engagementAnchorId(id)}` }
+    case 'task':
+      return { pathname: '/todos' }
+    case 'activity':
+      return { pathname: '/activity' }
+  }
+}
 
 /** The nav item a route highlights — `undefined` for a pathname this table
  * doesn't know about (highlights nothing rather than guessing). */
