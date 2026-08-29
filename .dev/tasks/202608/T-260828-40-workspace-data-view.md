@@ -1,7 +1,7 @@
 ---
 id: T-260828-40
 title: Build the Workspace Data view — live database facts, table counts, query console
-status: open
+status: in-progress
 category: ui
 plan_ref: X-01
 created: 2026-08-28

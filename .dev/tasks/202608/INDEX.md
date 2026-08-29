@@ -18,7 +18,7 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
+| ◐ in-progress | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
 
 ### Follow-ups from review
 
@@ -32,7 +32,7 @@ that surfaced them. Each names the review it came from.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | X-01 · X-03 |
+| ◐ in-progress | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | X-01 · X-03 |
 
 ## Closed this month
 
