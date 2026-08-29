@@ -157,6 +157,43 @@ for (const month of months) {
 //
 // Checked here rather than in a new script because this one already runs at
 // every merge (the index-gate hook), in `verify`, and in `run-tasks`.
+
+// Every run id a closed task points at must have a summary to point at.
+//
+// A task's Run column is the only link from "this shipped" to "here is what the
+// run decided, what went wrong, and what it cost". Nothing checked that the
+// target existed, and it did not: thirty closed tasks cited R-260828-02 while
+// `.dev/summaries/202608/` held only R-260828-01. The summary had been planned,
+// the run had happened, and the step was simply never taken — invisibly,
+// because every other gate was green.
+//
+// Checked here for the same reason as the ADR collision above: this script
+// already runs at every merge (the index-gate hook), in `verify`, and in
+// `run-tasks`.
+const SUMMARIES_DIR = '.dev/summaries'
+for (const month of months) {
+  const indexPath = join(TASKS_DIR, month, 'INDEX.md')
+  if (!existsSync(indexPath)) continue
+
+  const summaryDir = join(SUMMARIES_DIR, month)
+  const summaries = existsSync(summaryDir)
+    ? new Set(readdirSync(summaryDir).filter((n) => n.endsWith('.md')).map((n) => n.replace(/\.md$/, '')))
+    : new Set()
+
+  const cited = new Set()
+  for (const line of readFileSync(indexPath, 'utf8').split('\n')) {
+    for (const match of line.matchAll(/\bR-\d{6}-\d{2}\b/g)) cited.add(match[0])
+  }
+
+  for (const runId of [...cited].sort()) {
+    if (!summaries.has(runId)) {
+      problems.push(
+        `${runId}: cited by ${month}'s task index but ${join(summaryDir, `${runId}.md`)} does not exist — the tasks say they shipped in a run that has no record of what it decided or what went wrong`
+      )
+    }
+  }
+}
+
 const DECISIONS_DIR = '.dev/decisions'
 if (existsSync(DECISIONS_DIR)) {
   const byNumber = new Map()
