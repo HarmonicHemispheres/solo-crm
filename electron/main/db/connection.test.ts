@@ -403,7 +403,7 @@ describe('the sync-folder guard lives in the path resolver (T-260828-57)', () =>
     }
   })
 
-  it('only the first-run chooser imports the unguarded path helper', () => {
+  it('only the two modules that ask about a folder the user is considering import the unguarded path helper', () => {
     const importers: string[] = []
     walkElectronSources((rel, contents) => {
       if (rel === 'main/db/connection.ts') return // its definition
@@ -411,10 +411,16 @@ describe('the sync-folder guard lives in the path resolver (T-260828-57)', () =>
       if (/\bdatabasePathIn\b/.test(stripCommentsFrom(contents))) importers.push(rel)
     })
 
-    // The chooser asks about a path it will never open — see
-    // `databasePathIn`'s own comment. Anything else appearing here is a
-    // second, unguarded way into the database.
-    expect(importers).toEqual(['main/first-run/data-location-prompt.ts'])
+    // Both importers ask about a path they will never open — see
+    // `databasePathIn`'s own comment. The chooser names the database inside
+    // a folder the user is picking; T-260828-19's move names it inside a
+    // folder the user is moving to, in order to refuse a target that
+    // already holds one and to say where the copy lands. The move opens the
+    // new root only through `openDatabase()`, after the pointer is
+    // rewritten — the guarded path, like everything else. Anything else
+    // appearing here is a second, unguarded way into the database, and this
+    // list is extended by a deliberate edit or not at all.
+    expect(importers).toEqual(['main/db/move-data-root.ts', 'main/first-run/data-location-prompt.ts'])
   })
 })
 

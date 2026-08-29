@@ -80,7 +80,12 @@ export interface OpenDatabaseOptions {
  *
  * **Never pass its result to `new Database(...)`** — that is
  * `resolveDatabasePath`'s job, and `connection.test.ts` pins who may import
- * this.
+ * this. Two callers are sanctioned, for the same reason: the first-run
+ * chooser and T-260828-19's `move-data-root.ts`, both of which have to name
+ * the database inside a folder the user is merely *considering* — to refuse
+ * it, to check whether it already holds one, and (for the move) to say
+ * where the copy will land. Neither opens what it names: the move opens the
+ * new root only through `openDatabase()`, after the pointer is rewritten.
  */
 export function databasePathIn(dataRoot: string): string {
   return join(dataRoot, DB_FILENAME)
@@ -249,6 +254,60 @@ export function closeDatabase(): void {
     db.pragma('wal_checkpoint(TRUNCATE)')
   } finally {
     db.close()
+  }
+}
+
+/**
+ * Whether a write connection is currently open. Exists for T-260828-19's
+ * data-root move, which has to close the connection, copy the files, and
+ * then put the process back the way it found it: a move invoked from a
+ * running app must reopen, a move run before `openDatabase()` (or after a
+ * failed one) must not, and guessing wrong either leaks a second handle or
+ * leaves the app with none. Deliberately a boolean rather than exposing the
+ * handle — `getDatabase()` stays the only way to reach it.
+ */
+export function isDatabaseOpen(): boolean {
+  return handle !== null
+}
+
+/**
+ * Runs `PRAGMA integrity_check` against a SQLite file that is **not** this
+ * app's live database, and — when it passes — folds any `-wal` frames back
+ * into it with a truncating checkpoint. Returns SQLite's own answer: the
+ * string `ok`, or the first line of its complaint.
+ *
+ * This is the verification half of T-260828-19's copy-then-verify-then-
+ * repoint order: the freshly copied database in the target folder is proven
+ * readable and structurally sound *before* the pointer is rewritten, so a
+ * bad copy is a refusal that leaves the app on its original root rather
+ * than a repointed app that cannot open anything.
+ *
+ * It lives here, in the module that owns opening SQLite, for the reason
+ * `connection.test.ts` pins structurally: a second module constructing its
+ * own handle is a second, unconstrained way into a database file, which is
+ * the shape AGENTS.md's sync-folder gotcha warns about. The handle opened
+ * here is transient, owned entirely by this call, and closed in a `finally`
+ * — it never becomes `handle`, and `getDatabase()` never returns it.
+ *
+ * Read-write, not read-only, and that is load-bearing: a copy carrying a
+ * `-wal` sidecar with committed frames needs recovery on first access, and
+ * a read-only handle cannot recover one — it would fail on exactly the
+ * databases whose recent writes most need confirming. The checkpoint
+ * afterwards is what makes the new root self-contained.
+ */
+export function checkDatabaseFileIntegrity(filePath: string): string {
+  const probe = new Database(filePath, { fileMustExist: true })
+  try {
+    probe.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`)
+    const rows = probe.pragma('integrity_check') as Array<{ integrity_check?: unknown }>
+    const first = rows[0]?.integrity_check
+    const result = typeof first === 'string' ? first : 'integrity_check returned no result'
+    if (result === 'ok') {
+      probe.pragma('wal_checkpoint(TRUNCATE)')
+    }
+    return result
+  } finally {
+    probe.close()
   }
 }
 
