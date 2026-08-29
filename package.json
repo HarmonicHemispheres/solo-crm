@@ -15,7 +15,8 @@
     "test": "vitest run --project=\"!runtime-boot*\" && vitest run --project=\"runtime-boot*\"",
     "test:unit": "vitest run --project=\"!runtime-boot*\"",
     "seed": "electron-vite build && electron out/main/seed.js",
-    "dist": "electron-vite build && electron-builder --win --publish never"
+    "dist": "electron-vite build && electron-builder --win --publish never",
+    "report:run": "node scripts/run-report.mjs"
   },
   "build": {
     "appId": "com.magicpilllabs.solocrm",

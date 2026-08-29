@@ -17,6 +17,34 @@ This is the one instruction in this repo worth repeating in every subagent
 prompt, because a subagent under pressure to finish will otherwise quietly take
 the easy path.
 
+## Two modes, and the difference matters
+
+**Iterating** — you are mid-change and want to know whether the thing you just
+touched works. Run only what covers it. A full suite here tells you almost
+nothing you did not already know and costs everyone else on the machine.
+
+```
+node_modules/.bin/vitest run path/to/thing.test.ts
+npm run test:unit                                    # the fast pool
+```
+
+**Gating** — you are about to hand this off, merge it, or call it done. Run
+everything, once. This is the mode the rest of this document describes.
+
+Measured on this project: the suite is ~62% of all agent wall-clock, builders
+were running the full gate around four times each while iterating, and 64
+minutes went into re-running byte-identical commands. Splitting the two modes
+costs nothing — the same checks still run before anything is handed off.
+
+Some specifics that have each cost real time here:
+
+- **Never run bare `npx vitest run`.** With no project filter it runs all five
+  projects including the serial Electron pools; 179 such calls cost 128 minutes
+  in one run. Use `node_modules/.bin/vitest run <file>` or `npm run test:unit`.
+- Prefer `node_modules/.bin/<tool>` to `npx <tool>` — `npx` re-resolves on every
+  call, and there were 697 such calls in one run.
+- **Do not re-run a command whose inputs have not changed.**
+
 ## What to run
 
 The stack is Electron + Vite + TypeScript with Drizzle and better-sqlite3.
@@ -55,3 +83,11 @@ task's to report, because it will otherwise be blamed on the next change.
 
 Flaky is a claim that needs evidence. Re-run it; if it passes, say it passed on
 retry and note it. Do not call something flaky to move on.
+
+**A timeout is not a failure until it reproduces alone.** Re-run that file by
+itself before reporting, and say explicitly whether it reproduced. Three tasks
+in one wave reported `verify-failed` for timeouts caused purely by concurrent
+agents contending for CPU; all three passed on a quiet machine, and treating
+those reports as real would have bought three fix cycles that repaired nothing.
+This is a diagnosis, not an excuse — a test that fails under the load it will
+actually meet is a real defect, and it gets a task rather than a shrug.

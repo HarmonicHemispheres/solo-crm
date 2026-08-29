@@ -28,6 +28,15 @@ Each task gets its own subagent in its own worktree. The subagent's prompt is
 the task file's path plus the standing rules — do not paraphrase the scope into
 the prompt, point at it, so there is one copy.
 
+The standing rules live in
+[subagent-preamble.md](subagent-preamble.md) and go into **every** dispatch
+verbatim. Do not re-type them per wave. They were hand-written five times across
+five waves and drifted every time; the costly one was a wave whose preamble said
+"confirm your base is main" where the previous said "reset unconditionally", and
+the confirm-form produced an agent that reported a task file missing from git
+history when it was tracked on `main` the whole time. Per-task notes and the
+review lens go *after* the preamble, since those genuinely differ.
+
 Every subagent, in order: implement → `verify` → `code-review` → commit on a
 branch named for the task ID. It reports back what it changed, what verify said,
 and what review found. **A subagent that cannot make verify pass reports the
@@ -37,6 +46,25 @@ every time.
 The task's `category` decides the review gate beyond `code-review` — the table
 in [.dev/README.md](../../../.dev/README.md) is authoritative. Add a gate when
 the diff turns out to reach past its category; never drop one to save a turn.
+
+### Mutation testing, scoped
+
+Ask reviewers to mutate the source and check the tests go red. It is the single
+highest-yield instruction in this skill — it has found more than fifteen tests
+in this project that could not fail, including whole IPC surfaces that would
+have shipped dead with a green suite.
+
+It is also the single most expensive one: **228 minutes in one run**, because
+"check the suite goes red" was read literally and reviewers re-ran everything
+per mutant. Scope it:
+
+> Mutate the source and check the **covering test file** goes red — run that
+> file alone, never the whole suite. Pick at most six mutants, aimed at the
+> branches this task's acceptance criteria actually name.
+
+Same findings, a fraction of the wall clock. A reviewer that wants a full-suite
+run to prove a mutant escapes its own file should say so and run one, not
+default to it.
 
 ### The worktree does not start at main
 

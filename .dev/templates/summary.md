@@ -5,6 +5,23 @@ tasks: [T-YYMMDD-01, T-YYMMDD-02]
 branch: <branch merged into>
 ---
 
+## Run metadata
+
+Generated, never hand-typed — a dozen checkable numbers is exactly the wrong
+thing to write from memory:
+
+```
+npm run report:run -- <runId> --markdown
+```
+
+Paste its output here. It records when the run started and ended, the platform
+and model versions, the effort each stage ran at, how many subagents there were,
+tokens in and out with the cache split, and where the shell wall-clock went.
+That last table is the one worth reading twice: it is how the test suite was
+found to be 62% of all agent time.
+
+If a run spanned several workflows, pass them all — the script sums them.
+
 ## What changed
 
 Two or three sentences on the run as a whole — what the codebase can do now that

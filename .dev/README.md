@@ -115,6 +115,22 @@ decorative: it decides which review runs beyond the default `code-review`. A
 task spanning two categories takes the stricter gate — or, more often, is two
 tasks.
 
+## The tools
+
+Each is usable on its own; the pipeline is what happens when they run in order.
+None of them is a wrapper around the others, so a one-off use costs nothing.
+
+| Command | Answers |
+|---|---|
+| `npm run check:index` | Does the record match what actually shipped? |
+| `npm run report:run -- <runId> --markdown` | When did a run happen, on what model and platform, at what token cost, and where did its wall clock go? |
+
+`report:run` reads the agent transcripts a run leaves behind, so its numbers are
+observations rather than estimates, and it is the only correct way to fill in a
+summary's metadata block. With no run ID it reports every workflow in the
+current session; with several, it sums them. `CLAUDE_TRANSCRIPT_DIR` points it
+at a different session or machine.
+
 ## Keeping indexes true
 
 An index is a projection of the files beside it, so it can be rebuilt and is
