@@ -100,6 +100,7 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
 
   const whoRef = useRef<HTMLInputElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
 
   // Opens focused on the who field (scope). `Sheet` focuses its own panel on
   // open; a child's effect runs before its parent's, so this one lands last
@@ -131,6 +132,20 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
   const activeIndex = Math.min(highlight, Math.max(matches.length - 1, 0))
   const showList = listOpen && matches.length > 0
   const optionDomId = (index: number) => `${whoListId}-${index}`
+
+  // `.qlog-list` is `max-height: 168px; overflow: auto` (QuickLog.css), so
+  // past roughly five matches the arrow keys were moving a highlight that had
+  // left the viewport — in a flow with no mouse, driving a selection you
+  // cannot see. `block: 'nearest'` scrolls only when the row is actually out
+  // of view, so the list does not jump under a highlight that was already
+  // visible. Guarded because jsdom implements no layout and no
+  // `scrollIntoView` at all; a missing method must not break the keyboard
+  // path it exists to serve.
+  useEffect(() => {
+    if (!showList) return
+    const option = listRef.current?.children.item(activeIndex)
+    if (typeof option?.scrollIntoView === 'function') option.scrollIntoView({ block: 'nearest' })
+  }, [showList, activeIndex])
 
   // Active engagements on whichever side of the split-billing relationship
   // this company sits (`billingCompanyId` and `clientCompanyId` are
@@ -164,7 +179,17 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
 
   const logTouch = useMutation({
     mutationFn: ({ input }: SaveVariables) => callCrm('activity:log', input).then(unwrapMutationResult),
-    onSuccess: async (_activity, { subject }) => {
+    onSuccess: (_activity, { subject }) => {
+      // Confirmed and closed first, refetches behind it. `activity:log` has
+      // already succeeded by the time this runs — the write is settled, so
+      // this is not an optimistic close (this task's first Risk); what is no
+      // longer waited on is only the *reading* back of three lists.
+      onSaved(
+        <>
+          Logged. <b>{subject}</b> is current.
+        </>
+      )
+      onClose()
       // Three entities, not one — which is why this doesn't go through
       // `components/sheets/useSheetMutation.ts` (single-entity, and it has no
       // confirmation to raise). The insert moved `companies.last_touch_at`
@@ -172,13 +197,12 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
       // company and person row is stale alongside the activity lists: without
       // all three, the company this touch was logged against keeps rendering
       // its old "going quiet" cadence state until something else refetches.
-      await Promise.all([invalidate.activity(queryClient), invalidate.companies(queryClient), invalidate.people(queryClient)])
-      onSaved(
-        <>
-          Logged. <b>{subject}</b> is current.
-        </>
-      )
-      onClose()
+      // Deliberately not awaited: awaiting resolves only once the active
+      // queries have refetched, which held the overlay up and withheld the
+      // confirmation for a companies + people + activity round trip, against
+      // a goal measured in felt seconds. The views still update themselves
+      // when those land, exactly as before.
+      void Promise.all([invalidate.activity(queryClient), invalidate.companies(queryClient), invalidate.people(queryClient)])
     },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : 'Could not log this touch.')
   })
@@ -195,7 +219,13 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
     // Escape is deliberately absent — LayerManager owns it (this file's header).
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setListOpen(true)
+      // A closed list reopens where it was left. Opening *and* stepping in one
+      // press moved the highlight a row past what the user last saw, into a
+      // list that was not on screen when they pressed.
+      if (!showList) {
+        setListOpen(true)
+        return
+      }
       setHighlight((current) => Math.min(current + 1, Math.max(matches.length - 1, 0)))
       return
     }
@@ -298,7 +328,10 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
             className="inp"
             role="combobox"
             aria-expanded={showList}
-            aria-controls={whoListId}
+            // Only while the list is rendered: `aria-controls` pointing at an
+            // id that is not in the document is a dangling IDREF, which a
+            // screen reader resolves to nothing.
+            aria-controls={showList ? whoListId : undefined}
             aria-autocomplete="list"
             aria-activedescendant={showList ? optionDomId(activeIndex) : undefined}
             autoComplete="off"
@@ -313,7 +346,7 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
             onKeyDown={handleWhoKeyDown}
           />
           {showList && (
-            <ul className="qlog-list" id={whoListId} role="listbox" aria-label="Companies and people">
+            <ul className="qlog-list" id={whoListId} ref={listRef} role="listbox" aria-label="Companies and people">
               {matches.map((option, index) => (
                 <li
                   key={whoOptionKey(option)}
