@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import { closeDatabase, openDatabase } from './db/connection'
+import { runFirstRunDataLocationPrompt } from './first-run/data-location-prompt'
 import { registerIpcHandlers } from './ipc'
 import { SECURE_WEB_PREFERENCES, installContentSecurityPolicy, registerNavigationGuards } from './security'
 
@@ -57,13 +58,29 @@ function createWindow(): void {
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
     // Installed once, before any window is created: every BrowserWindow this
     // app opens uses the default session unless it opts into a partition,
     // and onHeadersReceived keeps only its most recent listener per session,
     // so registering this again per-window would just overwrite itself with
     // an identical policy.
     installContentSecurityPolicy(session.defaultSession, devServerUrl())
+
+    // T-260828-18: the one place a human is asked where Solo CRM keeps its
+    // data — after the CSP is installed, before `openDatabase()` below, and
+    // before any BrowserWindow exists (a renderer this early would itself
+    // need a database location to load). `skip` is never true here — only
+    // tests and `npm run seed` pass that, explicitly, at their own call
+    // sites. An existing install (a pointer file or a `solocrm.db` already
+    // under the default root) resolves this with no dialog shown at all.
+    const firstRun = await runFirstRunDataLocationPrompt({ skip: false })
+    if (firstRun.kind === 'quit') {
+      // No window was ever created, so `window-all-closed` never fires — an
+      // explicit exit is what actually ends the process, the same reasoning
+      // the `.catch` below already applies to a startup failure.
+      app.exit(0)
+      return
+    }
 
     // Opened once, here, before any window: `openDatabase()` (in
     // electron/main/db/connection.ts) is the only place a Database
