@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, session, shell } from 'electron'
+import { installApplicationMenu } from './app-menu'
 import { closeDatabase, openDatabase } from './db/connection'
 import { closeReadOnlyDatabase } from './db/readonly-connection'
 import { runFirstRunDataLocationPrompt } from './first-run/data-location-prompt'
@@ -95,6 +96,13 @@ app
     // — and before createWindow(), so every channel is live before the
     // renderer's preload could plausibly invoke one.
     registerIpcHandlers()
+
+    // T-260828-19: `Data ▸ Move Data Folder…`, the only entry point to the
+    // data-root move until P2-01's Workspace settings exists. After
+    // `openDatabase()` — the flow shows the current data root and the move
+    // closes and reopens this connection — and before any window, so the
+    // menu is in place the first time one is shown.
+    installApplicationMenu()
 
     createWindow()
 
