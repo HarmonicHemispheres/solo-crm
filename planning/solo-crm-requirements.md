@@ -130,12 +130,14 @@ affiliations (
 )
 
 -- Offerings: what you sell, and what it costs
-service_categories ( id uuid pk, name text, color text, sort integer, created_at, updated_at )
+-- (T-260829-10 renamed these three from service_categories / services /
+-- service_versions; `category_id` kept its already-generic name.)
+offering_categories ( id uuid pk, name text, color text, sort integer, created_at, updated_at )
 
-services (
+offerings (
   id uuid pk, name text not null,
   type          text,          -- service | product
-  category_id   uuid references service_categories(id),
+  category_id   uuid references offering_categories(id),
   billing_model text,          -- retainer | fixed | tm
   unit          text,          -- fixed | from | mo | hr
   blurb         text,
@@ -143,8 +145,8 @@ services (
   created_at, updated_at
 )
 
-service_versions (
-  id uuid pk, service_id uuid references services(id),
+offering_versions (
+  id uuid pk, offering_id uuid references offerings(id),
   version integer, rate_cents integer,
   effective_from date, effective_to date null,
   created_at, updated_at
@@ -155,7 +157,7 @@ engagements (
   id uuid pk, name text not null,
   billing_company_id uuid references companies(id),   -- who is on the invoice
   client_company_id  uuid references companies(id),   -- who the work is for
-  service_version_id uuid null references service_versions(id),
+  offering_version_id uuid null references offering_versions(id),
   agreed_rate_cents  integer,     -- snapshot at signature; never re-read from the price list
   billing_model text,             -- retainer | fixed | tm | equity | none
   status        text,             -- active | pending | proposed | held | delivered | lost
@@ -277,7 +279,7 @@ search_fts  -- FTS5 external-content table over companies.name, people.name,
 
 **Billing party and delivery client are separate columns on the engagement, not a parent/child link between companies.** EZDeploy does not own W+K; EZDeploy pays, W+K receives the work. Those roles vary per engagement and either can change independently. Revenue rolls up on `billing_company_id`; touchpoints and delivery roll up on `client_company_id`. An engagement where both point at the same company is the ordinary case and needs no special handling.
 
-**`agreed_rate_cents` is a snapshot, not a join.** The price list is read exactly once, when a proposal is created. After that the engagement owns its number. `service_versions` gives price history; the snapshot guarantees that editing or deleting a version can never alter signed work.
+**`agreed_rate_cents` is a snapshot, not a join.** The price list is read exactly once, when a proposal is created. After that the engagement owns its number. `offering_versions` gives price history; the snapshot guarantees that editing or deleting a version can never alter signed work.
 
 **`ends_on = NULL` means rolling.** Not a far-future sentinel date. Null is the honest representation of "no agreed finish" and is what distinguishes a retainer from a fixed scope in every query.
 

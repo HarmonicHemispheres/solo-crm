@@ -153,7 +153,7 @@ export const affiliations = sqliteTable(
 // Offerings: services and products
 // ---------------------------------------------------------------------------
 
-export const serviceCategories = sqliteTable('service_categories', {
+export const offeringCategories = sqliteTable('offering_categories', {
   id: text('id').primaryKey().notNull(),
   name: text('name'),
   color: text('color'),
@@ -162,12 +162,14 @@ export const serviceCategories = sqliteTable('service_categories', {
   updatedAt: text('updated_at').notNull()
 })
 
-export const services = sqliteTable('services', {
+export const offerings = sqliteTable('offerings', {
   id: text('id').primaryKey().notNull(),
   name: text('name').notNull(),
   // service | product
   type: text('type'),
-  categoryId: text('category_id').references(() => serviceCategories.id),
+  // Keeps its name through T-260829-10's rename: `category_id` was already
+  // generic, so renaming it would be symmetry rather than meaning.
+  categoryId: text('category_id').references(() => offeringCategories.id),
   // retainer | fixed | tm
   billingModel: text('billing_model'),
   // fixed | from | mo | hr
@@ -178,9 +180,9 @@ export const services = sqliteTable('services', {
   updatedAt: text('updated_at').notNull()
 })
 
-export const serviceVersions = sqliteTable('service_versions', {
+export const offeringVersions = sqliteTable('offering_versions', {
   id: text('id').primaryKey().notNull(),
-  serviceId: text('service_id').references(() => services.id),
+  offeringId: text('offering_id').references(() => offerings.id),
   version: integer('version'),
   rateCents: integer('rate_cents'),
   effectiveFrom: text('effective_from'),
@@ -205,7 +207,7 @@ export const engagements = sqliteTable(
     billingCompanyId: text('billing_company_id').references(() => companies.id),
     // Who the work is for.
     clientCompanyId: text('client_company_id').references(() => companies.id),
-    serviceVersionId: text('service_version_id').references(() => serviceVersions.id),
+    offeringVersionId: text('offering_version_id').references(() => offeringVersions.id),
     // Snapshot at signature; never re-read from the price list (§5).
     agreedRateCents: integer('agreed_rate_cents'),
     // retainer | fixed | tm | equity | none

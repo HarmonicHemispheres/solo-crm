@@ -47,7 +47,7 @@ function count(db: Database.Database, table: string): number {
 }
 
 describe('seedFixture: row counts', () => {
-  it('matches the mockup exactly: 10 companies, 7 people, 11 engagements, 11 tasks, 10 activity rows, 5 categories, 9 services', () => {
+  it('matches the mockup exactly: 10 companies, 7 people, 11 engagements, 11 tasks, 10 activity rows, 5 categories, 9 offerings', () => {
     withFreshDb((db) => {
       seedFixture(db)
       expect(count(db, 'companies')).toBe(10)
@@ -55,8 +55,8 @@ describe('seedFixture: row counts', () => {
       expect(count(db, 'engagements')).toBe(11)
       expect(count(db, 'tasks')).toBe(11)
       expect(count(db, 'activity')).toBe(10)
-      expect(count(db, 'service_categories')).toBe(5)
-      expect(count(db, 'services')).toBe(9)
+      expect(count(db, 'offering_categories')).toBe(5)
+      expect(count(db, 'offerings')).toBe(9)
     })
   })
 
@@ -156,22 +156,22 @@ describe('seedFixture: the mapping the task exists to prove', () => {
 })
 
 describe('seedFixture: offerings versions', () => {
-  it('carries at least two services with exactly two non-overlapping service_versions each', () => {
+  it('carries at least two offerings with exactly two non-overlapping offering_versions each', () => {
     withFreshDb((db) => {
       seedFixture(db)
-      const twoVersionServices = db
+      const twoVersionOfferings = db
         .prepare(
-          `SELECT service_id FROM service_versions GROUP BY service_id HAVING COUNT(*) = 2`
+          `SELECT offering_id FROM offering_versions GROUP BY offering_id HAVING COUNT(*) = 2`
         )
-        .all() as { service_id: string }[]
-      expect(twoVersionServices.length).toBeGreaterThanOrEqual(2)
+        .all() as { offering_id: string }[]
+      expect(twoVersionOfferings.length).toBeGreaterThanOrEqual(2)
 
-      for (const { service_id: serviceId } of twoVersionServices) {
+      for (const { offering_id: offeringId } of twoVersionOfferings) {
         const versions = db
           .prepare(
-            `SELECT version, effective_from, effective_to FROM service_versions WHERE service_id = ? ORDER BY version`
+            `SELECT version, effective_from, effective_to FROM offering_versions WHERE offering_id = ? ORDER BY version`
           )
-          .all(serviceId) as { version: number; effective_from: string; effective_to: string | null }[]
+          .all(offeringId) as { version: number; effective_from: string; effective_to: string | null }[]
         expect(versions).toHaveLength(2)
         const [first, second] = versions
         // Non-overlapping: the earlier version's range ends strictly before
@@ -371,7 +371,7 @@ describe('seedFixture: the non-empty-database guard', () => {
   it('a database with rows in only one seeded table is still refused', () => {
     withFreshDb((db) => {
       db.prepare(
-        `INSERT INTO service_categories (id, name, color, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO offering_categories (id, name, color, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
       ).run('preexisting', 'Preexisting', '#000000', 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
       expect(() => seedFixture(db)).toThrow(SeedGuardError)
     })

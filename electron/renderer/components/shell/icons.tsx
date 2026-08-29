@@ -77,7 +77,7 @@ export function PeopleIcon(props: ShellIconProps) {
   )
 }
 
-export function CatalogueIcon(props: ShellIconProps) {
+export function OfferingsIcon(props: ShellIconProps) {
   return (
     <svg {...DEFAULT_PROPS} {...props}>
       <path d="M12 3l2.4 5.3 5.6.6-4.2 3.9 1.2 5.6L12 15.6 6.9 18.4l1.2-5.6L4 8.9l5.6-.6z" />

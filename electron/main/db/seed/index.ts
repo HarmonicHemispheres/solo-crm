@@ -10,9 +10,9 @@ import {
   activity as activityFixture,
   companies as companiesFixture,
   engagements as engagementsFixture,
+  offeringCategories as offeringCategoriesFixture,
+  offerings as offeringsFixture,
   people as peopleFixture,
-  serviceCategories as serviceCategoriesFixture,
-  services as servicesFixture,
   tasks as tasksFixture
 } from './fixture'
 
@@ -65,9 +65,9 @@ const SEED_TABLES = [
   'companies',
   'people',
   'affiliations',
-  'service_categories',
-  'services',
-  'service_versions',
+  'offering_categories',
+  'offerings',
+  'offering_versions',
   'engagements',
   'tasks',
   'activity',
@@ -291,57 +291,57 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
     // the one table here that actually needs a specific insertion order. ----
     const companyIds = new Map(companiesFixture.map((c) => [c.key, randomUUID()]))
     const personIds = new Map(peopleFixture.map((p) => [p.key, randomUUID()]))
-    const categoryIds = new Map(serviceCategoriesFixture.map((c) => [c.key, randomUUID()]))
-    const serviceIds = new Map(servicesFixture.map((s) => [s.key, randomUUID()]))
-    // Keyed "serviceKey:version" -> service_versions.id, so engagements can
-    // resolve their (service, version) pair to the row that actually
+    const categoryIds = new Map(offeringCategoriesFixture.map((c) => [c.key, randomUUID()]))
+    const offeringIds = new Map(offeringsFixture.map((s) => [s.key, randomUUID()]))
+    // Keyed "offeringKey:version" -> offering_versions.id, so engagements can
+    // resolve their (offering, version) pair to the row that actually
     // carries that price.
-    const serviceVersionIds = new Map<string, string>()
-    for (const service of servicesFixture) {
-      for (const version of service.versions) {
-        serviceVersionIds.set(`${service.key}:${version.version}`, randomUUID())
+    const offeringVersionIds = new Map<string, string>()
+    for (const offering of offeringsFixture) {
+      for (const version of offering.versions) {
+        offeringVersionIds.set(`${offering.key}:${version.version}`, randomUUID())
       }
     }
     const engagementIds = new Map(engagementsFixture.map((e) => [e.key, randomUUID()]))
 
-    // ---- service_categories ----
+    // ---- offering_categories ----
     const insertCategory = db.prepare(
-      `INSERT INTO service_categories (id, name, color, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO offering_categories (id, name, color, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
     )
-    for (const category of serviceCategoriesFixture) {
+    for (const category of offeringCategoriesFixture) {
       insertCategory.run(categoryIds.get(category.key), category.name, category.color, category.sort, seededAt, seededAt)
     }
 
-    // ---- services ----
-    const insertService = db.prepare(
-      `INSERT INTO services (id, name, type, category_id, billing_model, unit, blurb, active, created_at, updated_at)
+    // ---- offerings ----
+    const insertOffering = db.prepare(
+      `INSERT INTO offerings (id, name, type, category_id, billing_model, unit, blurb, active, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    for (const service of servicesFixture) {
-      insertService.run(
-        serviceIds.get(service.key),
-        service.name,
-        service.type,
-        categoryIds.get(service.categoryKey),
-        service.billingModel,
-        service.unit,
-        service.blurb,
-        service.active ? 1 : 0,
+    for (const offering of offeringsFixture) {
+      insertOffering.run(
+        offeringIds.get(offering.key),
+        offering.name,
+        offering.type,
+        categoryIds.get(offering.categoryKey),
+        offering.billingModel,
+        offering.unit,
+        offering.blurb,
+        offering.active ? 1 : 0,
         seededAt,
         seededAt
       )
     }
 
-    // ---- service_versions ----
-    const insertServiceVersion = db.prepare(
-      `INSERT INTO service_versions (id, service_id, version, rate_cents, effective_from, effective_to, created_at, updated_at)
+    // ---- offering_versions ----
+    const insertOfferingVersion = db.prepare(
+      `INSERT INTO offering_versions (id, offering_id, version, rate_cents, effective_from, effective_to, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    for (const service of servicesFixture) {
-      for (const version of service.versions) {
-        insertServiceVersion.run(
-          serviceVersionIds.get(`${service.key}:${version.version}`),
-          serviceIds.get(service.key),
+    for (const offering of offeringsFixture) {
+      for (const version of offering.versions) {
+        insertOfferingVersion.run(
+          offeringVersionIds.get(`${offering.key}:${version.version}`),
+          offeringIds.get(offering.key),
           version.version,
           version.rateCents,
           shiftDateOnly(version.effectiveFrom, offsetDays),
@@ -444,7 +444,7 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
     // ---- engagements ----
     const insertEngagement = db.prepare(
       `INSERT INTO engagements
-         (id, name, billing_company_id, client_company_id, service_version_id, agreed_rate_cents, billing_model, status,
+         (id, name, billing_company_id, client_company_id, offering_version_id, agreed_rate_cents, billing_model, status,
           started_on, ends_on, renews_on, hours_included, contract_value_cents, hourly_rate_cents, estimated_hours,
           not_to_exceed_cents, notes, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -455,11 +455,11 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
         engagement.name,
         companyIds.get(engagement.billingCompanyKey),
         companyIds.get(engagement.clientCompanyKey),
-        // `!= null` on purpose, not `&&`/truthiness: a service version
+        // `!= null` on purpose, not `&&`/truthiness: an offering version
         // number of 0 is a legitimate value and must not be treated the
-        // same as "no service" the way a falsy check would.
-        engagement.serviceKey != null && engagement.serviceVersion != null
-          ? serviceVersionIds.get(`${engagement.serviceKey}:${engagement.serviceVersion}`)
+        // same as "no offering" the way a falsy check would.
+        engagement.offeringKey != null && engagement.offeringVersion != null
+          ? offeringVersionIds.get(`${engagement.offeringKey}:${engagement.offeringVersion}`)
           : null,
         engagement.agreedRateCents,
         engagement.billingModel,

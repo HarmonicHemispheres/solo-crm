@@ -17,6 +17,7 @@ vi.mock('electron', () => ({
 }))
 
 const { closeDatabase, getDatabase, openDatabase } = await import('./connection')
+const { MIGRATIONS } = await import('./migrations')
 const { readDatabaseStats } = await import('./stats')
 
 const tmpDirs: string[] = []
@@ -94,7 +95,13 @@ describe('readDatabaseStats', () => {
 
   it('orders tables largest first so the biggest thing in the file is the first thing read', () => {
     const db = openTempDatabase()
-    insertCompanies(5)
+    // Enough companies to be unambiguously the largest table in a freshly
+    // migrated database. This was a flat 5 until T-260829-10 added a sixth
+    // migration and `schema_migrations` — one row per applied migration, and a
+    // real table `readDatabaseStats` reports like any other — drew level with
+    // it and then took first place. Sized off `MIGRATIONS.length` rather than
+    // bumped to another literal so the next migration cannot break it again.
+    insertCompanies(MIGRATIONS.length + 5)
 
     const counts = readDatabaseStats(db).tables.map((table) => table.rowCount)
     expect([...counts].sort((a, b) => b - a)).toEqual(counts)

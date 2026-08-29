@@ -16,7 +16,7 @@ const STUB_ENGAGEMENT_ROW = {
   name: 'stub',
   billingCompanyId: null,
   clientCompanyId: null,
-  serviceVersionId: null,
+  offeringVersionId: null,
   agreedRateCents: null,
   billingModel: null,
   status: null,

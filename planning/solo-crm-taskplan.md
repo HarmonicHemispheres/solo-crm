@@ -498,10 +498,10 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
 ## Phase 3 — Money
 
 - [ ] **P3-01 · Offerings repositories** — 🗄 data · M · after P0-05
-  `service_categories`, `services`, `service_versions`.
-  - [ ] A service always has at least one version — creating one without a rate
-        is refused
-  - [ ] Version effective ranges cannot overlap for the same service
+  `offering_categories`, `offerings`, `offering_versions`.
+  - [ ] An offering always has at least one version — creating one without a
+        rate is refused
+  - [ ] Version effective ranges cannot overlap for the same offering
   - [ ] Archiving sets a flag; nothing is deleted
 
 - [ ] **P3-02 · Price versioning** — 🗄 data · M · after P3-01 · +architecture-review
@@ -514,7 +514,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
 
 - [ ] **P3-03 · Rate snapshot on engagement create** — 🗄 data · S · after P3-01, P1-03
   The price list is read exactly once, when a proposal is created.
-  - [ ] Deleting the `service_version` an engagement was sold from changes
+  - [ ] Deleting the `offering_version` an engagement was sold from changes
         nothing about that engagement's numbers
   - [ ] Changing a price from $3,500 to $4,500 leaves every existing
         `agreed_rate_cents` untouched — verified by reading rows back, not by

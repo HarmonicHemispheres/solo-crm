@@ -3,10 +3,10 @@ import { Link, useLocation } from 'react-router'
 import { NAV_ITEMS, getActiveNavId, type NavId, type NavItem } from '../../nav'
 import {
   ActivityIcon,
-  CatalogueIcon,
   CompaniesIcon,
   DataIcon,
   EngagementsIcon,
+  OfferingsIcon,
   PeopleIcon,
   RevenueIcon,
   SettingsIcon,
@@ -20,13 +20,13 @@ const GROUPS: readonly NavItem['group'][] = ['Work', 'Records', 'Workspace']
 
 /** Which nav items carry a `.count` slot in the mockup — Today, Revenue,
  * Activity and Settings have none (lines ~491-507); Todos, Companies,
- * People, Catalogue, Engagements and Data (`id="c-rows"`, easy to miss) all
+ * People, Offerings, Engagements and Data (`id="c-rows"`, easy to miss) all
  * do. */
 const COUNT_BEARING_NAV_IDS: ReadonlySet<NavId> = new Set([
   'todos',
   'companies',
   'people',
-  'services',
+  'offerings',
   'engagements',
   'data'
 ])
@@ -41,7 +41,7 @@ const NAV_ICONS: Record<NavId, (props: ShellIconProps) => ReactElement> = {
   activity: ActivityIcon,
   companies: CompaniesIcon,
   people: PeopleIcon,
-  services: CatalogueIcon,
+  offerings: OfferingsIcon,
   engagements: EngagementsIcon,
   settings: SettingsIcon,
   data: DataIcon
