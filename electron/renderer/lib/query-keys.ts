@@ -1,4 +1,5 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
+import type { ActivityFilters } from '../../shared/activity'
 
 /**
  * The query-key convention (documented alongside it in CONVENTIONS.md's
@@ -103,20 +104,41 @@ export const queryKeys = {
     /** `tasks:countOpen` — a summary, not a single record, so no id (this file's header: "id is present only when scope addresses one record"). */
     countOpen: () => ['tasks', 'countOpen'] as const
   },
-  /** G8: no `activity` update or delete channel exists — no corresponding key here either, only what `activity:list`/`activity:get` need. */
+  /**
+   * G8: no `activity` update or delete channel exists — no corresponding key
+   * here either, only what `activity:list`/`activity:get` need.
+   *
+   * `list` takes an optional `ActivityFilters` (T-260828-34, the Activity
+   * view's kind/date-range/entity filters) — a filtered read is a genuinely
+   * different query result from the unfiltered one, so it needs a key TanStack
+   * Query treats as distinct rather than one both compete to populate. Every
+   * other entity's `list()` stays bare because `companies:list`/`people:list`
+   * take no request at all and `engagements:list`'s own filtered call sites
+   * (`byBillingCompany`/`byClientCompany` above) already have their own named
+   * key rather than a raw filters object — activity's filter shape has no
+   * such fixed small set of call sites to name individually.
+   */
   activity: {
     all: () => ['activity'] as const,
-    list: () => ['activity', 'list'] as const,
+    /**
+     * T-260828-34: filter-aware, so the Activity view's filtered reads and an
+     * unfiltered one never share a cache entry. An absent or empty filter set
+     * collapses to the bare key rather than `['activity','list',{}]`, so
+     * `list()` and `list({})` address the same entry.
+     */
+    list: (filters?: ActivityFilters) =>
+      filters && Object.keys(filters).length > 0 ? (['activity', 'list', filters] as const) : (['activity', 'list'] as const),
     detail: (id: string) => ['activity', 'detail', id] as const,
     /**
      * `activity:list({ personId })` (T-260828-31: a person's page shows
      * activity involving them regardless of which company the row carries —
-     * `activityFiltersSchema`'s `personId` is independent of its
-     * `companyId`, so this is a person-scoped read, not a company one).
-     * Scoped under its own id, the same reason `engagements.byBillingCompany`/
-     * `byClientCompany` exist rather than reusing the bare `list()` key: an
-     * unfiltered `activity:list()` call (the future Activity view) and this
-     * filtered one must not share a cache entry.
+     * `activityFiltersSchema`'s `personId` is independent of its `companyId`,
+     * so this is a person-scoped read, not a company one).
+     *
+     * Kept alongside the filter-aware `list` above rather than folded into it:
+     * `list({ personId })` would now key correctly too, but PersonDetail calls
+     * this and the distinct prefix keeps a person's timeline invalidatable on
+     * its own, without touching the Activity view's cached pages.
      */
     byPerson: (personId: string) => ['activity', 'byPerson', personId] as const
   },
