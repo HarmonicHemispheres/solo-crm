@@ -67,7 +67,7 @@ function makeEngagement(overrides: Partial<Engagement> & { id: string }): Engage
     name: 'Engagement',
     billingCompanyId: null,
     clientCompanyId: null,
-    serviceVersionId: null,
+    offeringVersionId: null,
     agreedRateCents: null,
     billingModel: null,
     status: null,

@@ -3,6 +3,7 @@ import migration0002Sql from './0002_search_fts.sql?raw'
 import migration0003Sql from './0003_search_content_table.sql?raw'
 import migration0004Sql from './0004_fk_indexes_polymorphic_cascade.sql?raw'
 import migration0005Sql from './0005_branding.sql?raw'
+import migration0006Sql from './0006_offerings_rename.sql?raw'
 
 /**
  * The ordered, explicit manifest of every migration `migrate.ts` knows how
@@ -53,5 +54,13 @@ export const MIGRATIONS: readonly MigrationDefinition[] = [
   // natural-identity exemption (ADR-012). Declared in `schema.ts`, so
   // `schema.test.ts`'s regeneration check sees it in the delta and asserts it
   // matches this file rather than treating it as drift.
-  { version: 5, name: '0005_branding', sql: migration0005Sql }
+  { version: 5, name: '0005_branding', sql: migration0005Sql },
+  // T-260829-10: the catalogue's three tables and the two columns naming them
+  // become `offering_categories` / `offerings` / `offering_versions` /
+  // `offering_versions.offering_id` / `engagements.offering_version_id`, so the
+  // schema says what the rail says (T-260829-09). Hand-written `ALTER TABLE
+  // ... RENAME`, not drizzle-kit output: drizzle-kit reads a rename as a drop
+  // and a create, which would discard every row. `schema.test.ts` asserts the
+  // regenerated delta against this file all the same.
+  { version: 6, name: '0006_offerings_rename', sql: migration0006Sql }
 ]

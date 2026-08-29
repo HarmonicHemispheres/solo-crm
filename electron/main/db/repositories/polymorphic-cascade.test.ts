@@ -55,7 +55,19 @@ const MIGRATION_0004 = (() => {
   return found
 })()
 
-const MIGRATIONS_BEFORE_0004 = MIGRATIONS.filter((m) => m.version < 4)
+/**
+ * Every migration *except* the one under test — the database the seeded case
+ * below starts from.
+ *
+ * Was `version < 4` until T-260829-10. The dev seed writes whatever names
+ * `schema.ts` carries today, so it can only load into a database whose schema
+ * is current; 0006 renamed three tables the seed writes, and seeding a
+ * database stopped at 0003 stopped being possible the moment it landed. Every
+ * migration but 0004 is the same starting point for this test's purposes — 0005
+ * and 0006 touch nothing 0004 indexes or triggers on — and it does not need
+ * revisiting the next time a later migration renames something.
+ */
+const MIGRATIONS_WITHOUT_0004 = MIGRATIONS.filter((m) => m.version !== 4)
 
 const NOW = '2026-08-29T12:00:00.000Z'
 
@@ -287,10 +299,10 @@ describe('migration 0004 applies to a seeded database', () => {
   it('applies over a database seeded at 0003, and the cascade then clears the seeded links', () => {
     const tmpDir = makeTmpDir('solo-crm-cascade-seeded-')
     try {
-      // Migrate only as far as 0003, seed it, then let 0004 run — the "copy of
-      // a seeded database" case in this task's Acceptance. Reopening the same
-      // userDataDir applies the remaining migration to the populated file.
-      openDatabase({ userDataDir: tmpDir, migrations: MIGRATIONS_BEFORE_0004 })
+      // Migrate everything except 0004, seed it, then let 0004 run — the "copy
+      // of a seeded database" case in this task's Acceptance. Reopening the
+      // same userDataDir applies the remaining migration to the populated file.
+      openDatabase({ userDataDir: tmpDir, migrations: MIGRATIONS_WITHOUT_0004 })
       seedFixture(getDatabase())
       const seededLinks = (
         db => db.prepare("SELECT COUNT(*) AS count FROM links WHERE entity_type = 'company'").get() as { count: number }

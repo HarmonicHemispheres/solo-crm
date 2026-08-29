@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -103,9 +103,58 @@ function createTableStatements(sql: string): string[] {
   return statements
 }
 
+/**
+ * Every `ALTER TABLE … RENAME TO …` / `ALTER TABLE … RENAME COLUMN … TO …`
+ * a checked-in migration performs, as `from`/`to` pairs — read out of the
+ * migrations themselves rather than restated here, so a future rename cannot
+ * land in a migration and be forgotten in this file.
+ *
+ * Backticks are optional in the pattern because a hand-written migration may
+ * quote identifiers the way drizzle-kit does or not at all.
+ */
+function renamesInMigrations(migrations: readonly MigrationDefinition[]): { from: string; to: string }[] {
+  const renames: { from: string; to: string }[] = []
+  const renameTable = /ALTER\s+TABLE\s+`?(\w+)`?\s+RENAME\s+TO\s+`?(\w+)`?/gi
+  const renameColumn = /ALTER\s+TABLE\s+`?\w+`?\s+RENAME\s+COLUMN\s+`?(\w+)`?\s+TO\s+`?(\w+)`?/gi
+  for (const migration of migrations) {
+    for (const pattern of [renameTable, renameColumn]) {
+      pattern.lastIndex = 0
+      for (const match of migration.sql.matchAll(pattern)) {
+        renames.push({ from: match[1], to: match[2] })
+      }
+    }
+  }
+  return renames
+}
+
+/**
+ * `text` with every rename applied, longest `from` first.
+ *
+ * Longest-first matters because these identifiers nest: `service_versions`
+ * contains `service_version`, and drizzle's own foreign-key names concatenate
+ * several of them (`service_versions_service_id_services_id_fk`). Substituting
+ * `services` before `service_versions` would corrupt the longer name. Each
+ * match is parked on a sentinel that cannot appear in JSON before any `to`
+ * value is written back, so a rename whose target is another rename's source
+ * cannot be applied twice.
+ */
+function applyRenames(text: string, renames: readonly { from: string; to: string }[]): string {
+  // U+0000 cannot appear unescaped in JSON, so no snapshot can contain it.
+  const sentinel = (i: number): string => `\u0000${i}\u0000`
+  const ordered = [...renames].sort((a, b) => b.from.length - a.from.length)
+  let result = text
+  ordered.forEach((rename, i) => {
+    result = result.split(rename.from).join(sentinel(i))
+  })
+  ordered.forEach((rename, i) => {
+    result = result.split(sentinel(i)).join(rename.to)
+  })
+  return result
+}
+
 describe('schema.ts and the checked-in migrations cannot drift', () => {
   it(
-    'regenerating from schema.ts against 0001 produces exactly the indexes 0004 creates and the table 0005 creates',
+    'regenerating from schema.ts against 0001 (plus 0006’s renames) produces exactly the indexes 0004 creates and the table 0005 creates',
     () => {
       // schema.ts is imported by no production module — the runtime applies
       // the checked-in SQL — so nothing else would catch a hand-edit of the
@@ -129,6 +178,23 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
       // 0002 and 0003 (search_fts, search_source) are hand-written and are
       // not in the journal; they add no object schema.ts declares, so the
       // snapshot staying at 0001 is correct rather than an oversight.
+      //
+      // T-260829-10 added one step to seeding that base. 0006 renames three
+      // tables and two columns, and drizzle-kit cannot express a rename
+      // without asking: seeing three tables gone and three arrived, it opens
+      // an interactive "created or renamed?" prompt, which refuses to run
+      // without a TTY and so produces no migration at all. Diffing schema.ts
+      // against a base that still holds the *old* names is therefore not
+      // possible, by construction rather than by configuration.
+      //
+      // So the base is 0001's snapshot with 0006's renames applied — the
+      // state after 0001 and 0006, before 0004 and 0005 — and the delta is
+      // once again exactly 0004's indexes and 0005's table, asserted below
+      // unchanged. The renames come out of the registered migrations' own SQL
+      // (`renamesInMigrations`), never a list restated here, so this base
+      // cannot drift from what the runtime applies; a rename that reaches
+      // schema.ts without reaching a migration still leaves a created/dropped
+      // pair, still hits the prompt, and still fails this test.
       const here = dirname(fileURLToPath(import.meta.url))
       const repoRoot = resolve(here, '..', '..', '..')
       const migrationsDir = join(here, 'migrations')
@@ -145,6 +211,38 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         cpSync(join(migrationsDir, 'meta', '_journal.json'), join(outDir, 'meta', '_journal.json'))
         cpSync(join(migrationsDir, 'meta', '0001_snapshot.json'), join(outDir, 'meta', '0001_snapshot.json'))
         cpSync(join(migrationsDir, '0001_init.sql'), join(outDir, '0001_init.sql'))
+
+        // drizzle-kit takes the *last* file in `meta/` (excluding `_journal`,
+        // sorted by name) as the previous snapshot — the journal only names
+        // the migration it is about to write. `0001a_` sorts after
+        // `0001_snapshot.json` ('_' < 'a') and cannot be clobbered by
+        // drizzle's own `<tag>_snapshot.json` output. `prevId` chains it to
+        // 0001 so drizzle's collision check sees one child, not two.
+        const renames = renamesInMigrations(MIGRATIONS)
+        expect(renames.length, 'renamesInMigrations found no renames to apply').toBeGreaterThan(0)
+        const snapshot0001 = readFileSync(join(migrationsDir, 'meta', '0001_snapshot.json'), 'utf-8')
+        const renamedBase = JSON.parse(applyRenames(snapshot0001, renames)) as Record<string, unknown>
+        renamedBase.prevId = (JSON.parse(snapshot0001) as { id: string }).id
+        renamedBase.id = '00000000-0000-0000-0000-0000000006ce'
+        // Guard on the transform itself. `applyRenames` substitutes over the
+        // snapshot's raw text — which is what lets one pass fix drizzle's
+        // compound foreign-key names
+        // (`engagements_service_version_id_service_versions_id_fk`) at the
+        // same time as the table keys, but which also means a future rename
+        // whose *source* is a token that appears somewhere it does not mean
+        // would rewrite more than it should. A column renamed from `name` or
+        // `type` is the realistic case: every table in a drizzle snapshot has
+        // a `"name"` key.
+        //
+        // That failure is closed rather than open — an over-substituted base
+        // stops matching 0004 and 0005 and this test goes red — but it would
+        // go red somewhere unreadable. So it is caught here instead: the
+        // derived base must hold exactly the tables a fully migrated database
+        // has, which is what `EXPECTED_TABLES` independently spells out.
+        expect(Object.keys((renamedBase as { tables: Record<string, unknown> }).tables).sort()).toEqual(
+          [...EXPECTED_TABLES].sort()
+        )
+        writeFileSync(join(outDir, 'meta', '0001a_renamed_snapshot.json'), JSON.stringify(renamedBase, null, 2))
 
         // drizzle-kit treats --schema as a glob, and its globber only
         // understands forward slashes — a Windows backslash path matches
@@ -166,7 +264,13 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         expect(result.status).toBe(0)
 
         const generated = readdirSync(outDir).filter((f) => f.endsWith('.sql') && f !== '0001_init.sql')
-        expect(generated).toHaveLength(1)
+        expect(
+          generated,
+          'drizzle-kit generated no migration. The usual cause is a table renamed in schema.ts with no ' +
+            'matching `ALTER TABLE … RENAME TO` in a checked-in migration: drizzle sees one table gone and ' +
+            'another arrived, opens its interactive "created or renamed?" prompt, and aborts without a TTY. ' +
+            `Renames applied to the base snapshot were: ${JSON.stringify(renames)}. drizzle-kit said: ${result.stdout}${result.stderr}`
+        ).toHaveLength(1)
         // Normalize line endings: git's autocrlf checks the committed file out
         // with CRLF on Windows while drizzle-kit always emits LF.
         const delta = readFileSync(join(outDir, generated[0]), 'utf-8').replace(/\r\n/g, '\n')
@@ -223,11 +327,14 @@ function column(columns: ColumnInfo[], name: string): ColumnInfo | undefined {
 }
 
 // Every table requirements §5 names, exactly, that migration 0001 owns —
-// search_fts excluded (G6 / P1-06). Doubling as the completeness check: a
-// table added or renamed in schema.ts without a matching entry here (or
-// vice versa) fails the "no more, no fewer" assertion below rather than
-// passing silently.
-const EXPECTED_TABLES = [
+// search_fts excluded (G6 / P1-06) — under the names **0001 itself** creates.
+// 0001 is history and is never edited, so the three catalogue tables stay
+// spelled the old way here even though 0006 has since renamed them;
+// `EXPECTED_TABLES` below carries the names a fully migrated database has.
+// Doubling as the completeness check: a table added in schema.ts without a
+// matching entry here (or vice versa) fails the "no more, no fewer" assertion
+// below rather than passing silently.
+const MIGRATION_0001_TABLES = [
   'companies',
   'people',
   'affiliations',
@@ -248,6 +355,24 @@ const EXPECTED_TABLES = [
   'settings'
 ]
 
+/**
+ * The same §5 tables under the names they carry once **every** checked-in
+ * migration has run — what `withMigratedDb` opens. Derived from
+ * `MIGRATION_0001_TABLES` by the renames the migrations themselves perform,
+ * rather than restated: a rename spelled one way in a migration and another
+ * way here would otherwise read as a passing test naming a table that does
+ * not exist.
+ *
+ * `branding` (0005) is deliberately absent: this list drives the
+ * UUID-primary-key assertion below, and branding sits in ADR-002's
+ * natural-identity exemption class (ADR-012) alongside `settings` and
+ * `favicons`. The search relations 0002/0003 add are absent for the reason
+ * ADR-009 gives — `search_source` is not a table of records at all.
+ */
+const EXPECTED_TABLES = MIGRATION_0001_TABLES.map(
+  (table) => applyRenames(table, renamesInMigrations(MIGRATIONS)) // a whole-name substitution: these are bare identifiers, not compound FK names
+)
+
 // ADR-002's exemption class: keyed by natural identity, no UUID primary key,
 // no `created_at`. Every other table in EXPECTED_TABLES gets both.
 const NATURAL_KEY_EXEMPT_TABLES = new Set(['favicons', 'settings'])
@@ -262,10 +387,10 @@ function domainTableNames(db: Database.Database): string[] {
 }
 
 describe('migration 0001: the exact set of domain tables', () => {
-  it('creates every §5 table named in EXPECTED_TABLES, no more and no fewer, and no search_fts', () => {
+  it('creates every §5 table named in MIGRATION_0001_TABLES, no more and no fewer, and no search_fts', () => {
     withMigration0001OnlyDb((db) => {
       const actual = domainTableNames(db).sort()
-      expect(actual).toEqual([...EXPECTED_TABLES].sort())
+      expect(actual).toEqual([...MIGRATION_0001_TABLES].sort())
       expect(actual).not.toContain('search_fts')
     })
   })

@@ -635,14 +635,14 @@ describe('constraint translation: a write referencing a nonexistent company or s
     })
   })
 
-  it('createEngagement with a nonexistent serviceVersionId is refused', () => {
+  it('createEngagement with a nonexistent offeringVersionId is refused', () => {
     withDatabase((db) => {
       let thrown: unknown
       try {
         createEngagement(db, {
           name: 'Bad Service Version Co',
           billingModel: 'none',
-          serviceVersionId: randomUUID(),
+          offeringVersionId: randomUUID(),
           startedOn: '2026-01-01'
         })
       } catch (error) {
@@ -685,11 +685,11 @@ describe('constraint translation: a write referencing a nonexistent company or s
     })
   })
 
-  it('updateEngagement with a nonexistent serviceVersionId is refused', () => {
+  it('updateEngagement with a nonexistent offeringVersionId is refused', () => {
     withDatabase((db) => {
       const created = createEngagement(db, { name: 'Refused Service Update Co', billingModel: 'none', startedOn: '2026-01-01' })
 
-      expect(() => updateEngagement(db, created.id, { serviceVersionId: randomUUID() })).toThrow(RefusalError)
+      expect(() => updateEngagement(db, created.id, { offeringVersionId: randomUUID() })).toThrow(RefusalError)
     })
   })
 })

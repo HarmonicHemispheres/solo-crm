@@ -140,7 +140,7 @@ const ALL_WRITABLE_COLUMNS = [
   { key: 'name', column: 'name' },
   { key: 'billingCompanyId', column: 'billing_company_id' },
   { key: 'clientCompanyId', column: 'client_company_id' },
-  { key: 'serviceVersionId', column: 'service_version_id' },
+  { key: 'offeringVersionId', column: 'offering_version_id' },
   { key: 'agreedRateCents', column: 'agreed_rate_cents' },
   { key: 'billingModel', column: 'billing_model' },
   { key: 'status', column: 'status' },
@@ -167,7 +167,7 @@ const UPDATE_COMMON_COLUMNS = [
   { key: 'name', column: 'name' },
   { key: 'billingCompanyId', column: 'billing_company_id' },
   { key: 'clientCompanyId', column: 'client_company_id' },
-  { key: 'serviceVersionId', column: 'service_version_id' },
+  { key: 'offeringVersionId', column: 'offering_version_id' },
   { key: 'status', column: 'status' },
   { key: 'startedOn', column: 'started_on' },
   { key: 'endsOn', column: 'ends_on' },
@@ -199,7 +199,7 @@ const MODEL_SPECIFIC_COLUMNS = [
 const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
   SQLITE_CONSTRAINT_FOREIGNKEY: () =>
     new RefusalError(
-      'This write references a company or service version that does not exist — check billingCompanyId, clientCompanyId and serviceVersionId.',
+      'This write references a company or offering version that does not exist — check billingCompanyId, clientCompanyId and offeringVersionId.',
       { reason: 'foreign-key' }
     ),
   SQLITE_CONSTRAINT_NOTNULL: NOT_NULL_HANDLER,
@@ -216,7 +216,7 @@ interface EngagementRow {
   readonly name: string
   readonly billing_company_id: string | null
   readonly client_company_id: string | null
-  readonly service_version_id: string | null
+  readonly offering_version_id: string | null
   readonly agreed_rate_cents: number | null
   readonly billing_model: string | null
   readonly status: string | null
@@ -239,7 +239,7 @@ function mapEngagementRow(row: EngagementRow): Engagement {
     name: row.name,
     billingCompanyId: row.billing_company_id,
     clientCompanyId: row.client_company_id,
-    serviceVersionId: row.service_version_id,
+    offeringVersionId: row.offering_version_id,
     agreedRateCents: row.agreed_rate_cents,
     billingModel: row.billing_model as BillingModel | null,
     status: row.status as EngagementStatus | null,

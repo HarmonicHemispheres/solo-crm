@@ -91,14 +91,14 @@ export interface PersonSeed {
   readonly tag: string | null
 }
 
-export interface ServiceCategorySeed {
+export interface OfferingCategorySeed {
   readonly key: string
   readonly name: string
   readonly color: string
   readonly sort: number
 }
 
-export interface ServiceVersionSeed {
+export interface OfferingVersionSeed {
   readonly version: number
   readonly rateCents: number
   /** YYYY-MM-DD, mockup-relative. */
@@ -107,7 +107,7 @@ export interface ServiceVersionSeed {
   readonly effectiveTo: string | null
 }
 
-export interface ServiceSeed {
+export interface OfferingSeed {
   readonly key: string
   readonly name: string
   /** service | product */
@@ -119,7 +119,7 @@ export interface ServiceSeed {
   readonly unit: string
   readonly blurb: string
   readonly active: boolean
-  readonly versions: readonly ServiceVersionSeed[]
+  readonly versions: readonly OfferingVersionSeed[]
 }
 
 export interface EngagementSeed {
@@ -127,8 +127,8 @@ export interface EngagementSeed {
   readonly name: string
   readonly billingCompanyKey: string
   readonly clientCompanyKey: string
-  readonly serviceKey: string | null
-  readonly serviceVersion: number | null
+  readonly offeringKey: string | null
+  readonly offeringVersion: number | null
   readonly agreedRateCents: number | null
   /** retainer | fixed | tm | equity | none */
   readonly billingModel: string
@@ -399,7 +399,7 @@ export const people: readonly PersonSeed[] = [
   }
 ]
 
-export const serviceCategories: readonly ServiceCategorySeed[] = [
+export const offeringCategories: readonly OfferingCategorySeed[] = [
   { key: 'c1', name: 'Audits', color: '#C9A84C', sort: 0 },
   { key: 'c2', name: 'Builds', color: '#6F9BD8', sort: 1 },
   { key: 'c3', name: 'Retainers', color: '#5BA4A4', sort: 2 },
@@ -410,7 +410,7 @@ export const serviceCategories: readonly ServiceCategorySeed[] = [
 // Rates below are the mockup's dollar figures * 100 (CONVENTIONS.md: money
 // is integer cents, always) — the dollar amount is left in a trailing
 // comment on each version for anyone auditing the port against the source.
-export const services: readonly ServiceSeed[] = [
+export const offerings: readonly OfferingSeed[] = [
   {
     key: 's1',
     name: 'Discovery Audit',
@@ -527,8 +527,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'Advisory + development retainer',
     billingCompanyKey: 'rinvii',
     clientCompanyKey: 'rinvii',
-    serviceKey: 's5',
-    serviceVersion: 1,
+    offeringKey: 's5',
+    offeringVersion: 1,
     agreedRateCents: 650_000, // $6,500
     billingModel: 'retainer',
     status: 'active',
@@ -546,8 +546,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'SiteFacts — parcel & setback engine',
     billingCompanyKey: 'sandsage',
     clientCompanyKey: 'sandsage',
-    serviceKey: 's6',
-    serviceVersion: 1,
+    offeringKey: 's6',
+    offeringVersion: 1,
     agreedRateCents: 180_000, // $1,800
     billingModel: 'retainer',
     status: 'active',
@@ -565,8 +565,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'SiteFacts equity position',
     billingCompanyKey: 'sandsage',
     clientCompanyKey: 'sandsage',
-    serviceKey: null,
-    serviceVersion: null,
+    offeringKey: null,
+    offeringVersion: null,
     agreedRateCents: null,
     billingModel: 'equity',
     status: 'held',
@@ -584,8 +584,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'Samay — AI timesheet agent',
     billingCompanyKey: 'ezdeploy',
     clientCompanyKey: 'wk',
-    serviceKey: 's3',
-    serviceVersion: 1,
+    offeringKey: 's3',
+    offeringVersion: 1,
     agreedRateCents: 1_800_000, // $18,000
     billingModel: 'fixed',
     status: 'active',
@@ -603,8 +603,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'Programetrix agents audit',
     billingCompanyKey: 'ezdeploy',
     clientCompanyKey: 'programetrix',
-    serviceKey: 's2',
-    serviceVersion: 1,
+    offeringKey: 's2',
+    offeringVersion: 1,
     agreedRateCents: 420_000, // $4,200
     billingModel: 'fixed',
     status: 'delivered',
@@ -622,8 +622,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'Platform advisory',
     billingCompanyKey: 'ezdeploy',
     clientCompanyKey: 'ezdeploy',
-    serviceKey: 's7',
-    serviceVersion: 1,
+    offeringKey: 's7',
+    offeringVersion: 1,
     agreedRateCents: 16_500, // $165/hr
     billingModel: 'tm',
     status: 'active',
@@ -641,8 +641,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'VedX customer portal',
     billingCompanyKey: 'radial',
     clientCompanyKey: 'radial',
-    serviceKey: 's4',
-    serviceVersion: 1,
+    offeringKey: 's4',
+    offeringVersion: 1,
     agreedRateCents: 2_200_000, // $22,000
     billingModel: 'fixed',
     status: 'delivered',
@@ -660,8 +660,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'VedX email support agent',
     billingCompanyKey: 'radial',
     clientCompanyKey: 'radial',
-    serviceKey: 's3',
-    serviceVersion: 1,
+    offeringKey: 's3',
+    offeringVersion: 1,
     agreedRateCents: 750_000, // $7,500
     billingModel: 'fixed',
     status: 'delivered',
@@ -679,8 +679,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'Naslund Waste — fixed scope SOW',
     billingCompanyKey: 'naslund',
     clientCompanyKey: 'naslund',
-    serviceKey: 's3',
-    serviceVersion: 1,
+    offeringKey: 's3',
+    offeringVersion: 1,
     agreedRateCents: 2_850_000, // $28,500
     billingModel: 'fixed',
     status: 'proposed',
@@ -698,8 +698,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'Grant advisory + prototype',
     billingCompanyKey: 'theroute',
     clientCompanyKey: 'theroute',
-    serviceKey: null,
-    serviceVersion: null,
+    offeringKey: null,
+    offeringVersion: null,
     agreedRateCents: null,
     billingModel: 'none',
     status: 'pending',
@@ -717,8 +717,8 @@ export const engagements: readonly EngagementSeed[] = [
     name: 'Discovery Audit',
     billingCompanyKey: 'thompson',
     clientCompanyKey: 'thompson',
-    serviceKey: 's1',
-    serviceVersion: 2,
+    offeringKey: 's1',
+    offeringVersion: 2,
     agreedRateCents: 450_000, // $4,500
     billingModel: 'fixed',
     status: 'proposed',

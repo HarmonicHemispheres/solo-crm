@@ -19,7 +19,7 @@ export type NavId =
   | 'activity'
   | 'companies'
   | 'people'
-  | 'services'
+  | 'offerings'
   | 'engagements'
   | 'settings'
   | 'data'
@@ -44,7 +44,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'activity', label: 'Activity', path: '/activity', group: 'Work' },
   { id: 'companies', label: 'Companies', path: '/companies', group: 'Records' },
   { id: 'people', label: 'People', path: '/people', group: 'Records' },
-  { id: 'services', label: 'Offerings', path: '/services', group: 'Records' },
+  { id: 'offerings', label: 'Offerings', path: '/offerings', group: 'Records' },
   { id: 'engagements', label: 'Engagements', path: '/engagements', group: 'Records' },
   { id: 'settings', label: 'Settings', path: '/workspace/settings', group: 'Workspace' },
   { id: 'data', label: 'Data', path: '/workspace/data', group: 'Workspace' }
@@ -74,7 +74,7 @@ export const ROUTE_META: readonly RouteMeta[] = [
   { path: '/company/:id', navId: 'companies', breadcrumb: 'Companies /' },
   { path: '/people', navId: 'people', breadcrumb: 'People' },
   { path: '/person/:id', navId: 'people', breadcrumb: 'People /' },
-  { path: '/services', navId: 'services', breadcrumb: 'Offerings' },
+  { path: '/offerings', navId: 'offerings', breadcrumb: 'Offerings' },
   { path: '/engagements', navId: 'engagements', breadcrumb: 'Engagements' },
   { path: '/workspace/settings', navId: 'settings', breadcrumb: 'Workspace' },
   { path: '/workspace/data', navId: 'data', breadcrumb: 'Workspace / Data' }
@@ -109,8 +109,10 @@ export function engagementAnchorId(id: string): string {
  * `engagementAnchorId`) since that is the one the palette scrolls to.
  *
  * Offerings is deliberately absent: `SEARCH_KINDS`
- * (`electron/shared/search.ts`) indexes five source tables and services is
- * not one of them, so there is no such result to route.
+ * (`electron/shared/search.ts`) indexes five source tables — companies,
+ * people, engagements, tasks and activity — and `offerings` is not one of
+ * them, so there is no such result to route. That absence is also why
+ * T-260829-10's rename needed no search-index rebuild: no kind code moved.
  */
 export function targetForSearchResult(kind: SearchKind, id: string): To {
   switch (kind) {

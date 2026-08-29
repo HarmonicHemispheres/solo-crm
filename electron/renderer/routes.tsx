@@ -37,7 +37,7 @@ export function AppRoutes() {
         <Route path="company/:id" element={<CompanyDetail />} />
         <Route path="people" element={<People />} />
         <Route path="person/:id" element={<PersonDetail />} />
-        <Route path="services" element={<ViewPlaceholder title="Offerings" />} />
+        <Route path="offerings" element={<ViewPlaceholder title="Offerings" />} />
         <Route path="engagements" element={<Engagements />} />
         <Route path="workspace" element={<Outlet />}>
           <Route index element={<Navigate to="settings" replace />} />

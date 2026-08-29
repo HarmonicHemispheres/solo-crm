@@ -198,7 +198,7 @@ const STUB_ENGAGEMENT = {
   name: 'Stub Engagement',
   billingCompanyId: null,
   clientCompanyId: null,
-  serviceVersionId: null,
+  offeringVersionId: null,
   agreedRateCents: null,
   billingModel: null,
   status: null,
