@@ -3,12 +3,7 @@ import Database from 'better-sqlite3'
 import { resolveDataRoot } from './data-root'
 import { runMigrations } from './migrate'
 import type { MigrationDefinition } from './migrations'
-import {
-  findSyncFolderMatch,
-  isSyncFolderGuardOverridden,
-  SYNC_FOLDER_GUARD_OVERRIDE_ENV,
-  SyncFolderGuardError
-} from './sync-folder-guard'
+import { assertPathOutsideSyncFolder } from './sync-folder-guard'
 
 /**
  * The single owner of the SQLite connection. AGENTS.md: "the renderer never
@@ -19,6 +14,16 @@ import {
  * `connection.test.ts` asserts that structurally, not just by convention.
  */
 
+/**
+ * The one definition of the database's filename in the main process
+ * (T-260828-57's first Acceptance line: grepping for it finds exactly one
+ * definition). It was private until the first-run chooser needed the same
+ * value and copied it instead — two constants, and the safety property
+ * "an existing install is never prompted" resting on them staying equal.
+ * It stays private, because the fix is not a shared constant every caller
+ * joins for itself — it is that nobody builds this path by hand. Everything
+ * asks `databasePathIn` or `resolveDatabasePath` below.
+ */
 const DB_FILENAME = 'solocrm.db'
 
 /**
@@ -60,10 +65,49 @@ export interface OpenDatabaseOptions {
 }
 
 /**
- * Resolves the on-disk path `solocrm.db` lives at, without opening it. Kept
- * separate from `openDatabase` below so T-260828-06's sync-folder guard can
- * run against this exact path *before* the file is created — see the call
- * site inside `openDatabase`.
+ * Where `solocrm.db` sits inside a data root the caller already has. The
+ * one expression in the main process that joins the database's filename
+ * onto a folder (T-260828-57's first Acceptance line) — the first-run
+ * chooser used to have its own, and the safety property "an existing
+ * install is never prompted" rested on the two staying equal.
+ *
+ * Takes the root as given: it reads no pointer file, resolves nothing, and
+ * runs no guard, so it is safe to ask about a folder the user is merely
+ * considering — including on a profile whose own `userData` sits inside a
+ * sync folder, where `resolveDatabasePath` below rightly throws and where
+ * throwing would leave the one screen that exists to escape that folder
+ * unreachable.
+ *
+ * **Never pass its result to `new Database(...)`** — that is
+ * `resolveDatabasePath`'s job, and `connection.test.ts` pins who may import
+ * this.
+ */
+export function databasePathIn(dataRoot: string): string {
+  return join(dataRoot, DB_FILENAME)
+}
+
+/**
+ * Resolves the on-disk path `solocrm.db` lives at — and refuses to return
+ * one this app must not open. Kept separate from `openDatabase` below so
+ * T-260828-06's sync-folder guard runs against this exact path *before* any
+ * file is created.
+ *
+ * **The guard lives here, not at the `new Database(...)` call sites.**
+ * T-260828-57: it used to live inside `openDatabase`, which made
+ * `resolveDatabasePath` a way to obtain a path the guard had never seen —
+ * and `readonly-connection.ts` (T-260828-39) duly obtained one, opening a
+ * second connection unchecked until a review caught it and added a second
+ * copy of the guard. Two copies of a safety check is the shape AGENTS.md
+ * warns about: they drift, and the drift is silent. Putting the guard in
+ * the resolver means a refused path cannot be obtained at all, so no future
+ * opener can forget to check it — there is nothing to remember. AGENTS.md
+ * already describes the system this way ("every path a pointer names still
+ * resolves through `resolveDatabasePath()` and still runs through this same
+ * sync-folder guard"); this makes that sentence true rather than aspirational.
+ *
+ * The cost is that this function throws, so it is not the one to call when
+ * you only want to know where the file would be — see `databasePathIn`
+ * above.
  *
  * Composes with `resolveDataRoot` (T-260828-17's `data-root.ts`) rather than
  * resolving `app.getPath('userData')` itself: with no `data-location.json`
@@ -77,8 +121,9 @@ export interface OpenDatabaseOptions {
  * explicit, visible composition rather than an opaque call.
  */
 export function resolveDatabasePath(options: OpenDatabaseOptions = {}): string {
-  const dataRoot = resolveDataRoot({ userDataDir: options.userDataDir })
-  return join(dataRoot, DB_FILENAME)
+  const candidate = databasePathIn(resolveDataRoot({ userDataDir: options.userDataDir }))
+  assertPathOutsideSyncFolder(candidate)
+  return candidate
 }
 
 let handle: Database.Database | null = null
@@ -94,34 +139,14 @@ export function openDatabase(options: OpenDatabaseOptions = {}): Database.Databa
     throw new Error('openDatabase() called while a connection is already open — call closeDatabase() first')
   }
 
+  // T-260828-06's sync-folder guard runs *inside* `resolveDatabasePath`
+  // (see its comment), so a refused path throws here — before
+  // better-sqlite3 has any chance to create solocrm.db/-wal/-shm on the
+  // next line. `electron/main/index.ts`'s existing startup-failure handler
+  // (dialog.showErrorBox + app.exit(1)) catches the `SyncFolderGuardError`
+  // and shows its message, which names the refused path, the reason and the
+  // override.
   const dbPath = resolveDatabasePath(options)
-
-  // T-260828-06's sync-folder guard: runs here, between resolving the path
-  // above and opening the file below, so a refusal happens before
-  // better-sqlite3 has any chance to create solocrm.db/-wal/-shm.
-  // `isSyncFolderGuardOverridden` reads the one documented env-var escape
-  // hatch (off by default); the match check itself
-  // (`findSyncFolderMatch`) stays a pure function of the path alone — no
-  // settings, no database — matching this module's own discipline for
-  // `resolveDatabasePath` above. A match throws rather than returning, so a
-  // caller cannot accidentally proceed to `new Database(dbPath)` on the next
-  // line by forgetting to check a return value; electron/main/index.ts's
-  // existing startup-failure handler (dialog.showErrorBox + app.exit(1))
-  // catches it and shows this error's own message, which names the refused
-  // path, the reason, and the override.
-  if (isSyncFolderGuardOverridden()) {
-    // The breadcrumb that explains a corruption report weeks later — an
-    // overridden guard leaving no trace would make the eventual failure
-    // look like a SQLite bug.
-    console.warn(
-      `[db] ${SYNC_FOLDER_GUARD_OVERRIDE_ENV}=1 — sync-folder guard skipped for ${dbPath}`
-    )
-  } else {
-    const match = findSyncFolderMatch(dbPath)
-    if (match) {
-      throw new SyncFolderGuardError(match)
-    }
-  }
 
   const db = new Database(dbPath)
 

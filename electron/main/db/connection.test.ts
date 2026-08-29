@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 // exports the string path to the Electron binary rather than the real API.
 import electronPath from 'electron'
 import { afterEach, describe, expect, it } from 'vitest'
-import { closeDatabase, getDatabase, openDatabase, resolveDatabasePath } from './connection'
+import { closeDatabase, databasePathIn, getDatabase, openDatabase, resolveDatabasePath } from './connection'
 import { DATA_ROOT_POINTER_FILENAME } from './data-root'
 import { getSchemaVersion } from './migrate'
 import { MIGRATIONS, type MigrationDefinition } from './migrations'
@@ -57,6 +57,38 @@ import { compileToCommonJs } from '../test-support/compile-to-cjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const electronRoot = resolve(here, '..', '..')
+
+/**
+ * Visits every `.ts`/`.tsx` file under `electron/`, handing the callback the
+ * repo-relative path (always with `/` separators) and the file's contents.
+ * Shared by the structural checks below so they all agree on what "every
+ * module under electron/" means.
+ */
+function walkElectronSources(visit: (relativePath: string, contents: string) => void): void {
+  function walk(dir: string): void {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue
+      visit(relative(electronRoot, full).split(sep).join('/'), readFileSync(full, 'utf-8'))
+    }
+  }
+  walk(electronRoot)
+}
+
+/**
+ * Strips comments so a structural check reads the *code*, not the prose
+ * about it — these modules discuss the very identifiers being searched for
+ * at length. Same helper, same caveat, as `readonly-connection.test.ts`: no
+ * string literal in the files it is used on contains `//` or the start of a
+ * block comment.
+ */
+function stripCommentsFrom(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+}
 
 function makeTmpDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -246,7 +278,11 @@ describe('openDatabase and the sync-folder guard (T-260828-06)', () => {
     const syncedUserDataDir = join(tmpDir, 'Dropbox', 'userData')
     mkdirSync(syncedUserDataDir, { recursive: true })
     try {
-      const dbPath = resolveDatabasePath({ userDataDir: syncedUserDataDir })
+      // Built with `databasePathIn` rather than `resolveDatabasePath`: since
+      // T-260828-57 the guard lives *inside* `resolveDatabasePath`, so
+      // asking it for this path is itself a refusal — see the dedicated
+      // test below.
+      const dbPath = databasePathIn(syncedUserDataDir)
 
       let thrown: unknown
       try {
@@ -303,6 +339,82 @@ describe('openDatabase and the sync-folder guard (T-260828-06)', () => {
       closeDatabase()
       rmSync(tmpDir, { recursive: true, force: true })
     }
+  })
+})
+
+/**
+ * T-260828-57: one database path, one sync-folder guard. The guard used to
+ * sit inside `openDatabase()`, which made `resolveDatabasePath` a way to
+ * obtain a path the guard had never seen — and `readonly-connection.ts`
+ * obtained one, opening a second connection unchecked until a review added
+ * a *second copy* of the guard there. These pin the fix: the refusal now
+ * happens in the resolver, so there is no unguarded path to open and
+ * nothing for a future opener to remember to call.
+ */
+describe('the sync-folder guard lives in the path resolver (T-260828-57)', () => {
+  it('resolveDatabasePath itself refuses a synced path, before any opener is involved', () => {
+    const tmpDir = makeTmpDir('solo-crm-resolver-guard-')
+    const syncedUserDataDir = join(tmpDir, 'Dropbox', 'userData')
+    mkdirSync(syncedUserDataDir, { recursive: true })
+    try {
+      let thrown: unknown
+      try {
+        resolveDatabasePath({ userDataDir: syncedUserDataDir })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(SyncFolderGuardError)
+      expect((thrown as SyncFolderGuardError).message).toContain('Dropbox')
+      // Nothing was created by asking: the refusal is about a path, not a file.
+      expect(existsSync(databasePathIn(syncedUserDataDir))).toBe(false)
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('databasePathIn answers about a synced folder without refusing — it opens nothing', () => {
+    const tmpDir = makeTmpDir('solo-crm-resolver-unguarded-')
+    const syncedDir = join(tmpDir, 'Dropbox')
+    try {
+      // The first-run chooser's case: a profile inside a sync folder must
+      // still be able to ask "where would the database be" in order to show
+      // the screen that lets the user escape it.
+      expect(databasePathIn(syncedDir)).toBe(join(syncedDir, 'solocrm.db'))
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('neither module that constructs a Database gets its path from anywhere but resolveDatabasePath', () => {
+    for (const owner of DATABASE_OWNERS) {
+      const source = stripCommentsFrom(readFileSync(join(electronRoot, ...owner.split('/')), 'utf-8'))
+
+      // The path handed to the constructor is `dbPath`, and `dbPath` is
+      // only ever the guarded resolver's result. `databasePathIn` skips the
+      // guard by design (that is what it is for), so an opener binding it
+      // to the name it opens with would be exactly the bypass this task
+      // closed — and would fail here.
+      const bindings = [...source.matchAll(/const\s+dbPath\s*=\s*([A-Za-z0-9_]+)\s*\(/g)].map((match) => match[1])
+      expect(bindings).toEqual(['resolveDatabasePath'])
+
+      const constructorCall = new RegExp(['new', String.raw`Database\s*\(\s*dbPath\b`].join(String.raw`\s+`))
+      expect(source).toMatch(constructorCall)
+    }
+  })
+
+  it('only the first-run chooser imports the unguarded path helper', () => {
+    const importers: string[] = []
+    walkElectronSources((rel, contents) => {
+      if (rel === 'main/db/connection.ts') return // its definition
+      if (rel.endsWith('.test.ts')) return
+      if (/\bdatabasePathIn\b/.test(stripCommentsFrom(contents))) importers.push(rel)
+    })
+
+    // The chooser asks about a path it will never open — see
+    // `databasePathIn`'s own comment. Anything else appearing here is a
+    // second, unguarded way into the database.
+    expect(importers).toEqual(['main/first-run/data-location-prompt.ts'])
   })
 })
 
@@ -533,26 +645,13 @@ describe('single owner of the SQLite connection', () => {
     const constructorCall = new RegExp(['new', String.raw`Database\s*\(`].join(String.raw`\s+`))
     const offenders: string[] = []
 
-    function walk(dir: string): void {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = join(dir, entry.name)
-        if (entry.isDirectory()) {
-          walk(full)
-          continue
-        }
-        if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue
-
-        const rel = relative(electronRoot, full).split(sep).join('/')
-        if (DATABASE_OWNERS.includes(rel)) continue
-
-        const contents = readFileSync(full, 'utf-8')
-        if (constructorCall.test(contents)) {
-          offenders.push(rel)
-        }
+    walkElectronSources((rel, contents) => {
+      if (DATABASE_OWNERS.includes(rel)) return
+      if (constructorCall.test(contents)) {
+        offenders.push(rel)
       }
-    }
+    })
 
-    walk(electronRoot)
     expect(offenders).toEqual([])
   })
 })

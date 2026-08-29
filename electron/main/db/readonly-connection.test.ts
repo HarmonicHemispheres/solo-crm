@@ -414,9 +414,11 @@ describe('the row cap and the statement timeout', () => {
 describe('the sync-folder guard covers this connection too (T-260828-39 review)', () => {
   // AGENTS.md: the database must never live in a Drive, Dropbox or iCloud
   // folder, and no path may reach the better-sqlite3 constructor without
-  // passing the guard. `openDatabase()` runs it; `resolveDatabasePath()`
-  // does not — it only joins a filename onto the resolved data root — so a
-  // second opener calling the path helper alone would be an unchecked way in.
+  // passing the guard. Since T-260828-57 `resolveDatabasePath()` runs the
+  // guard itself, so this connection inherits it from the path it resolves
+  // rather than from a second copy of the check living here (which is what
+  // this file's first fix was, and what the two copies then risked drifting
+  // apart on).
   //
   // In production the write connection opens at boot and would already have
   // refused such a path, so this is belt to that braces. But that is an
