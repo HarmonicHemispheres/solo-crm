@@ -871,4 +871,72 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     expect(within(contactsCard).getByText('No contacts yet.')).toBeTruthy()
     expect(within(contactsCard).getByRole('link', { name: 'Add a contact' })).toBeTruthy()
   })
+
+  // -------------------------------------------------------------------
+  // T-260828-53's two carry-overs (its "Left for whoever owns
+  // CompanyDetail"), closed here by T-260828-50 — the twins of findings
+  // that task closed in Companies.tsx but could not close here, because it
+  // did not own this file.
+  // -------------------------------------------------------------------
+
+  it('a company nobody has ever contacted reads as late, never as ok (ADR-001)', async () => {
+    // Lonely Co has `lastTouchAt: null`. Asserting the *label* alone is what
+    // let this hole survive: replacing `cadenceState`'s null branch with
+    // `{ pct: 0, label: 'no contact logged' }` keeps every word on screen
+    // identical and turns the bar green. The meter's own class is the only
+    // thing that distinguishes the two.
+    renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
+    await screen.findByRole('heading', { name: 'Lonely Co' })
+
+    const meter = document.querySelector('.decay') as HTMLElement
+    expect(meter.className).toContain('late')
+    expect(meter.className).not.toContain('ok')
+    expect(meter.className).not.toContain('warn')
+    expect(meter.textContent).toContain('no contact logged')
+  })
+
+  it('does not render the body against a half-loaded companies list', async () => {
+    // W+K's header says "billed through <the billing company's name>", which
+    // it can only know from `companies:list`. Holding that one query open
+    // while `companies:get` resolves reproduces the race exactly: before the
+    // gate, the header painted the raw uuid and corrected itself a frame
+    // later.
+    let releaseList: (() => void) | null = null
+    const listGate = new Promise<void>((resolve) => {
+      releaseList = resolve
+    })
+    const crm = stubCrm({
+      ...buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS),
+      'companies:list': vi.fn(async () => {
+        await listGate
+        return { ok: true as const, data: ALL_COMPANIES }
+      })
+    })
+
+    renderCompanyDetail('co-wk', crm)
+
+    // `companies:get` resolves immediately, so an ungated body paints within
+    // a couple of microtasks — with `co-ezdeploy` where "EZDeploy" belongs.
+    // The assertion is that it does *not* paint while the list is still out:
+    // a `queryBy` on the next line could pass simply by running before React
+    // flushed, so this gives the ungated render a real window (measured: the
+    // ungated build paints in well under 20ms here) and requires the heading
+    // to still be absent at the end of it.
+    await expect(waitFor(() => screen.getByRole('heading', { name: 'W+K' }), { timeout: 200 })).rejects.toThrow()
+    expect(screen.queryByText(/co-ezdeploy/)).toBeNull()
+    expect(screen.getByText('Loading…')).toBeTruthy()
+
+    releaseList?.()
+    await screen.findByRole('heading', { name: 'W+K' })
+    expect(screen.getByText('billed through EZDeploy')).toBeTruthy()
+  })
+
+  it('renders the links section for the company (T-260828-50)', async () => {
+    renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
+    await screen.findByRole('heading', { name: 'Lonely Co' })
+
+    const linksCard = screen.getByText('Links').closest('.card') as HTMLElement
+    expect(within(linksCard).getByText('No links yet.')).toBeTruthy()
+    expect(within(linksCard).getByPlaceholderText('Paste a Drive, Notion, PDF or any URL')).toBeTruthy()
+  })
 })

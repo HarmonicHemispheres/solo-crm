@@ -19,6 +19,7 @@ import { Toast } from '../components/primitives/Toast'
 import { QuickAdd } from '../components/primitives/QuickAdd'
 import { Row } from '../components/primitives/Row'
 import { IconButton } from '../components/primitives/IconButton'
+import { LinksCard } from '../components/links/LinksCard'
 import './CompanyDetail.css'
 
 /**
@@ -230,6 +231,14 @@ const DAY_MS = 24 * 60 * 60 * 1000
  * Missing `lastTouchAt` or a zero/`null` `cadenceDays` reads as maximally
  * stale (ADR-001), matching `DecayMeter`'s own non-finite handling. */
 function cadenceState(lastTouchAt: string | null, cadenceDays: number | null, now: number): { pct: number; label: string } {
+  // ADR-001's never-contacted guard, and the reason it is worth a comment:
+  // returning a finite `pct` here — 0, say — renders a company nobody has
+  // ever contacted as a green "ok" bar, which is the single most misleading
+  // thing this page can say. T-260828-53 found that no test noticed the
+  // substitution (its item 7, left open here because it did not own this
+  // file); `CompanyDetail.test.tsx` now asserts the meter's own `late` class
+  // for a null `lastTouchAt`, so the mutant fails rather than passing
+  // silently. `POSITIVE_INFINITY` is what `DecayMeter` maps to `late`.
   if (lastTouchAt == null) return { pct: Number.POSITIVE_INFINITY, label: 'no contact logged' }
   const days = Math.floor((now - new Date(lastTouchAt).getTime()) / DAY_MS)
   const pct = cadenceDays ? days / cadenceDays : Number.POSITIVE_INFINITY
@@ -1049,8 +1058,18 @@ export function CompanyDetail() {
     }))
   })
 
-  if (companyQuery.isPending) return <div className="empty">Loading…</div>
+  // T-260828-53 item 7, second half — closed here because that task did not
+  // own this file. `companiesById` is built from `companies:list`, but the
+  // body used to render as soon as `companies:get` resolved, so on the fast
+  // path the header rendered "billed through <a raw uuid>" and every
+  // cross-company label fell through to its id, then silently corrected
+  // itself a frame later. Gating on both queries makes the body's dependency
+  // on the list an actual precondition rather than a race it usually wins.
+  // The two run in parallel — this waits for the slower one, it does not
+  // serialise them.
+  if (companyQuery.isPending || companiesListQuery.isPending) return <div className="empty">Loading…</div>
   if (companyQuery.isError) return <div className="empty">{companyQuery.error.message}</div>
+  if (companiesListQuery.isError) return <div className="empty">{companiesListQuery.error.message}</div>
 
   const company = companyQuery.data
   if (company == null) return <EmptyState>Company not found.</EmptyState>
@@ -1149,6 +1168,9 @@ export function CompanyDetail() {
         <ActivityCard companyId={company.id} companyName={company.name} items={activityItems} />
         <ContactsCard current={currentContacts} historical={historicalContacts} />
         <DetailsCard companyId={company.id} company={company} companiesById={companiesById} />
+        {/* §6.10's links, in the mockup's own position — the card immediately
+            after Details in the right-hand column (mockup line ~1596). */}
+        <LinksCard entityType="company" entityId={company.id} />
       </div>
     </div>
   )

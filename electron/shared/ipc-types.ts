@@ -9,6 +9,7 @@ import {
   milestoneSchema,
   updateEngagementInputSchema
 } from './engagements'
+import { createLinkInputSchema, linkSchema, listLinksInputSchema, updateLinkInputSchema } from './links'
 import {
   affiliationSchema,
   createAffiliationInputSchema,
@@ -434,6 +435,28 @@ export const CHANNEL_CONTRACTS = {
   // no reindex channel to add here. ---------------------------------------
 
   'search:query': { request: searchQueryInputSchema, response: z.array(searchResultSchema).readonly() },
+
+  // -- links — the polymorphic external-reference table (ADR-007,
+  // T-260828-48), reached from a view for the first time here (T-260828-50).
+  //
+  // `links:list` is filtered by the entity a link hangs off rather than
+  // returned wholesale: `listLinksInputSchema` is `.strict()` and names both
+  // halves of the polymorphic key, so a caller cannot ask for "every link"
+  // and slice one entity's out client-side.
+  //
+  // `kind` is absent from `links:add`'s request on purpose — the repository
+  // derives it from the URL's host (`detectLinkKind`), so a renderer cannot
+  // label a Drive URL as a Stripe one, and the icon a row draws is a fact
+  // about the URL rather than a claim the caller made. `links:update`
+  // patches the title and nothing else (T-260828-48's Scope).
+
+  'links:list': { request: listLinksInputSchema, response: z.array(linkSchema).readonly() },
+  'links:add': { request: createLinkInputSchema, response: mutationResultSchema(linkSchema) },
+  'links:update': {
+    request: z.object({ id: z.string().min(1), patch: updateLinkInputSchema }).strict(),
+    response: mutationResultSchema(linkSchema)
+  },
+  'links:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
 
   // -- favicons — one read, and it is a *read*. ---------------------------
   //

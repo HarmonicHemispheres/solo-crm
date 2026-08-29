@@ -34,6 +34,7 @@ import {
 } from '../db/repositories/tasks'
 import { getActivity, listActivity, logActivity } from '../db/repositories/activity'
 import { searchAll } from '../db/repositories/search'
+import { addLink, deleteLink, listLinks, updateLink } from '../db/repositories/links'
 import { getFavicon } from '../favicons'
 import { getAllSettings, getSetting, resetSetting, setSetting } from '../db/repositories/settings'
 import type { SettingKey } from '../db/repositories/settings'
@@ -367,6 +368,40 @@ export const registry = {
   'search:query': defineChannel({
     ...CHANNEL_CONTRACTS['search:query'],
     handler: (input) => searchAll(getDatabase(), input)
+  }),
+
+  // ---------------------------------------------------------------------
+  // links — T-260828-48's polymorphic repository, reached from a view for
+  // the first time by T-260828-50.
+  // ---------------------------------------------------------------------
+  //
+  // Every handler passes its already-validated payload straight through to
+  // the repository, which re-parses it against the same shared schema this
+  // channel's `request` *is* — one schema applied on both sides of the call,
+  // the same shape `search:query` above already follows. Nothing here
+  // derives a `kind`, defaults a title, or normalises a URL: all three are
+  // `addLink`'s job, and doing any of them here would be a second copy that
+  // could disagree with the stored column.
+
+  'links:list': defineChannel({
+    ...CHANNEL_CONTRACTS['links:list'],
+    handler: (input) => listLinks(getDatabase(), input)
+  }),
+  'links:add': defineChannel({
+    ...CHANNEL_CONTRACTS['links:add'],
+    handler: (input) => runMutation(() => addLink(getDatabase(), input))
+  }),
+  'links:update': defineChannel({
+    ...CHANNEL_CONTRACTS['links:update'],
+    handler: ({ id, patch }) => runMutation(() => updateLink(getDatabase(), id, patch))
+  }),
+  'links:delete': defineChannel({
+    ...CHANNEL_CONTRACTS['links:delete'],
+    handler: ({ id }) =>
+      runMutation(() => {
+        deleteLink(getDatabase(), id)
+        return { id }
+      })
   }),
 
   // ---------------------------------------------------------------------
