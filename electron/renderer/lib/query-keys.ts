@@ -1,4 +1,5 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
+import type { ActivityFilters } from '../../shared/activity'
 
 /**
  * The query-key convention (documented alongside it in CONVENTIONS.md's
@@ -82,10 +83,24 @@ export const queryKeys = {
     /** `tasks:countOpen` — a summary, not a single record, so no id (this file's header: "id is present only when scope addresses one record"). */
     countOpen: () => ['tasks', 'countOpen'] as const
   },
-  /** G8: no `activity` update or delete channel exists — no corresponding key here either, only what `activity:list`/`activity:get` need. */
+  /**
+   * G8: no `activity` update or delete channel exists — no corresponding key
+   * here either, only what `activity:list`/`activity:get` need.
+   *
+   * `list` takes an optional `ActivityFilters` (T-260828-34, the Activity
+   * view's kind/date-range/entity filters) — a filtered read is a genuinely
+   * different query result from the unfiltered one, so it needs a key TanStack
+   * Query treats as distinct rather than one both compete to populate. Every
+   * other entity's `list()` stays bare because `companies:list`/`people:list`
+   * take no request at all and `engagements:list`'s own filtered call sites
+   * (`byBillingCompany`/`byClientCompany` above) already have their own named
+   * key rather than a raw filters object — activity's filter shape has no
+   * such fixed small set of call sites to name individually.
+   */
   activity: {
     all: () => ['activity'] as const,
-    list: () => ['activity', 'list'] as const,
+    list: (filters?: ActivityFilters) =>
+      filters && Object.keys(filters).length > 0 ? (['activity', 'list', filters] as const) : (['activity', 'list'] as const),
     detail: (id: string) => ['activity', 'detail', id] as const
   },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */

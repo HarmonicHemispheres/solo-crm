@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router'
 import { ShellLayout } from './components/shell/Shell'
+import { Activity } from './views/Activity'
 import { Companies } from './views/Companies'
 import { CompanyDetail } from './views/CompanyDetail'
 
@@ -25,7 +26,7 @@ export function AppRoutes() {
         <Route index element={<ViewPlaceholder title="Today" />} />
         <Route path="todos" element={<ViewPlaceholder title="Todos" />} />
         <Route path="revenue" element={<ViewPlaceholder title="Revenue" />} />
-        <Route path="activity" element={<ViewPlaceholder title="Activity" />} />
+        <Route path="activity" element={<Activity />} />
         <Route path="companies" element={<Companies />} />
         <Route path="company/:id" element={<CompanyDetail />} />
         <Route path="people" element={<ViewPlaceholder title="People" />} />

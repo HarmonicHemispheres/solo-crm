@@ -1,0 +1,172 @@
+/*
+ * Activity view (T-260828-34). `.tl`/`.tli`/`.d`/`.note` are transcribed
+ * from planning/solo-crm-mockup.html (lines ~174-182) — the timeline-item
+ * classes the mockup itself uses for this exact view, ported once here
+ * since no primitive owns them (Row.tsx's leading/title/subtitle/trailing
+ * shape doesn't stretch to a body excerpt plus a variable number of
+ * independent entity links — see Activity.tsx's header comment for why the
+ * row isn't built on it). The mockup's `.bul` icon-bullet is dropped: this
+ * view labels kind with `Tag` (also in this task's Touches) instead of a
+ * bespoke per-kind glyph. `.chiprow` (line 252) is duplicated here rather
+ * than imported from `CompanyDetail.css`, where it's ported once already —
+ * the same "port what this view needs, once, here" choice that file's own
+ * header explains, not a shared dependency to wire up. `.filterbar`,
+ * `.entlinks`, `.entlink` and `.filter-input` have no mockup source — the
+ * mockup's own Activity view has no filter UI at all, only this task's
+ * Scope adds one — so they're styled to match the mockup's existing
+ * `.inp`/`.f-lab` look (lines ~247-251) rather than lifted from a selector
+ * that isn't there, the same choice CompanyDetail.css's header documents
+ * for its own inline-edit inputs.
+ */
+
+.chiprow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── filter bar ───────────────────────── */
+
+.filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.filter-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+  padding: 6px 9px;
+  color: var(--papyrus);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--motion-hover);
+  color-scheme: dark;
+}
+
+.filter-input:focus {
+  border-color: var(--verdigris);
+}
+
+.filter-daterange {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-daterange span {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.entity-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  margin-bottom: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-9);
+  font-size: 12.5px;
+  color: var(--mute);
+}
+
+.entity-banner span {
+  color: var(--papyrus);
+  font-weight: 600;
+}
+
+/* ── timeline ─────────────────────────── */
+
+.tl {
+  padding: 5px 15px 12px;
+}
+
+.tli {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  position: relative;
+}
+
+.tli:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.tli .body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tli .t {
+  font-size: 13px;
+  font-weight: 600;
+  display: block;
+  line-height: 1.4;
+}
+
+.tli .d {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: .3px;
+}
+
+.tli .note {
+  font-size: 12.5px;
+  color: var(--mute);
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+.entlinks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.entlink {
+  color: var(--lapis);
+  font-family: var(--mono);
+}
+
+.entlink:hover,
+.entlink:focus-visible {
+  color: var(--verdigris);
+}
+
+.entlink-inert {
+  color: var(--faint);
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 4px;
+}
