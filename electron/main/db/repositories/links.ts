@@ -112,11 +112,24 @@ function defaultTitleFromUrl(url: URL): string {
  * Filtering on both columns together, never `entity_id` alone, is what
  * keeps one entity's links from ever including another's even if two
  * entities of different types happened to share an id value.
+ *
+ * Newest first, tie-broken on `id` (T-260828-55). `added_at` is
+ * millisecond-precision and `addLink` writes it from `nowTimestamp()`, so
+ * two links added in the same tick — the ordinary case when a UI adds
+ * several at once, and the invariable case in a test — share a value and
+ * `ORDER BY added_at DESC` alone leaves their relative order to SQLite.
+ * `id` is this table's primary key, so it is the only column guaranteed to
+ * break every tie; the resulting order among same-millisecond links is
+ * arbitrary (uuids sort by nothing meaningful) but it is *stable*, which is
+ * what a list rendered twice needs. Every sibling repository that orders on
+ * a non-unique column carries a tiebreaker for the same reason; theirs is
+ * `created_at`, which cannot serve here because `addLink` writes it from
+ * the same instant as `added_at`.
  */
 export function listLinks(db: Database.Database, input: unknown): readonly Link[] {
   const parsed = parseInput(listLinksInputSchema, input)
   const rows = db
-    .prepare('SELECT * FROM links WHERE entity_type = ? AND entity_id = ? ORDER BY added_at DESC')
+    .prepare('SELECT * FROM links WHERE entity_type = ? AND entity_id = ? ORDER BY added_at DESC, id DESC')
     .all(parsed.entityType, parsed.entityId) as LinkRow[]
   return rows.map(mapRow)
 }
@@ -131,6 +144,21 @@ export function listLinks(db: Database.Database, input: unknown): readonly Link[
  * column on any of those tables for this repository to write even if it
  * wanted to (T-260828-48's Acceptance: "Adding a link does not mutate the
  * entity it attaches to").
+ *
+ * **`entityId` is deliberately not checked for existence** (T-260828-55's
+ * Scope asks for this decision to be stated rather than left implicit). A
+ * typo'd id therefore creates a link no view can reach. That is accepted,
+ * for two reasons. Checking would mean branching on `entityType` to pick a
+ * table — `companies`, `people` or `engagements` — which is precisely the
+ * per-type branching the polymorphic design exists to avoid, and it would
+ * be a half-guarantee anyway: nothing stops the entity being deleted a
+ * second later, because no foreign key can span three tables and
+ * `deleteCompany`/`deletePerson`/`deleteEngagement` do not consult this
+ * table. A links row pointing at a dead id is already a state this schema
+ * permits, so a create-time check would buy a narrower window, not an
+ * invariant. The real fix is the cascade-vs-refuse policy T-260828-41 owns;
+ * when that lands it can add the create-side check in the same place it
+ * adds the delete-side one, with one answer instead of two.
  */
 export function addLink(db: Database.Database, input: unknown): Link {
   const parsed = parseInput(createLinkInputSchema, input)
@@ -139,8 +167,20 @@ export function addLink(db: Database.Database, input: unknown): Link {
   // and the scheme allowlist inside `safeParse` above, so `tryParseLinkUrl`
   // cannot fail here — this `URL` object is only re-materialised (parsing a
   // string twice is cheaper and simpler than threading a `URL` instance
-  // through a zod schema) for `detectLinkKind` and the default-title helper.
+  // through a zod schema) for `detectLinkKind`, the default-title helper and
+  // the stored value.
   const url = tryParseLinkUrl(parsed.url) as URL
+  // T-260828-55: store what was *validated*, not what was passed. The parser
+  // strips control characters (an embedded tab or NUL), lowercases the host,
+  // normalises the port and percent-encoding and gives a bare origin its
+  // trailing slash — so `parsed.url` and `url.href` can differ, and it was
+  // `url.href` the scheme allowlist and `detectLinkKind` actually saw. Every
+  // consumer downstream (the favicon fetch, the links UI, any
+  // `shell.openExternal`) reads the stored column, so the stored column is
+  // the one that must carry the guarantee. The user-facing text is unaffected:
+  // `title` still holds what they typed, or a default derived from the same
+  // parsed URL.
+  const storedUrl = url.href
   const kind = detectLinkKind(url)
   const title = parsed.title ?? defaultTitleFromUrl(url)
 
@@ -150,7 +190,7 @@ export function addLink(db: Database.Database, input: unknown): Link {
   db.prepare(
     `INSERT INTO links (id, entity_type, entity_id, url, title, kind, added_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, parsed.entityType, parsed.entityId, parsed.url, title, kind, timestamp, timestamp, timestamp)
+  ).run(id, parsed.entityType, parsed.entityId, storedUrl, title, kind, timestamp, timestamp, timestamp)
 
   // Guaranteed to exist: this connection just inserted it and nothing here
   // is concurrent (better-sqlite3 is synchronous, single connection).
