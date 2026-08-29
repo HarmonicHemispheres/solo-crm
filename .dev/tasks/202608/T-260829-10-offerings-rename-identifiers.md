@@ -1,7 +1,7 @@
 ---
 id: T-260829-10
 title: Rename the catalogue identifiers to offerings, before anything is built on them
-status: open
+status: in-progress
 category: data
 created: 2026-08-29
 closed:

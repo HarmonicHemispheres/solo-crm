@@ -1,10 +1,10 @@
 ---
 id: T-260829-04
 title: Store an operator-supplied icon and logo as bytes in the database
-status: in-progress
+status: done
 category: data
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -141,10 +141,52 @@ not exported documents.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/shared/branding.ts` (new) — `BRANDING_SLOTS`, `BrandingSlot`, the zod schemas, and `BRANDING_MAX_BYTES = 512 * 1024`. `BRANDING_CONTENT_TYPES` is aliased to `FAVICON_CONTENT_TYPES` so the accepted set cannot drift from what `sniffImageContentType` can actually return.
+- `electron/main/db/migrations/0005_branding.sql` (new) — the five-column table, every column `NOT NULL`, so a half-written row is not representable.
+- `electron/main/db/migrations/index.ts` — registers `{ version: 5, name: '0005_branding' }`.
+- `electron/main/db/schema.ts` — the `branding` Drizzle table beside `favicons`, and the ADR-002 exemption comment in the header extended to name it.
+- `electron/main/db/repositories/branding.ts` (new) + 17 tests — read one slot, read both, write, clear.
+- `electron/main/db/schema.test.ts` — the drift check widened; see below.
+- `.dev/decisions/ADR-012-operator-branding-storage.md` (new) — `status: accepted`, with four alternatives rejected rather than the two the scope asked for.
 
-**Review:** what `code-review` found and what was done about each finding.
+**Review:** no blocking findings.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+*Mutation-tested rather than read.* Four mutants against `branding.test.ts`, each
+reverted with a targeted edit: relaxing the cap by one byte → 1 failure; deleting
+the unsupported-format refusal → 3; making `clearBrandingSlot` always report a
+removal → 1; storing a constant `byte_length` instead of the real one → 3. The
+tests can fail, including on the cap boundary and on a stored value — the class
+of defect this project has shipped before.
+
+*The widened drift test is a widening, not a weakening.* `schema.test.ts`
+asserted the drizzle-kit delta between 0001's snapshot and `schema.ts` contained
+`CREATE INDEX` lines and nothing else; `branding` is the first table declared
+since 0001, so the delta legitimately carries a `CREATE TABLE` now. The residue
+must still be empty after stripping both, and `createTableStatements(delta)` must
+*equal* those in the checked-in `0005_branding.sql` — so an undeclared table or a
+drifted column list still fails, exactly as before.
+
+**Two scope corrections, both accepted:**
+
+- **The `meta` journal was correctly not touched**, though this task's Touches
+  names it. Verified: `meta/_journal.json` holds only `0001_init` — 0002, 0003
+  and 0004 are all absent, because migrations register themselves in
+  `migrations/index.ts` and the journal is vestigial. Adding a `0005` entry with
+  no matching snapshot would have broken `schema.test.ts`, which copies the
+  journal into a temp dir and runs `drizzle-kit generate`. The scope was written
+  from an assumption about a journal this repo does not maintain.
+- **`schema.test.ts` was changed though it is not in Touches.** Unavoidable: the
+  first new table since 0001 necessarily lands in that delta. Flagged for
+  T-260829-10, which renames tables in `schema.ts` and will land in the same
+  delta — it must extend `0006`'s side of this assertion, not relax it.
+
+`typecheck`, `lint`, the branding tests, the whole `electron/main/db` layer (22
+files, 597 tests) and the shared-conventions walk all passed on the branch;
+`branding` and `schema` (44 tests) passed again on the merged tree.
+
+**Deferred:** nothing. The repository went beyond its listed criteria in one
+place worth keeping: a refused write is asserted not to destroy the image already
+in the slot, which is how a validation-ordering mistake would have been quietly
+destructive.

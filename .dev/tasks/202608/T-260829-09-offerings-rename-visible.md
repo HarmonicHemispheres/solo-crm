@@ -1,10 +1,10 @@
 ---
 id: T-260829-09
 title: Rename Catalogue to Offerings everywhere a person reads it
-status: in-progress
+status: done
 category: ui
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -98,10 +98,49 @@ time and are not retroactively edited. Any change to what the section *does*.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/renderer/nav.ts` — nav label, the `/services` breadcrumb, and the comment explaining the catalogue's absence from `SEARCH_KINDS`.
+- `electron/renderer/routes.tsx` — `<ViewPlaceholder title="Offerings" />`; the route path stays `services`.
+- `electron/main/db/schema.ts` — the section header comment at line 149, and nothing else in the file.
+- `electron/renderer/components/shell/CommandPalette.test.tsx`, `electron/main/db/seed/index.test.ts` — one comment and one `describe` name.
+- `planning/solo-crm-mockup.html` — seven label and comment lines, earliest at 411. The `:root` block is lines 11-21 and no line in it moved; `tokens.test.ts` passes (24 tests).
+- `planning/solo-crm-requirements.md`, `planning/solo-crm-taskplan.md` — every catalogue reference. Task IDs unchanged: P3-01 is still P3-01.
+- `.dev/decisions/ADR-003-materialised-revenue.md` — the word on lines 45 and 52. The decision is untouched.
 
-**Review:** what `code-review` found and what was done about each finding.
+Six sentences were restructured rather than word-swapped, because "the offerings
+is" does not read: mockup 1027 dropped the article, 861 dropped "items", 675
+dropped the redundant "services", and the same in requirements 343, taskplan 220
+and the two code comments. `taskplan.md:78` (the G5 row) was changed beyond the
+lines this scope names — it is a catalogue reference, and the scope's "every
+reference in the planning documents" clause covers it.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+**Review:** no blocking findings. Verified by reading the diff rather than the
+report: the identifiers `services`, `/services` and `CatalogueIcon` are all
+intact, so nothing collides with T-260829-10; the mockup diff's earliest hunk is
+at 411, well clear of `:root`; ADR-003 changed two words and no decision.
+
+Checked and accepted rather than filed: **no test pins the literal nav label.**
+`Rail.test.tsx:21` iterates `NAV_ITEMS` and asserts `getByRole('link', { name:
+item.label })`, which is self-referential and stays green whichever word is
+there. That is the project's deliberate shape — assert that the nav tables agree,
+not the copy — so it is not a gap this task opened and not worth a brittle
+assertion on a string.
+
+`typecheck`, `lint`, `--project=renderer` (51 files, 418 tests), the seed suite
+and `tokens.test.ts` all passed on the branch; `nav`, `routes` and `tokens`
+passed again on the merged tree.
+
+**Deferred:**
+
+- The word `Catalogue` survives in four places — `CatalogueIcon` in
+  `icons.tsx:80` and its import, comment and use in `Rail.tsx:6,23,44`. All four
+  are named in [T-260829-10](T-260829-10-offerings-rename-identifiers.md)'s
+  scope, so the acceptance grep does not come back empty on this branch alone;
+  it goes green when 10 merges. `Rail.tsx:23` is prose rather than an identifier
+  — a comment listing the rail's labels, now stale — and 10 owns that line.
+- **The screenshot criterion is not met.** The app was not launched. The
+  behaviour is verified in code instead: `ViewPlaceholder` renders the title,
+  `ROUTE_META` carries the breadcrumb, and `routes.test.tsx` asserts the two
+  tables agree. Confirming it on screen belongs to the same manual pass as
+  [T-260828-15](T-260828-15-real-window-qa-pass.md).

@@ -1,10 +1,10 @@
 ---
 id: T-260829-08
 title: Make every create button open a real form, and make a dead one impossible
-status: in-progress
+status: done
 category: ui
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -130,10 +130,62 @@ writing.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/renderer/components/shell/layer-manager-context.ts` — `openSheet` is now `(kind: SheetKind, title: string, trigger?: HTMLElement | null)`; kind required and leading.
+- `electron/renderer/components/shell/LayerManager.tsx` — the placeholder `default` branch, its `<Sheet>` shell, its disabled Create button and its `EmptyState` deleted, along with three now-unused imports. `sheetKind` is `SheetKind | null` and the switch over it is exhaustive.
+- `electron/renderer/components/shell/NewMenu.tsx`, `create-commands.ts` — call sites reordered.
+- `electron/renderer/views/Companies.tsx`, `People.tsx`, `Engagements.tsx` — the six broken call sites, plus two the scope did not predict.
+- `LayerManager.test.tsx` and the three view tests — the harness buttons pass a real kind; nine new assertions.
 
-**Review:** what `code-review` found and what was done about each finding.
+**Eleven call sites, not nine.** `CompaniesGrid` and `PeopleGrid` took `openSheet`
+as an `onCreate` prop whose type *restated* the old signature verbatim, so their
+"Add company" / "Add person" grid cards were dead in exactly the same way and the
+scope's count missed them. Both props now derive their type from
+`LayerManagerContextValue['openSheet']`, so they cannot drift from it again.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+**A second fix fell out of the deletion.** The old guard read `if (sheetKind &&
+!isOpen('sheet')) return null`, which meant that with no kind the placeholder
+`<Sheet>` stayed mounted and toggled its own `open` prop. It is now `if
+(!sheetKind || !isOpen('sheet')) return null` — nothing mounts unless a form is
+actually open.
+
+**Review:** no blocking findings.
+
+*Mutation-tested, because this is the one task where a passing test proves least.*
+The scope's own Risks section says a test asserting "a sheet is open" passes
+against the broken build, so the question was whether the new tests catch the
+*wrong form* rather than the absence of one. Four mutants, each pointing a call
+site at a different `SheetKind`: Companies → person, Engagements → todo, NewMenu's
+person item → company, and the Companies grid card → person. All four turned a
+test red. The grid card is covered by its own test, separate from the
+header/empty-state pair.
+
+The revert experiment the acceptance criteria demand was performed by the builder
+on the Companies header button (`Companies.tsx:288`), yielding
+`TS2345: Argument of type '"New company"' is not assignable to parameter of type
+'SheetKind'`, and undone with a targeted edit.
+
+`typecheck`, `lint` and the whole `--project=renderer` suite (51 files, 421 tests)
+passed on the branch; the six covering files (83 tests) passed again on the merged
+tree.
+
+**Deferred:**
+
+- **`sheetTitle` and `title` are now read by nothing, and were kept.** The builder
+  confirmed it: with the placeholder gone the only references left are the write
+  path, the context memo slot, and a mock in `hooks/useGlobalShortcuts.test.tsx`.
+  All four sheets hardcode their own `<Sheet title>` *and* `aria-label`
+  (`CompanySheet.tsx:119,121` and its three siblings), so removing it costs no
+  sheet its accessible name — the Risks-section hazard does not apply. It was kept
+  because removing `title` cascades into `CreateCommand.sheet.title`, a field this
+  scope says only needs reordering, and removing both is a wider diff than was
+  approved. Accepted as a judgement call and filed as
+  [T-260829-11](T-260829-11-drop-unread-sheet-title.md) — an unread parameter kept
+  alive past its last reader is the same class of thing this task existed to
+  remove, so it should not simply sit in a comment.
+- **The real-window pass is not done.** Acceptance item 5 — six create paths driven
+  by hand on an empty database — needs a running app and a person. The nine
+  automated assertions cover the same paths in jsdom.
+  [T-260828-15](T-260828-15-real-window-qa-pass.md) remains the gate, as this
+  task's own Risks section says.

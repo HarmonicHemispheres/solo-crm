@@ -1,7 +1,7 @@
 ---
 id: T-260829-05
 title: Open the image picker in main and expose branding over three channels
-status: open
+status: in-progress
 category: ipc
 created: 2026-08-29
 closed:

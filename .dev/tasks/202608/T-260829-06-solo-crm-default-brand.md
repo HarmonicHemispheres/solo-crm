@@ -1,7 +1,7 @@
 ---
 id: T-260829-06
 title: Make the rail's default brand Solo CRM's own mark and wordmark
-status: open
+status: in-progress
 category: ui
 created: 2026-08-29
 closed:
