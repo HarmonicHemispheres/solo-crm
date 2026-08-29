@@ -67,4 +67,11 @@ Things that are silently wrong rather than loudly broken:
   nothing now; makes a later Turso/libSQL sync a drop-in rather than a rewrite.
 - **Hours are derived from `time_entries`.** Without the timelog import, every
   retainer hours-used and effective-rate figure is fiction within two weeks.
+- **The search index's kind codes are append-only.** `search_fts`'s rowid
+  encodes a source table as `rowid * 8 + kind code` over the `search_source`
+  union view; renumbering an existing code without a full index rebuild does
+  not error — it silently repoints every already-indexed row of that kind at
+  whatever table now owns the new number, surfacing as search results naming
+  the wrong record rather than as a failure anywhere near the change. See
+  [ADR-008](.dev/decisions/ADR-008-search-index-shape.md).
 - No telemetry, no analytics, no network call the user did not configure.
