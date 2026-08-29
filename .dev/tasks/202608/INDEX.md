@@ -9,7 +9,6 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 |---|---|---|---|---|
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
 | ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
-| ◐ in-progress | [T-260829-05](T-260829-05-branding-ipc-picker.md) | Open the image picker in main and expose branding over three channels | 🔌 ipc | — |
 | ○ open | [T-260829-07](T-260829-07-branding-card-rail-override.md) | Upload an icon and a logo in Workspace Settings, and show them in the rail | 🎨 ui | — |
 | ◐ in-progress | [T-260829-10](T-260829-10-offerings-rename-identifiers.md) | Rename the catalogue identifiers to offerings, before anything is built on them | 🗄 data | — |
 
@@ -40,6 +39,7 @@ that surfaced them. Each names the review it came from.
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260829-05](T-260829-05-branding-ipc-picker.md) | Open the image picker in main and expose branding over three channels | 🔌 ipc | R-260829-01 |
 | ● done | [T-260829-06](T-260829-06-solo-crm-default-brand.md) | Make the rail’s default brand Solo CRM’s own mark and wordmark | 🎨 ui | R-260829-01 |
 | ● done | [T-260829-08](T-260829-08-create-buttons-dead-form.md) | Make every create button open a real form, and make a dead one impossible | 🎨 ui | R-260829-01 |
 | ● done | [T-260829-04](T-260829-04-branding-store.md) | Store an operator-supplied icon and logo as bytes in the database | 🗄 data | R-260829-01 |

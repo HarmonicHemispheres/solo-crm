@@ -1,10 +1,10 @@
 ---
 id: T-260829-05
 title: Open the image picker in main and expose branding over three channels
-status: in-progress
+status: done
 category: ipc
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -130,10 +130,56 @@ security-reviewed diff for an unrelated feature. File it as a follow-up instead.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/main/branding/picker.ts` (new) — `BrandingDialog` / `BrandingWindowSource` structural interfaces, `chooseBrandingImage`, the stat-then-read bounded read, the `data:` URL builder, and `IMAGE_FILTER_EXTENSIONS` with no `svg` in it.
+- `electron/main/branding/index.ts` (new) — one entry point for the IPC layer, mirroring `favicons/index.ts`.
+- `electron/main/branding/picker.test.ts` (new) — 20 tests, and `test-support/path-leak.ts`, the walker both test files use.
+- `electron/shared/branding.ts` — the wire schemas, per ADR-007 (the entity's own module owns them; `ipc-types.ts` imports).
+- `electron/shared/ipc-types.ts`, `electron/main/ipc/registry.ts` — three contracts, three handlers.
+- `electron/main/ipc/registry.test.ts`, `bridge.test.ts` — 8 end-to-end channel tests, and the real sandboxed-Electron harness now asserts all three channels exist on `window.crm`.
+- `electron/renderer/lib/test-support/stub-crm.ts` — three defaults; `CrmApi` is total, so typecheck failed without them.
 
-**Review:** what `code-review` found and what was done about each finding.
+**`runMutationAsync` was added, and the reason is worth keeping.** `branding:choose`
+is the first handler that awaits, and the existing synchronous `runMutation`
+would have returned `{ ok: true, data: Promise }` — turning every refusal into an
+unhandled rejection instead of an error envelope. The catch half was extracted to
+`mutationFailure` and is shared, so the sync and async wrappers cannot translate a
+refusal differently.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+**Review:** no blocking findings.
+
+**`security-review` ran, as category `ipc` requires.** The skill's own invocation
+diffed against `origin/main` — 212 commits back — and swept the whole project, so
+it was re-run scoped to `main..T-260829-05` (ten files, 61 KB). **Result: no
+findings that meet the bar**, with file:line evidence for each property:
+
+- *No path crosses back.* Success returns four fields built at `picker.ts:158-167`; the chosen `path` is a local const never stored, returned or logged. Both `fs` call sites use a bare `catch {` that discards Node's path-bearing `.message` before it can reach `mutationFailure`'s verbatim relay. Anything that is not a `RepositoryError` is rethrown and `ipc/index.ts` substitutes a fixed sentence. Both `brandingSlotStateSchema` branches are `.strict()`, so a later `fileName` field would fail response validation rather than ship.
+- *Cap before allocation.* `picker.ts:191-212` is stat → compare → throw → read, with the reader resolved but not invoked before the check. The stat/read TOCTOU gap is closed for correctness by `writeBrandingSlot`'s post-read re-check.
+- *CSP and protocol handlers untouched.* `security.ts` is not in the changed set; `img-src 'self' data:` unchanged; no protocol, object-URL or `webSecurity` hit in the added lines.
+- *Injectable deps unreachable.* The handler forwards only `slot`, and the request schema is `.strict()`, so a `{ slot, deps }` payload is rejected before the handler runs.
+- *Content type is a sniffed literal* from a closed set, re-checked by a `z.enum` on the response, so the `data:` URL is not injectable.
+- *`slot` is validated three times* — wire enum, `requireKnownSlot`, and bound as `?` in every statement.
+- *Both guards hold.* No focused window is a throw, not a fallback; `IN_FLIGHT.has/add` runs with no intervening `await`, so two same-tick calls cannot both pass.
+
+The reviewer also confirmed the property is *proven, not asserted*: the path-leak
+walker exempts only a strictly-anchored `data:image/…;base64,…` and exact
+membership of `BRANDING_CONTENT_TYPES`, and there is a guard-the-guard test showing
+it would catch a path smuggled behind a `data:` prefix; `registry.test.ts`'s sweep
+asserts `refusals).toHaveLength(2)` so it cannot pass vacuously over successes.
+
+**Preload needed no change, and that is proved rather than argued:** `bridge.test.ts`
+boots real sandboxed Electron with the real bundled preload and finds all three
+channels are functions on `window.crm`, calling `branding:get` against a real
+migrated database. `branding:choose` is deliberately not called there — it would
+open a native picker no harness could dismiss.
+
+`typecheck`, `lint`, the whole `--project=node` (34 files, 754 tests), the whole
+`--project=renderer` (51 files, 421 tests) and the real-Electron bridge test all
+passed on the branch; picker and registry (52 tests) passed again on the merged tree.
+
+**Deferred:**
+
+- **`BrandingSlotState` is `{ state: 'present' | 'absent', slot, … }`, not the `{ kind: 'default' | 'custom' }` sketch in this scope's table.** The shipped T-260829-04 shape won, correctly — the merged schema is the source of truth, not a scope written before it existed. [T-260829-07](T-260829-07-branding-card-rail-override.md) consumes this and its scope quotes the old sketch; it must read `electron/shared/branding.ts` rather than its own table.
+- Three files outside the scope's Touches were changed, each for a stated reason: `shared/branding.ts` is ADR-007's required home for wire schemas; `stub-crm.ts` is forced by `CrmApi` being total rather than partial; `bridge.test.ts` is what makes the "exists in a running renderer" criterion mechanical instead of argued.
+- The backup folder's still-disabled "Choose folder" button was left alone, as the scope directs — it needs a directory picker, not an image one. Not yet filed as its own task.
