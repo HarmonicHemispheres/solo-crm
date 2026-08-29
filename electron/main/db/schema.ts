@@ -28,10 +28,14 @@ import { type AnySQLiteColumn, check, index, sqliteTable, text, integer, real, b
  * `crypto.randomUUID()` or a SQL-side `DEFAULT`, so there is exactly one
  * place (the repository) that decides what an id looks like.
  *
- * `settings` and `favicons` are the two exemptions ADR-002 states as a
- * *class*, not a one-off: both are keyed by a value the outside world
- * already guarantees unique (a settings key; a favicon host), and no other
- * table holds a foreign key to either. Every other table — join tables
+ * `settings`, `favicons` and `branding` are exemptions ADR-002 states as a
+ * *class*, not a one-off: each is keyed by a value the outside world
+ * already guarantees unique (a settings key; a favicon host; a branding
+ * slot, one of the two `BRANDING_SLOTS`), and no other
+ * table holds a foreign key to any of them. `branding` (T-260829-04) joined
+ * the class after ADR-002 was written; ADR-012 records its membership
+ * against ADR-002's stated test rather than leaving it to read as a
+ * violation of the unqualified rule. Every other table — join tables
  * `affiliations` and `taggings` included — keeps a UUID primary key plus
  * `created_at`/`updated_at`. `schema.test.ts` asserts this table-by-table via
  * `pragma_table_info` rather than by review.
@@ -437,6 +441,28 @@ export const favicons = sqliteTable('favicons', {
   host: text('host').primaryKey().notNull(),
   bytes: blob('bytes', { mode: 'buffer' }),
   fetchedAt: text('fetched_at')
+})
+
+// T-260829-04, migration 0005. The operator's own icon and wordmark for the
+// rail's brand block. Keyed by `slot` ('icon' | 'logo') — a natural identity,
+// ADR-002's exemption class alongside `settings` and `favicons`, recorded for
+// this table by ADR-012. Carries `updated_at` and no `created_at`, for
+// `settings`' reason: a slot has no creation event worth recording (the
+// built-in default was in force before the row existed), but last-write-wins
+// is what a future replica needs.
+//
+// At most two rows, ever. A missing row means "use the built-in default" — the
+// absence is the default, so clearing a slot is a DELETE and there is no
+// second piece of state to keep in sync. `content_type` is derived from the
+// bytes' magic numbers by the repository (`sniffImageContentType`), never from
+// a caller's claim, and stored rather than re-sniffed because these bytes are
+// read on every app start.
+export const branding = sqliteTable('branding', {
+  slot: text('slot').primaryKey().notNull(),
+  bytes: blob('bytes', { mode: 'buffer' }).notNull(),
+  contentType: text('content_type').notNull(),
+  byteLength: integer('byte_length').notNull(),
+  updatedAt: text('updated_at').notNull()
 })
 
 export const externalRefs = sqliteTable(

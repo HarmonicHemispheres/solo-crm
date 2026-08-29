@@ -2,6 +2,7 @@ import migration0001Sql from './0001_init.sql?raw'
 import migration0002Sql from './0002_search_fts.sql?raw'
 import migration0003Sql from './0003_search_content_table.sql?raw'
 import migration0004Sql from './0004_fk_indexes_polymorphic_cascade.sql?raw'
+import migration0005Sql from './0005_branding.sql?raw'
 
 /**
  * The ordered, explicit manifest of every migration `migrate.ts` knows how
@@ -46,5 +47,11 @@ export const MIGRATIONS: readonly MigrationDefinition[] = [
   // diffed against 0001's snapshot; the trigger half is hand-written, because
   // no schema-diffing tool expresses a cascade whose parent table is chosen
   // by a string column.
-  { version: 4, name: '0004_fk_indexes_polymorphic_cascade', sql: migration0004Sql }
+  { version: 4, name: '0004_fk_indexes_polymorphic_cascade', sql: migration0004Sql },
+  // T-260829-04: the `branding` table — the operator's own icon and wordmark
+  // for the rail, two rows at most, keyed by slot under ADR-002's
+  // natural-identity exemption (ADR-012). Declared in `schema.ts`, so
+  // `schema.test.ts`'s regeneration check sees it in the delta and asserts it
+  // matches this file rather than treating it as drift.
+  { version: 5, name: '0005_branding', sql: migration0005Sql }
 ]
