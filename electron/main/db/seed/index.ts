@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
+import { ChainCycleError, ChainDepthExceededError, MAX_CHAIN_DEPTH, walkChain } from '../chain-walk'
 import { formatDateOnly, formatTimestamp, nowTimestamp, parseDateOnly } from '../../../shared/format'
 import { dateOnlySchema } from '../../../shared/types'
 import type { DateOnly, Timestamp } from '../../../shared/types'
@@ -195,38 +196,62 @@ export class FixtureIntegrityError extends Error {}
  * genuine cycle (two companies billed via each other) fails loudly here,
  * before any `INSERT` runs, rather than surfacing as an opaque SQLite
  * FOREIGN KEY constraint failure.
+ *
+ * The cycle/depth detection itself is `../chain-walk.ts`'s `walkChain` — the
+ * same traversal `repositories/companies.ts` calls for its
+ * `billed_via_company_id`/`introduced_by_company_id` write-time guard
+ * (T-260828-42), so the rule "a billed-via chain may not loop back on
+ * itself" is expressed once, not twice with the risk of the two drifting.
+ * This function still owns the parts that are genuinely seed-loader-specific
+ * — resolving a `billedViaCompanyKey` to a fixture row (and refusing a
+ * dangling one) and producing a full topological order — `walkChain` only
+ * supplies the "does this chain repeat a node" primitive.
  */
 export function orderCompaniesForInsert(companies: readonly CompanySeed[]): readonly CompanySeed[] {
   const byKey = new Map(companies.map((c) => [c.key, c]))
   const ordered: CompanySeed[] = []
-  const visited = new Set<string>()
-  const visiting = new Set<string>()
+  const orderedKeys = new Set<string>()
 
-  function visit(company: CompanySeed): void {
-    if (visited.has(company.key)) return
-    if (visiting.has(company.key)) {
+  const getParent = (company: CompanySeed): CompanySeed | null => {
+    if (!company.billedViaCompanyKey) return null
+    const parent = byKey.get(company.billedViaCompanyKey)
+    if (!parent) {
       throw new FixtureIntegrityError(
-        `fixture.ts's companies form a billed-via cycle involving "${company.key}" — ` +
-          'a company cannot be billed via itself, even transitively.'
+        `company "${company.key}" has billedViaCompanyKey "${company.billedViaCompanyKey}", ` +
+          'which is not a key of any company in fixture.ts.'
       )
     }
-    if (company.billedViaCompanyKey) {
-      const parent = byKey.get(company.billedViaCompanyKey)
-      if (!parent) {
-        throw new FixtureIntegrityError(
-          `company "${company.key}" has billedViaCompanyKey "${company.billedViaCompanyKey}", ` +
-            'which is not a key of any company in fixture.ts.'
-        )
-      }
-      visiting.add(company.key)
-      visit(parent)
-      visiting.delete(company.key)
-    }
-    visited.add(company.key)
-    ordered.push(company)
+    return parent
   }
 
-  for (const company of companies) visit(company)
+  for (const company of companies) {
+    if (orderedKeys.has(company.key)) continue
+
+    let chain: readonly CompanySeed[]
+    try {
+      // `chain` runs from `company` up to the root (no parent), farthest
+      // ancestor last — exactly the reverse of the order they must be
+      // inserted in.
+      chain = walkChain(company, getParent, (c) => c.key, MAX_CHAIN_DEPTH)
+    } catch (error) {
+      if (error instanceof ChainCycleError || error instanceof ChainDepthExceededError) {
+        const at = error instanceof ChainCycleError ? (error.node as CompanySeed).key : company.key
+        throw new FixtureIntegrityError(
+          `fixture.ts's companies form a billed-via cycle involving "${at}" — ` +
+            'a company cannot be billed via itself, even transitively.'
+        )
+      }
+      throw error
+    }
+
+    for (let i = chain.length - 1; i >= 0; i -= 1) {
+      const node = chain[i]
+      if (orderedKeys.has(node.key)) continue
+      ordered.push(node)
+      orderedKeys.add(node.key)
+    }
+  }
+
   return ordered
 }
 

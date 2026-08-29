@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MAX_CHAIN_DEPTH } from '../chain-walk'
 import { nowTimestamp } from '../../../shared/format'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
 import { createCompany, deleteCompany, getCompany, listCompanies, updateCompany } from './companies'
@@ -262,6 +263,176 @@ describe('the billed_via_company_id self-reference CHECK', () => {
 
       const after = getCompany(db, company.id)
       expect(after?.billedViaCompanyId).toBeNull()
+    })
+  })
+})
+
+/**
+ * T-260828-42 — the database CHECK above blocks only a *direct*
+ * self-reference; a two-step cycle (A billed via B, B billed via A) passes
+ * it. These guards run in the repository, before the write, using the same
+ * `walkChain` traversal `seed/index.ts`'s `orderCompaniesForInsert` uses
+ * (`../chain-walk`).
+ */
+describe('the billed-via / introduced-by transitive cycle guard (T-260828-42)', () => {
+  it('refuses the exact sequence review reproduced — create B billed via A, then update A billed via B — naming both companies', () => {
+    withDatabase((db) => {
+      const a = createCompany(db, { name: 'Company A' })
+      const b = createCompany(db, { name: 'Company B', billedViaCompanyId: a.id })
+
+      let thrown: unknown
+      try {
+        updateCompany(db, a.id, { billedViaCompanyId: b.id })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      const refusal = thrown as RefusalError
+      expect(refusal.message).toContain('Company A')
+      expect(refusal.message).toContain('Company B')
+      // A blocker discriminator, not just a message.
+      expect(refusal.blocker?.reason).toBe('billed-via-cycle')
+
+      // A refused write leaves the row unchanged.
+      const after = getCompany(db, a.id)
+      expect(after?.billedViaCompanyId).toBeNull()
+    })
+  })
+
+  it('refuses a three-company cycle A -> B -> C -> A at the closing edge', () => {
+    withDatabase((db) => {
+      const a = createCompany(db, { name: 'Company A' })
+      const b = createCompany(db, { name: 'Company B', billedViaCompanyId: a.id })
+      const c = createCompany(db, { name: 'Company C', billedViaCompanyId: b.id })
+
+      expect(() => updateCompany(db, a.id, { billedViaCompanyId: c.id })).toThrow(RefusalError)
+
+      const after = getCompany(db, a.id)
+      expect(after?.billedViaCompanyId).toBeNull()
+    })
+  })
+
+  it('accepts a legitimate chain A -> B -> C with no cycle', () => {
+    withDatabase((db) => {
+      const a = createCompany(db, { name: 'Company A' })
+      const b = createCompany(db, { name: 'Company B', billedViaCompanyId: a.id })
+      const c = createCompany(db, { name: 'Company C', billedViaCompanyId: b.id })
+
+      expect(b.billedViaCompanyId).toBe(a.id)
+      expect(c.billedViaCompanyId).toBe(b.id)
+
+      // A further, unrelated legitimate update on the chain's root still
+      // goes through — the guard only refuses when the chain would loop.
+      const renamed = updateCompany(db, a.id, { notes: 'renamed' })
+      expect(renamed.notes).toBe('renamed')
+    })
+  })
+
+  it('guards introduced_by_company_id via the same code path, asserted separately from billed_via_company_id', () => {
+    withDatabase((db) => {
+      const a = createCompany(db, { name: 'Referrer A' })
+      const b = createCompany(db, { name: 'Referred B', introducedByCompanyId: a.id })
+
+      let thrown: unknown
+      try {
+        updateCompany(db, a.id, { introducedByCompanyId: b.id })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      const refusal = thrown as RefusalError
+      expect(refusal.message).toContain('Referrer A')
+      expect(refusal.message).toContain('Referred B')
+      expect(refusal.blocker?.reason).toBe('introduced-by-cycle')
+
+      const after = getCompany(db, a.id)
+      expect(after?.introducedByCompanyId).toBeNull()
+    })
+  })
+
+  it('refuses introduced_by_company_id set to the row\'s own id — no database CHECK covers this column at all', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'Self Referred Co' })
+
+      let thrown: unknown
+      try {
+        updateCompany(db, company.id, { introducedByCompanyId: company.id })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('introduced-by-cycle')
+
+      const after = getCompany(db, company.id)
+      expect(after?.introducedByCompanyId).toBeNull()
+    })
+  })
+
+  it('does not hang on a database that already contains a billed-via cycle — the walk is bounded and refuses', () => {
+    withDatabase((db) => {
+      // Simulates data that predates this guard: three companies wired into
+      // a raw cycle directly, bypassing createCompany/updateCompany
+      // entirely, so nothing here could have refused it going in.
+      const timestamp = nowTimestamp()
+      const ids = [randomUUID(), randomUUID(), randomUUID()]
+      const insert = db.prepare(
+        `INSERT INTO companies (id, name, bills_directly, cadence_days, created_at, updated_at) VALUES (?, ?, 1, 14, ?, ?)`
+      )
+      for (let i = 0; i < ids.length; i += 1) {
+        insert.run(ids[i], `Cyclic ${i}`, timestamp, timestamp)
+      }
+      const setBilledVia = db.prepare('UPDATE companies SET billed_via_company_id = ? WHERE id = ?')
+      setBilledVia.run(ids[1], ids[0])
+      setBilledVia.run(ids[2], ids[1])
+      setBilledVia.run(ids[0], ids[2])
+
+      const start = Date.now()
+      let thrown: unknown
+      try {
+        createCompany(db, { name: 'New Co', billedViaCompanyId: ids[0] })
+      } catch (error) {
+        thrown = error
+      }
+      const elapsedMs = Date.now() - start
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('billed-via-chain-depth-exceeded')
+      expect(elapsedMs).toBeLessThan(1000)
+    })
+  })
+
+  it('does not hang on a database with a billed-via chain longer than the depth bound — refuses on depth exceeded', () => {
+    withDatabase((db) => {
+      // A raw, non-cyclic chain one link longer than the guard's bound
+      // (`MAX_CHAIN_DEPTH`, `../chain-walk.ts`) — built with direct inserts,
+      // not createCompany, since createCompany's own guard would refuse to
+      // build a chain this deep in the first place. This proves the walk
+      // itself is bounded, not merely that cycle detection is fast.
+      const depth = MAX_CHAIN_DEPTH + 1
+      const timestamp = nowTimestamp()
+      const ids = Array.from({ length: depth }, () => randomUUID())
+      const insert = db.prepare(
+        `INSERT INTO companies (id, name, bills_directly, cadence_days, billed_via_company_id, created_at, updated_at) VALUES (?, ?, 1, 14, ?, ?, ?)`
+      )
+      for (let i = 0; i < ids.length; i += 1) {
+        insert.run(ids[i], `Chain ${i}`, i === 0 ? null : ids[i - 1], timestamp, timestamp)
+      }
+
+      const start = Date.now()
+      let thrown: unknown
+      try {
+        createCompany(db, { name: 'New Co', billedViaCompanyId: ids[ids.length - 1] })
+      } catch (error) {
+        thrown = error
+      }
+      const elapsedMs = Date.now() - start
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('billed-via-chain-depth-exceeded')
+      expect(elapsedMs).toBeLessThan(2000)
     })
   })
 })
