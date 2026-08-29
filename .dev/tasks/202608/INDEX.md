@@ -31,7 +31,6 @@ that surfaced them. Each names the review it came from.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | *(review)* |
 
 ### Workspace — the two blank pages
 
@@ -95,3 +94,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | R-260828-03 |
 | ● done | [T-260829-01](T-260829-01-installer-maintenance-page.md) | Offer repair or remove when the installer finds an existing installation | 📦 build | R-260828-03 |
 | ● done | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | R-260828-03 |
+| ● done | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | R-260828-03 |
