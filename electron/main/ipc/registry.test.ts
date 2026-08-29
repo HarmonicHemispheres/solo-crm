@@ -33,6 +33,7 @@ vi.mock('electron', () => ({
 }))
 
 const { closeDatabase, openDatabase } = await import('../db/connection')
+const { closeReadOnlyDatabase, openReadOnlyDatabase } = await import('../db/readonly-connection')
 const { registry } = await import('./registry')
 
 /**
@@ -350,5 +351,68 @@ describe('entity channels — end to end against a real database', () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.error.code).toBe('validation')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// T-260828-39: 'db:query' — the read-only query channel.
+//
+// The mechanisms themselves (the second connection, the two statement-level
+// checks, the cap and the timeout) are proven in
+// `electron/main/db/readonly-connection.test.ts`. What this covers is the
+// wire: that a refusal AND a result both survive the channel's own
+// request/response schemas, which is what `callChannel` parses through.
+// ---------------------------------------------------------------------------
+
+describe("'db:query'", () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-query-'))
+    openDatabase({ userDataDir: tmpDir })
+    // The handler passes no options — production resolves through
+    // `app.getPath('userData')`, which this file's mock deliberately throws
+    // on. Opening the read-only connection here is what points it at
+    // tmpDir; `getReadOnlyDatabase()` inside the handler then returns this
+    // handle rather than resolving a path of its own.
+    openReadOnlyDatabase({ userDataDir: tmpDir })
+  })
+
+  afterEach(() => {
+    closeReadOnlyDatabase()
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('returns rows and columns for a legitimate read, through the request and response schemas', async () => {
+    const created = expectOk(await callChannel('companies:create', { name: 'Acme' }))
+    const result = await callChannel('db:query', {
+      statement: 'SELECT id, name FROM companies WHERE id = ?',
+      params: [created.id]
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.columns).toEqual(['id', 'name'])
+    expect(result.data.rows).toEqual([[created.id, 'Acme']])
+    expect(result.data.truncated).toBe(false)
+  })
+
+  it('carries a refusal as data, so its reason survives the response schema rather than being flattened to a generic sentence', async () => {
+    const result = await callChannel('db:query', { statement: 'DELETE FROM companies' })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('writes-data')
+    expect(result.error.message).toMatch(/modifies the database/)
+  })
+
+  it('rejects a malformed request at the schema, and gives the renderer no way to raise the cap or the timeout', () => {
+    expect(registry['db:query'].request.safeParse({ statement: 'SELECT 1' }).success).toBe(true)
+    expect(registry['db:query'].request.safeParse({ statement: '' }).success).toBe(false)
+    expect(registry['db:query'].request.safeParse({ statement: 42 }).success).toBe(false)
+    // Both are main-side constants; `.strict()` is what keeps them there.
+    expect(registry['db:query'].request.safeParse({ statement: 'SELECT 1', rowLimit: 1_000_000 }).success).toBe(false)
+    expect(registry['db:query'].request.safeParse({ statement: 'SELECT 1', timeoutMs: 600_000 }).success).toBe(false)
   })
 })

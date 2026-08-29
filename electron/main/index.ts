@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import { closeDatabase, openDatabase } from './db/connection'
+import { closeReadOnlyDatabase } from './db/readonly-connection'
 import { runFirstRunDataLocationPrompt } from './first-run/data-location-prompt'
 import { registerIpcHandlers } from './ipc'
 import { SECURE_WEB_PREFERENCES, installContentSecurityPolicy, registerNavigationGuards } from './security'
@@ -124,5 +125,13 @@ app.on('window-all-closed', () => {
 // connection still needs to close — checkpointing WAL back into
 // `solocrm.db` — whenever the app itself actually exits, on every platform.
 app.on('before-quit', () => {
+  // T-260828-39: the read-only connection closes FIRST, and the order is
+  // load-bearing rather than tidy. `closeDatabase()` below checkpoints WAL
+  // with `TRUNCATE`, and a truncating checkpoint cannot complete while a
+  // second connection is still attached — it fails quietly, leaving
+  // committed data in the `-wal` sidecar, which is the exact outcome that
+  // checkpoint exists to prevent. Safe when the query console was never
+  // opened: nothing is open, and this returns immediately.
+  closeReadOnlyDatabase()
   closeDatabase()
 })
