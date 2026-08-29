@@ -497,9 +497,14 @@ export function deleteCompany(db: Database.Database, id: string): void {
         table: 'affiliations',
         column: 'company_id',
         reason: 'affiliations',
+        // Was "Reassign or remove those affiliations" — reassigning is not a
+        // route that exists: `updateAffiliation` rejects `personId` and
+        // `companyId`, the pair being fixed at creation. Removing is, since
+        // T-260828-46 added `deleteAffiliation`, so this now names the one
+        // real way out and matches `deletePerson`'s wording exactly.
         describe: (count) =>
           `Cannot delete "${company.name}": ${count} affiliation${count === 1 ? '' : 's'} reference it. ` +
-          'Reassign or remove those affiliations before deleting this company.'
+          'Remove those affiliations before deleting this company.'
       },
       {
         table: 'time_entries',

@@ -103,15 +103,40 @@ function flattenIssues(issues: readonly z.ZodIssue[]): z.ZodIssue[] {
  * iterate `agreedRateCents` through this list; see that function's own
  * comment.
  *
- * `key` is `string`, not `keyof CreateEngagementInput`: `parsed` is the
- * result of a discriminated union, and `keyof` on a union type collapses to
- * only the keys every branch shares (`name`, `billingCompanyId`, …,
- * `billingModel`) — it cannot express "the `hoursIncluded` this specific
- * branch happened to validate". Every key below was already validated by
- * `createEngagementInputSchema`/`updateEngagementInputSchema` before this
- * list is ever consulted, so the dynamic lookup is safe.
+ * `key` was a bare `string` until T-260828-46, for a correct reason with a
+ * wrong conclusion: `keyof CreateEngagementInput` collapses to only the keys
+ * every branch of the discriminated union shares (`name`,
+ * `billingCompanyId`, …, `billingModel`), so it cannot express "the
+ * `hoursIncluded` this specific branch happened to validate". But `string`
+ * severs the compile-time link entirely — renaming a field in
+ * `electron/shared/engagements.ts` typechecked clean and failed at runtime,
+ * as a column silently written `NULL`. `EngagementWritableKey` below is the
+ * per-branch answer: a *distributive* `keyof` over the union, which is the
+ * union of every branch's own keys rather than their intersection.
  */
-const ALL_WRITABLE_COLUMNS: ReadonlyArray<{ readonly key: string; readonly column: string }> = [
+type KeysOfUnion<T> = T extends unknown ? keyof T : never
+
+/** Every key any create branch can carry — the union of the branches' keys, not `keyof` on the union. */
+type EngagementWritableKey = KeysOfUnion<CreateEngagementInput>
+
+/** Every key any update branch can carry — the same distributive read over the patch union. */
+type EngagementPatchKey = KeysOfUnion<UpdateEngagementInput>
+
+interface ColumnSpec<Key extends string> {
+  readonly key: Key
+  readonly column: string
+}
+
+/**
+ * Fails typecheck with "Type 'X' does not satisfy the constraint 'never'"
+ * naming any writable key no entry below maps — the other half of the link:
+ * `satisfies` catches a key that was renamed or deleted, this catches one
+ * that was added to `electron/shared/engagements.ts` and never wired to a
+ * column here.
+ */
+type AssertNever<T extends never> = T
+
+const ALL_WRITABLE_COLUMNS = [
   { key: 'name', column: 'name' },
   { key: 'billingCompanyId', column: 'billing_company_id' },
   { key: 'clientCompanyId', column: 'client_company_id' },
@@ -128,10 +153,17 @@ const ALL_WRITABLE_COLUMNS: ReadonlyArray<{ readonly key: string; readonly colum
   { key: 'estimatedHours', column: 'estimated_hours' },
   { key: 'notToExceedCents', column: 'not_to_exceed_cents' },
   { key: 'notes', column: 'notes' }
-]
+] as const satisfies ReadonlyArray<ColumnSpec<EngagementWritableKey>>
+
+// Exported only because `noUnusedLocals` would otherwise delete the check by
+// erroring on it — nothing imports this, and nothing should. It is a
+// compile-time assertion, not an API.
+export type EveryWritableKeyHasAColumn = AssertNever<
+  Exclude<EngagementWritableKey, (typeof ALL_WRITABLE_COLUMNS)[number]['key']>
+>
 
 /** Common fields a patch may set regardless of whether it also touches the billing model. Excludes `agreedRateCents` — see `updateEngagement`. */
-const UPDATE_COMMON_COLUMNS: ReadonlyArray<{ readonly key: string; readonly column: string }> = [
+const UPDATE_COMMON_COLUMNS = [
   { key: 'name', column: 'name' },
   { key: 'billingCompanyId', column: 'billing_company_id' },
   { key: 'clientCompanyId', column: 'client_company_id' },
@@ -141,16 +173,16 @@ const UPDATE_COMMON_COLUMNS: ReadonlyArray<{ readonly key: string; readonly colu
   { key: 'endsOn', column: 'ends_on' },
   { key: 'renewsOn', column: 'renews_on' },
   { key: 'notes', column: 'notes' }
-]
+] as const satisfies ReadonlyArray<ColumnSpec<EngagementPatchKey>>
 
 /** The five model-specific columns, written together (with the non-matching four reset to `NULL`) whenever a patch changes `billingModel`. */
-const MODEL_SPECIFIC_COLUMNS: ReadonlyArray<{ readonly key: string; readonly column: string }> = [
+const MODEL_SPECIFIC_COLUMNS = [
   { key: 'hoursIncluded', column: 'hours_included' },
   { key: 'contractValueCents', column: 'contract_value_cents' },
   { key: 'hourlyRateCents', column: 'hourly_rate_cents' },
   { key: 'estimatedHours', column: 'estimated_hours' },
   { key: 'notToExceedCents', column: 'not_to_exceed_cents' }
-]
+] as const satisfies ReadonlyArray<ColumnSpec<EngagementPatchKey>>
 
 // ---------------------------------------------------------------------------
 // SQLite constraint translation

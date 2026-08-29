@@ -11,6 +11,7 @@ import { NotFoundError, RefusalError, ValidationError } from './errors'
 import {
   addAffiliation,
   createPerson,
+  deleteAffiliation,
   deletePerson,
   endAffiliation,
   getPerson,
@@ -339,6 +340,27 @@ describe('is_primary: setting one clears the others at the same company', () => 
       expect(reloadedX?.isPrimary).toBe(true)
     })
   })
+
+  it('is_primary is scoped to the company, not the person (ADR-009): one person can be primary at two companies at once', () => {
+    // The test the two readings disagree on, and the reason it uses ONE
+    // person where the "different company" case above uses two. §5 says only
+    // `is_primary boolean`; a per-person reading ("this person's main
+    // employer") would have the second call clear the first. ADR-009 records
+    // the per-company reading — "the main point of contact at this company" —
+    // and this case fails if the other one is ever implemented.
+    withDatabase((db) => {
+      const dayJob = createCompany(db, { name: 'Day Job Co' })
+      const board = createCompany(db, { name: 'Board Seat Co' })
+      const person = createPerson(db, { name: 'Two Hats' })
+
+      const atDayJob = addAffiliation(db, { personId: person.id, companyId: dayJob.id, started: '2020-01-01', isPrimary: true })
+      const atBoard = addAffiliation(db, { personId: person.id, companyId: board.id, started: '2024-01-01', isPrimary: true })
+
+      const reloaded = listAffiliationsForPerson(db, person.id)
+      expect(reloaded.find((r) => r.id === atDayJob.id)?.isPrimary).toBe(true)
+      expect(reloaded.find((r) => r.id === atBoard.id)?.isPrimary).toBe(true)
+    })
+  })
 })
 
 describe('endAffiliation', () => {
@@ -372,6 +394,157 @@ describe('endAffiliation', () => {
 
       const rows = listAffiliationsForPerson(db, person.id)
       expect(rows[0].ended).toBeNull()
+    })
+  })
+
+  it('refuses on an affiliation that already ended, keeping the original date (T-260828-46)', () => {
+    withDatabase((db) => {
+      const co = createCompany(db, { name: 'Already Ended Co' })
+      const person = createPerson(db, { name: 'Long Gone' })
+      const affiliation = addAffiliation(db, {
+        personId: person.id,
+        companyId: co.id,
+        started: '2018-01-01',
+        ended: '2021-06-30'
+      })
+
+      let thrown: unknown
+      try {
+        endAffiliation(db, affiliation.id, '2023-01-01')
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('already-ended')
+      expect((thrown as RefusalError).message).toContain('2021-06-30')
+      // The route the refusal names, taken: updateAffiliation is where a
+      // leaving date is corrected deliberately.
+      expect((thrown as RefusalError).message).toContain('updateAffiliation')
+
+      expect(listAffiliationsForPerson(db, person.id)[0].ended).toBe('2021-06-30')
+
+      const corrected = updateAffiliation(db, affiliation.id, { ended: '2023-01-01' })
+      expect(corrected.ended).toBe('2023-01-01')
+    })
+  })
+
+  it('throws NotFoundError for an affiliation id that does not exist', () => {
+    withDatabase((db) => {
+      expect(() => endAffiliation(db, randomUUID(), '2026-01-01')).toThrow(NotFoundError)
+    })
+  })
+})
+
+describe('updateAffiliation: the stated lifecycle edges (T-260828-46)', () => {
+  it('reopens a closed stint with ended: null, leaving started alone', () => {
+    withDatabase((db) => {
+      const co = createCompany(db, { name: 'Reopen Co' })
+      const person = createPerson(db, { name: 'Came Back' })
+      const affiliation = addAffiliation(db, {
+        personId: person.id,
+        companyId: co.id,
+        started: '2022-03-01',
+        ended: '2024-03-01'
+      })
+
+      const reopened = updateAffiliation(db, affiliation.id, { ended: null })
+      expect(reopened.ended).toBeNull()
+      expect(reopened.started).toBe('2022-03-01')
+
+      // Reopened means reopened: getPerson's `current` flag reads the same
+      // `ended IS NULL` this write restored.
+      const affiliations = getPerson(db, person.id)?.affiliations ?? []
+      expect(affiliations.find((a) => a.id === affiliation.id)?.current).toBe(true)
+    })
+  })
+
+  it('overwrites an existing ended date when asked in so many words', () => {
+    withDatabase((db) => {
+      const co = createCompany(db, { name: 'Typo Co' })
+      const person = createPerson(db, { name: 'Mistyped Leaver' })
+      const affiliation = addAffiliation(db, {
+        personId: person.id,
+        companyId: co.id,
+        started: '2019-01-01',
+        ended: '2021-01-01'
+      })
+
+      expect(updateAffiliation(db, affiliation.id, { ended: '2022-01-01' }).ended).toBe('2022-01-01')
+    })
+  })
+
+  it('still refuses an ended before started when reopening is not what was asked', () => {
+    withDatabase((db) => {
+      const co = createCompany(db, { name: 'Backwards Reopen Co' })
+      const person = createPerson(db, { name: 'Backwards Again' })
+      const affiliation = addAffiliation(db, { personId: person.id, companyId: co.id, started: '2025-01-01', ended: '2025-06-01' })
+
+      expect(() => updateAffiliation(db, affiliation.id, { ended: '2024-01-01' })).toThrow(RefusalError)
+      expect(listAffiliationsForPerson(db, person.id)[0].ended).toBe('2025-06-01')
+    })
+  })
+})
+
+describe('deleteAffiliation: the route the refusal messages name (T-260828-46)', () => {
+  it('removes the affiliation and nothing else — the person and company survive', () => {
+    withDatabase((db) => {
+      const co = createCompany(db, { name: 'Typo Affiliation Co' })
+      const person = createPerson(db, { name: 'Wrongly Affiliated' })
+      const affiliation = addAffiliation(db, { personId: person.id, companyId: co.id, started: '2025-01-01' })
+
+      deleteAffiliation(db, affiliation.id)
+
+      expect(listAffiliationsForPerson(db, person.id)).toHaveLength(0)
+      expect(listAffiliationsForCompany(db, co.id)).toHaveLength(0)
+      expect(getPerson(db, person.id)).not.toBeNull()
+    })
+  })
+
+  it('removes a closed stint too — the caller, not the repository, decides that a stint was never real', () => {
+    withDatabase((db) => {
+      const co = createCompany(db, { name: 'Closed Stint Co' })
+      const person = createPerson(db, { name: 'Never Actually Worked Here' })
+      const affiliation = addAffiliation(db, {
+        personId: person.id,
+        companyId: co.id,
+        started: '2020-01-01',
+        ended: '2021-01-01'
+      })
+
+      deleteAffiliation(db, affiliation.id)
+      expect(listAffiliationsForPerson(db, person.id)).toHaveLength(0)
+    })
+  })
+
+  it('throws NotFoundError for an id that does not exist', () => {
+    withDatabase((db) => {
+      expect(() => deleteAffiliation(db, randomUUID())).toThrow(NotFoundError)
+    })
+  })
+
+  it("following deletePerson's own refusal message actually works — the promised route exists", () => {
+    withDatabase((db) => {
+      const co = createCompany(db, { name: 'Blocking Co 2' })
+      const person = createPerson(db, { name: 'Was Undeletable' })
+      addAffiliation(db, { personId: person.id, companyId: co.id, started: '2025-01-01' })
+      addAffiliation(db, { personId: person.id, companyId: co.id, started: '2020-01-01', ended: '2024-12-31' })
+
+      let thrown: unknown
+      try {
+        deletePerson(db, person.id)
+      } catch (error) {
+        thrown = error
+      }
+      expect((thrown as RefusalError).message).toContain('Remove those affiliations before deleting this person')
+
+      // Do exactly what the message says, and nothing else.
+      for (const affiliation of listAffiliationsForPerson(db, person.id)) {
+        deleteAffiliation(db, affiliation.id)
+      }
+
+      deletePerson(db, person.id)
+      expect(getPerson(db, person.id)).toBeNull()
     })
   })
 })
