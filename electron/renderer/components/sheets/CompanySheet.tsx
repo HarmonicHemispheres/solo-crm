@@ -49,7 +49,7 @@ export interface CompanySheetProps {
 /**
  * `.sheet` content for `FORMS.company` (planning/solo-crm-mockup.html) — the
  * New menu's "Company" item. `LayerManager` mounts this only while the
- * `sheet` layer is open (`openSheet(title, trigger, 'company')`) and
+ * `sheet` layer is open (`openSheet('company', trigger)`) and
  * unmounts it on close, rather than keeping it mounted with an `open` prop —
  * that is what gives every open a blank form with no reset effect: fresh
  * `useState` initial values on every mount. Writes through

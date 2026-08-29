@@ -1,10 +1,10 @@
 ---
 id: T-260829-11
 title: Delete the sheet title nothing reads, and the openSheet parameter that feeds it
-status: in-progress
+status: done
 category: ui
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -98,10 +98,59 @@ what the palette shows, that is a real reader and it stays.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/renderer/components/shell/layer-manager-context.ts` — `sheetTitle` removed from the context; `openSheet` is now `(kind: SheetKind, trigger?: HTMLElement | null)`.
+- `electron/renderer/components/shell/LayerManager.tsx` — the `useState`, the `setSheetTitle` call, the `title` parameter and both context-memo entries.
+- `electron/renderer/components/shell/create-commands.ts` — `sheet` is now `{ kind }`; `runCreateCommand` passes `(kind, trigger)`.
+- `NewMenu.tsx`, `Companies.tsx`, `People.tsx`, `Engagements.tsx` — the call sites.
+- `LayerManager.test.tsx` — three new harness triggers and the four-way accessible-name test.
+- `hooks/useGlobalShortcuts.test.tsx` — the mock drops `sheetTitle: ''`.
 
-**Review:** what `code-review` found and what was done about each finding.
+**Fourteen call sites, not the eleven this scope predicted** — NewMenu 3,
+Companies 3, People 3, Engagements 2, `runCreateCommand` 1, and the
+`LayerManager` test harness 2. The two `onCreate` props typed as
+`LayerManagerContextValue['openSheet']` followed automatically, as expected;
+only their call expressions changed.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+**`CreateCommand.sheet.title` was removed, after checking rather than
+assuming.** This scope flagged it as the one genuinely ambiguous spot — a
+`title` there might have been the palette's own visible label. It was not:
+`CommandPalette.tsx:236-240` builds each create row from
+`command.paletteLabel`, and `NewMenu` draws hand-written JSX checked against
+`command.menuLabel`, both asserted in `CommandPalette.test.tsx:106,123-136`.
+The only reader of `sheet.title` anywhere was `runCreateCommand` forwarding it
+straight back into `openSheet`. Both visible labels are untouched and their
+tests pass unchanged.
+
+**Review:** no blocking findings.
+
+*The deletion's gate was verified to be a gate.* The four-way accessible-name
+test was run **before** the deletion as well as after — 20/20 green
+pre-deletion — so it proves the sheets already named themselves rather than
+proving nothing. Independently at merge, stripping `aria-label` from
+`CompanySheet.tsx:121` turned **five** tests red with `Unable to find an
+accessible element with the role "dialog" and name "New company"`. Reverted with
+a targeted edit, leaving no content change. That is the exact failure this task
+risked introducing, and it is caught.
+
+The deliberate bad call was performed on `NewMenu.tsx:38`, giving the Company
+menu item back its old second positional argument:
+`error TS2554: Expected 1-2 arguments, but got 3`.
+
+`typecheck`, `lint`, `--project=renderer` (51 files, 451 tests) and
+`--project=runtime-boot-renderer` (2 files, 21 tests) all passed on the branch —
+both projects, because `--project=renderer` does not include the runtime-boot
+pool, which is what caused this run's one cross-branch failure earlier.
+`grep -rn "sheetTitle" electron/` returns nothing.
+
+**Two comment-only fixes made at merge.** `CompanySheet.tsx:52` and
+`TodoSheet.tsx:35` documented the call as `openSheet(title, trigger, 'company')`
+/ `openSheet(title, trigger, 'todo')`. Those were already stale before this task
+— T-260829-08 reordered the parameters and did not update them — and this task
+made them wrong a second way. The builder correctly left them alone, since this
+scope's "Out" section forbids touching the four sheets. Corrected here rather
+than filed, because a doc comment naming a signature that has never existed in
+either of its two forms is a smaller thing to fix than to track.
+
+**Deferred:** nothing.

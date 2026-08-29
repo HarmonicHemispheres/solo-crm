@@ -27,7 +27,6 @@ that surfaced them. Each names the review it came from.
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260829-12](T-260829-12-post-rename-drizzle-snapshot.md) | Rename the drift test’s base structurally, not by substituting over raw JSON | 🗄 data | — |
-| ◐ in-progress | [T-260829-11](T-260829-11-drop-unread-sheet-title.md) | Delete the sheet title nothing reads, and the openSheet parameter that feeds it | 🎨 ui | — |
 
 ### Workspace — the two blank pages
 
@@ -38,6 +37,7 @@ that surfaced them. Each names the review it came from.
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260829-11](T-260829-11-drop-unread-sheet-title.md) | Delete the sheet title nothing reads, and the openSheet parameter that feeds it | 🎨 ui | R-260829-01 |
 | ● done | [T-260829-07](T-260829-07-branding-card-rail-override.md) | Upload an icon and a logo in Workspace Settings, and show them in the rail | 🎨 ui | R-260829-01 |
 | ● done | [T-260829-10](T-260829-10-offerings-rename-identifiers.md) | Rename the catalogue identifiers to offerings, before anything is built on them | 🗄 data | R-260829-01 |
 | ● done | [T-260829-05](T-260829-05-branding-ipc-picker.md) | Open the image picker in main and expose branding over three channels | 🔌 ipc | R-260829-01 |

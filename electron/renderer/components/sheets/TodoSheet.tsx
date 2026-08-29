@@ -32,7 +32,7 @@ const FIELD_LABELS = {
  * wired into `NewMenu.tsx` — the mockup's own New menu has no Todo item
  * either; a todo is created from the command palette (T-260828-37), which
  * mounts this component the same way `NewMenu` mounts the other three, via
- * `openSheet(title, trigger, 'todo')`. `LayerManager` mounts it only while
+ * `openSheet('todo', trigger)`. `LayerManager` mounts it only while
  * the `sheet` layer is open — see `CompanySheet`'s comment for why that (not
  * an `open` prop plus a reset effect) is what gives every open a blank form.
  *
