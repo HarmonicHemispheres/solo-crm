@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { activityFiltersSchema, activitySchema, logActivityInputSchema } from './activity'
 import { companySchema, createCompanyInputSchema, updateCompanyInputSchema } from './companies'
+import { faviconRequestSchema, faviconResultSchema } from './favicons'
 import {
   createEngagementInputSchema,
   engagementSchema,
@@ -433,6 +434,20 @@ export const CHANNEL_CONTRACTS = {
   // no reindex channel to add here. ---------------------------------------
 
   'search:query': { request: searchQueryInputSchema, response: z.array(searchResultSchema).readonly() },
+
+  // -- favicons — one read, and it is a *read*. ---------------------------
+  //
+  // T-260828-49. The renderer asks what is cached for a link's URL and gets
+  // an answer immediately, always: a `data:` URL it can put in an `<img>`, or
+  // a named reason there is none. It never issues the fetch and never waits
+  // on one — main decides whether to go to the network, does it in the
+  // background, and the result shows up on a later read. Both the request and
+  // response schemas, and the reasoning for that shape, live in
+  // `electron/shared/favicons.ts` (ADR-007); the behaviour lives in
+  // `electron/main/favicons/`, whose `fetch.ts` header carries the AGENTS.md
+  // constraint the whole thing exists for.
+
+  'favicons:get': { request: faviconRequestSchema, response: faviconResultSchema },
 
   // -- settings ---------------------------------------------------------
 

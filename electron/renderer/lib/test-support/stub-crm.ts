@@ -76,6 +76,16 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     // honest answer for a test that never seeded anything to match.
     'search:query': vi.fn(async () => ({ ok: true as const, data: [] })),
 
+    // T-260828-49's favicon cache read. The default is the honest
+    // no-override answer for a test that seeded no cache — and, deliberately,
+    // an *answer*: `state: 'none'` with a reason, never a promise left
+    // pending. A renderer that cannot render a definite absence in a test is
+    // a renderer that would reflow in the app.
+    'favicons:get': vi.fn(async () => ({
+      ok: true as const,
+      data: { state: 'none' as const, reason: 'never-fetched' as const, retryAfter: null }
+    })),
+
     'settings:get': vi.fn(async () => ({ ok: true as const, data: { key: 'workspace.name' as const, value: '' } })),
     'settings:getAll': vi.fn(async () => ({ ok: true as const, data: STUB_SETTINGS_SNAPSHOT })),
     'settings:set': vi.fn(async () => ({

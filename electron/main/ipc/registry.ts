@@ -34,6 +34,7 @@ import {
 } from '../db/repositories/tasks'
 import { getActivity, listActivity, logActivity } from '../db/repositories/activity'
 import { searchAll } from '../db/repositories/search'
+import { getFavicon } from '../favicons'
 import { getAllSettings, getSetting, resetSetting, setSetting } from '../db/repositories/settings'
 import type { SettingKey } from '../db/repositories/settings'
 import { RefusalError, RepositoryError } from '../db/repositories/errors'
@@ -366,6 +367,30 @@ export const registry = {
   'search:query': defineChannel({
     ...CHANNEL_CONTRACTS['search:query'],
     handler: (input) => searchAll(getDatabase(), input)
+  }),
+
+  // ---------------------------------------------------------------------
+  // favicons — the cache read (T-260828-49).
+  // ---------------------------------------------------------------------
+
+  /**
+   * Note what this handler is not: it is not `async`, and it does not await a
+   * fetch. `getFavicon` reads the `favicons` table, answers from it, and — if
+   * this host has nothing cached and is not inside its retry window — starts
+   * one background fetch it does not wait for. A company page with twelve
+   * links therefore gets twelve immediate answers rather than twelve
+   * outstanding network requests, and gets them offline as readily as online
+   * (this task's Risks: "Fetching on render").
+   *
+   * No `runMutation` wrapper, and nothing to catch: every way this can fail —
+   * an unfetchable URL, a dead host, a response that is not an image — is
+   * already a `{ state: 'none', reason }` branch of the answer rather than a
+   * thrown `RepositoryError`. "There is no icon" is a normal result here, not
+   * a refusal.
+   */
+  'favicons:get': defineChannel({
+    ...CHANNEL_CONTRACTS['favicons:get'],
+    handler: ({ url }) => getFavicon(getDatabase(), url)
   }),
 
   // ---------------------------------------------------------------------
