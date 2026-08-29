@@ -3,6 +3,7 @@ import type { z } from 'zod'
 import { getDatabase } from '../db/connection'
 import { getSchemaVersion } from '../db/migrate'
 import { runReadOnlyQuery } from '../db/readonly-connection'
+import { readDatabaseStats } from '../db/stats'
 import {
   addAffiliation,
   createPerson,
@@ -157,6 +158,23 @@ export const registry = {
   'db:schemaVersion': defineChannel({
     ...CHANNEL_CONTRACTS['db:schemaVersion'],
     handler: () => getSchemaVersion(getDatabase())
+  }),
+
+  /**
+   * X-01's live file facts, for the Data view (T-260828-40). Reads through
+   * `getDatabase()` — these are the app's own facts about its own file, not
+   * a statement a human typed, so the read-only console connection and its
+   * three refusal mechanisms have nothing to do with this channel.
+   *
+   * Nothing is cached here or in `readDatabaseStats`: X-01's first
+   * acceptance criterion is that the numbers move when the file does,
+   * without a restart. A memo on this handler would satisfy the type and
+   * break the requirement silently, which is why the "read it live" note
+   * lives on both sides.
+   */
+  'db:stats': defineChannel({
+    ...CHANNEL_CONTRACTS['db:stats'],
+    handler: () => readDatabaseStats(getDatabase())
   }),
 
   /**

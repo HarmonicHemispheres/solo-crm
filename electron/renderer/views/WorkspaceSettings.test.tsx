@@ -34,7 +34,8 @@ const DEFAULT_SNAPSHOT: SettingsSnapshot = {
   'appearance.density': 'comfortable',
   'view.companies.mode': 'card',
   'view.people.mode': 'card',
-  'view.todos.groupBy': 'date'
+  'view.todos.groupBy': 'date',
+  'view.data.snippets': []
 }
 
 /** Renders with a stateful `settings:getAll`/`settings:set` pair — a `set`
@@ -111,7 +112,13 @@ describe('WorkspaceSettings', () => {
       // deliberately named as belonging to a view.
       'view.companies.mode',
       'view.people.mode',
-      'view.todos.groupBy'
+      'view.todos.groupBy',
+      // T-260828-40's saved query snippets, written from the Data view's own
+      // console — per-view state like the three above, and named here for the
+      // reason this list's comment already gives: the assertion's job is that
+      // no registry key is unaccounted for, not that every key is controlled
+      // from this page.
+      'view.data.snippets'
     ])
     expect([...SETTINGS_KEYS].sort()).toEqual([...covered].sort())
   })

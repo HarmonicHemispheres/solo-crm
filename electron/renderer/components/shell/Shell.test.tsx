@@ -98,7 +98,8 @@ describe('ShellLayout', () => {
           'appearance.density': 'comfortable' as const,
           'view.companies.mode': 'card' as const,
           'view.people.mode': 'card' as const,
-          'view.todos.groupBy': 'date' as const
+          'view.todos.groupBy': 'date' as const,
+          'view.data.snippets': []
         }
       }))
     })

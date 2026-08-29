@@ -112,6 +112,33 @@ describe("'db:schemaVersion'", () => {
   })
 })
 
+describe("'db:stats'", () => {
+  it('handler answers with the live file facts, through the request and response schemas', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-stats-'))
+    try {
+      openDatabase({ userDataDir: tmpDir })
+      const result = await callChannel('db:stats')
+
+      // The response schema is `.strict()`, so `callChannel`'s own
+      // `response.parse` has already refused anything extra or missing; what
+      // is asserted here is that the values describe the file this test just
+      // opened, not a plausible-looking constant.
+      expect(result.path.endsWith('solocrm.db')).toBe(true)
+      expect(result.journalMode).toBe('wal')
+      expect(result.schemaVersion).toBe(LATEST_SCHEMA_VERSION)
+      expect(result.fileBytes).toBeGreaterThan(0)
+      expect(result.tables.map((table) => table.name)).toContain('companies')
+      // X-04/X-05 own these; nothing writes them yet and this channel does
+      // not invent them.
+      expect(result.lastBackupAt).toBeNull()
+      expect(result.lastIntegrityCheckOk).toBeNull()
+    } finally {
+      closeDatabase()
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+})
+
 // -----------------------------------------------------------------------
 // T-260828-26: the entity surface — companies, people, engagements, tasks,
 // activity, settings.

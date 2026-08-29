@@ -70,6 +70,53 @@ const schemaVersionResponseSchema = z.object({
 })
 
 // ---------------------------------------------------------------------------
+// db:stats — the Data view's live file facts (T-260828-40, plan item X-01).
+//
+// Every field is read from the file at call time (`electron/main/db/stats.ts`
+// — read its header): X-01's first acceptance criterion is that changing the
+// database and revisiting the view shows the new size and counts with no
+// restart, so there is nothing cached on either side of this wire and the
+// response carries `readAt` so the view can show *when* it looked rather
+// than imply "now".
+//
+// `path` crosses the boundary deliberately. T-260828-09's rule is that no
+// filesystem path rides in an *error* envelope; this is the page whose whole
+// subject is which file on this machine holds the data, and a path nobody
+// can copy is not a file anybody owns.
+//
+// `schemaVersion`/`lastMigrationAt` are the same two values `db:schemaVersion`
+// answers with, from the same `getSchemaVersion` reader — that channel is
+// still the one to call when those are all you want; this one exists so the
+// facts panel is one round trip rather than four.
+// ---------------------------------------------------------------------------
+
+const tableRowCountSchema = z.object({ name: z.string(), rowCount: z.number().int().nonnegative() }).strict()
+
+const databaseStatsResponseSchema = z
+  .object({
+    path: z.string(),
+    fileBytes: z.number().int().nonnegative(),
+    /** The `-wal` sidecar, separately: a just-written row lives there until a checkpoint moves it. */
+    walBytes: z.number().int().nonnegative(),
+    pageSize: z.number().int().nonnegative(),
+    pageCount: z.number().int().nonnegative(),
+    journalMode: z.string(),
+    schemaVersion: z.number().int().nonnegative(),
+    lastMigrationAt: timestampSchema.nullable(),
+    /** X-04's nightly export; `null` until that task exists, so the view says "never" rather than omitting the fact. */
+    lastBackupAt: timestampSchema.nullable(),
+    /** X-05's `integrity_check`; `null` for the same reason. This page may display a result, never run one. */
+    lastIntegrityCheckAt: timestampSchema.nullable(),
+    lastIntegrityCheckOk: z.boolean().nullable(),
+    tables: z.array(tableRowCountSchema).readonly(),
+    readAt: timestampSchema
+  })
+  .strict()
+
+/** `db:stats`'s response as the renderer sees it, exported so the Data view can name the type without re-deriving it. */
+export type DatabaseStatsResponse = z.infer<typeof databaseStatsResponseSchema>
+
+// ---------------------------------------------------------------------------
 // db:query — the read-only query channel (T-260828-39, plan item X-02).
 //
 // The one channel that takes SQL from the renderer. Everything that makes
@@ -343,6 +390,11 @@ export const CHANNEL_CONTRACTS = {
   'db:schemaVersion': {
     request: z.undefined(),
     response: schemaVersionResponseSchema
+  },
+  /** X-01's live file facts — size, WAL size, page size, path, journal mode, schema version and one row count per table. See the `db:stats` section above. */
+  'db:stats': {
+    request: z.undefined(),
+    response: databaseStatsResponseSchema
   },
   /**
    * X-02's read-only query channel — a statement plus optional bind values

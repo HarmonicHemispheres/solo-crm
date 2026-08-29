@@ -24,6 +24,28 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
   return {
     'app:version': vi.fn(async () => ({ ok: true as const, data: { version: '0.1.0' } })),
     'db:schemaVersion': vi.fn(async () => ({ ok: true as const, data: { version: 1, lastMigrationAt: null } })),
+    // T-260828-40's live file facts. The default describes a real but empty
+    // database — a path, a page size, WAL journalling, no tables — rather
+    // than zeroes across the board, so a test that renders the Data view
+    // without overriding this gets the shape the view actually formats.
+    'db:stats': vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        path: '/stub/userData/solocrm.db',
+        fileBytes: 32_768,
+        walBytes: 0,
+        pageSize: 4096,
+        pageCount: 8,
+        journalMode: 'wal',
+        schemaVersion: 1,
+        lastMigrationAt: null,
+        lastBackupAt: null,
+        lastIntegrityCheckAt: null,
+        lastIntegrityCheckOk: null,
+        tables: [],
+        readAt: STUB_TIMESTAMP
+      }
+    })),
     // T-260828-39's read-only query channel. The default is a successful
     // empty result rather than a refusal: "nothing here yet" is the
     // realistic no-override response for every other channel above, and a
@@ -214,5 +236,6 @@ const STUB_SETTINGS_SNAPSHOT = {
   'appearance.density': 'comfortable' as const,
   'view.companies.mode': 'card' as const,
   'view.people.mode': 'card' as const,
-  'view.todos.groupBy': 'date' as const
+  'view.todos.groupBy': 'date' as const,
+  'view.data.snippets': []
 }
