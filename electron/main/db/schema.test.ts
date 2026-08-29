@@ -87,9 +87,25 @@ function createIndexStatements(sql: string): string[] {
     .map((line) => line.slice(0, line.indexOf(';')))
 }
 
+/**
+ * Every `CREATE TABLE …( … );` statement in a migration's text, whitespace
+ * collapsed so a tab-vs-space difference between drizzle-kit's output and the
+ * checked-in file is not read as drift. Multi-line, unlike an index — the
+ * column list is the part that matters.
+ */
+function createTableStatements(sql: string): string[] {
+  const normalised = sql.replace(/\r\n/g, '\n')
+  const statements: string[] = []
+  const pattern = /^CREATE TABLE [\s\S]*?^\);$/gm
+  for (const match of normalised.matchAll(pattern)) {
+    statements.push(match[0].replace(/\s+/g, ' ').trim())
+  }
+  return statements
+}
+
 describe('schema.ts and the checked-in migrations cannot drift', () => {
   it(
-    'regenerating from schema.ts against 0001 produces exactly the indexes migration 0004 creates',
+    'regenerating from schema.ts against 0001 produces exactly the indexes 0004 creates and the table 0005 creates',
     () => {
       // schema.ts is imported by no production module — the runtime applies
       // the checked-in SQL — so nothing else would catch a hand-edit of the
@@ -155,10 +171,18 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         // with CRLF on Windows while drizzle-kit always emits LF.
         const delta = readFileSync(join(outDir, generated[0]), 'utf-8').replace(/\r\n/g, '\n')
 
-        // Nothing but indexes: strip every CREATE INDEX line and drizzle's own
-        // statement separators, and what remains must be blank. A dropped
-        // column or a renamed table shows up here.
-        const residue = delta
+        // T-260829-04 widened this from "indexes only" to "indexes and the
+        // tables schema.ts declares that 0001 did not". `branding` is the
+        // first table added since 0001, so the delta legitimately carries a
+        // CREATE TABLE now; the assertions below still pin every statement in
+        // it to a checked-in migration, so an *undeclared* table or a drifted
+        // column list fails exactly as before.
+        //
+        // Nothing but those two: strip every CREATE TABLE block, every CREATE
+        // INDEX line, and drizzle's own statement separators, and what remains
+        // must be blank. A dropped column or a renamed table shows up here.
+        const withoutTables = delta.replace(/^CREATE TABLE [\s\S]*?^\);$/gm, '')
+        const residue = withoutTables
           .split('\n')
           .filter((line) => !line.startsWith('CREATE INDEX'))
           .join('\n')
@@ -166,11 +190,15 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
           .trim()
         expect(residue).toBe('')
 
-        const checkedIn = readFileSync(join(migrationsDir, '0004_fk_indexes_polymorphic_cascade.sql'), 'utf-8')
-        expect(createIndexStatements(delta).sort()).toEqual(createIndexStatements(checkedIn).sort())
+        const checkedIn0004 = readFileSync(join(migrationsDir, '0004_fk_indexes_polymorphic_cascade.sql'), 'utf-8')
+        expect(createIndexStatements(delta).sort()).toEqual(createIndexStatements(checkedIn0004).sort())
         // Belt and braces on the empty case: an accidentally-emptied 0004
         // would satisfy the equality above against an empty delta.
-        expect(createIndexStatements(checkedIn).length).toBeGreaterThan(0)
+        expect(createIndexStatements(checkedIn0004).length).toBeGreaterThan(0)
+
+        const checkedIn0005 = readFileSync(join(migrationsDir, '0005_branding.sql'), 'utf-8')
+        expect(createTableStatements(delta).sort()).toEqual(createTableStatements(checkedIn0005).sort())
+        expect(createTableStatements(checkedIn0005).length).toBeGreaterThan(0)
       } finally {
         rmSync(outDir, { recursive: true, force: true })
       }
