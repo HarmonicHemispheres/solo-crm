@@ -17,6 +17,11 @@ built-in `code-review` are the gates, and neither is optional.
 
 A one-line fix skips all of this. The process is for work worth a record.
 
+A status change is not done until the month `INDEX.md` says so. `npm run
+check:index` is the gate — `verify` runs it last, and `run-tasks` runs it at
+every merge. The index is what the user reads to know what is happening, so a
+stale one is a false report, not untidiness.
+
 [.dev/README.md](.dev/README.md) is the full procedure — pipeline, status and
 category vocabulary, which review each category triggers. Development context is
 written there, never into the working tree.

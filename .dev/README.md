@@ -120,3 +120,14 @@ tasks.
 An index is a projection of the files beside it, so it can be rebuilt and is
 never the source of truth. Update it in the same commit as the status change.
 When they disagree, the task files win.
+
+`npm run check:index` enforces that. It is a checker, not a generator — the
+indexes carry hand-written groupings and prose a generator would flatten. It
+fails on a missing row, a duplicate left behind by a status move, an icon that
+disagrees with its word, an orphan row, a `done` task with no `closed:` date or
+no `## Outcome`, and a task named by a `Merge T-…` commit whose file still says
+`in-progress`. That last one is the case prose kept missing: the file and the
+index agree with each other and are both wrong.
+
+Run it after every status change. `verify` runs it as its final step, so a
+stale index fails the same gate the tests do.

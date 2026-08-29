@@ -19,6 +19,7 @@
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 const TASKS_DIR = '.dev/tasks'
 
@@ -36,7 +37,37 @@ function frontmatterField(source, field) {
   return match ? match[1].trim() : ''
 }
 
+/**
+ * Task IDs whose work is already on this branch — the blind spot the file/index
+ * comparison cannot see. When both the task file and the index say
+ * `in-progress` they agree, so the check above passes while the work has in
+ * fact shipped. Six wave-E tasks sat like that until the user asked.
+ *
+ * The signal is the merge commit's subject, which run-tasks writes as
+ * `Merge T-260828-31: …`. Deliberately NOT `git branch --merged`: a branch
+ * freshly cut from main's tip is an ancestor of HEAD and so counts as merged
+ * while having contributed nothing, which flagged all five in-flight wave-F
+ * tasks the first time this ran. A task that lands as a fast-forward with no
+ * merge commit is invisible here — accepted, because this is a second net
+ * under the file/index comparison, not the only one.
+ */
+function mergedTaskIds() {
+  const ids = new Set()
+  const git = (args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  try {
+    for (const subject of git(['log', '--format=%s', '--merges']).split('\n')) {
+      const match = subject.match(/^Merge (T-\d{6}-\d{2})\b/)
+      if (match) ids.add(match[1])
+    }
+  } catch {
+    // Not a git checkout, or git is unavailable. The file/index comparison
+    // still runs; this check simply has nothing to say.
+  }
+  return ids
+}
+
 const problems = []
+const merged = mergedTaskIds()
 
 const months = existsSync(TASKS_DIR)
   ? readdirSync(TASKS_DIR, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
@@ -62,7 +93,25 @@ for (const month of months) {
       problems.push(`${id}: status "${status}" is not one of ${Object.keys(STATUS_ICONS).join(', ')} (.dev/README.md)`)
       continue
     }
-    tasks.set(id, { status, file: name })
+    tasks.set(id, { status, file: name, source })
+  }
+
+  // A task file that is itself stale. The comparison below only catches the
+  // index and the file disagreeing; these catch the file being wrong.
+  for (const [id, task] of tasks) {
+    if (merged.has(id) && task.status !== 'done' && task.status !== 'dropped') {
+      problems.push(
+        `${id}: merged into this branch, but ${task.file} still says "${task.status}" — ` +
+          'close it with an Outcome, a closed date, and a done row'
+      )
+    }
+    if (task.status !== 'done') continue
+    if (!frontmatterField(task.source, 'closed')) {
+      problems.push(`${id}: status done in ${task.file} with no "closed:" date`)
+    }
+    if (!/^##\s+Outcome\s*$/m.test(task.source)) {
+      problems.push(`${id}: status done in ${task.file} with no "## Outcome" section — what shipped is unrecorded`)
+    }
   }
 
   // What the index says. Rows look like: | ● done | [T-260828-20](file.md) | ...

@@ -30,6 +30,11 @@ one that applies to what changed, in this order — cheapest signal first:
    database *and* to a copy of an existing one. A migration that only works on
    an empty database is broken and will not look broken.
 5. **Build** — only when the change could plausibly break packaging.
+6. **`npm run check:index`** — always, and last, because it is the one check
+   that fails on a record rather than on code. It compares every task file
+   against its month `INDEX.md` and flags a task already merged that never got
+   closed. Treat a failure exactly like any other: fix the record, do not skip
+   the command.
 
 If a command does not exist yet, say which one is missing rather than silently
 running a smaller set. "Tests pass" when there are no tests is a false report.

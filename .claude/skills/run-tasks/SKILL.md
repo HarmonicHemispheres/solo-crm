@@ -66,11 +66,22 @@ Merges are sequential and yours alone. Per task, in the planned order:
    fail together, and this is the only place that gets caught.
 4. Append the `Outcome` section to the task file, set `status: done` and
    `closed:`, and move the row to the month `INDEX.md`'s closed table as `● done`.
+5. Run `npm run check:index` **before you move on to the next merge**, and treat
+   a failure as blocking. This is step 4 made mechanical, and it exists because
+   step 4 has been skipped three times across two runs despite being written
+   here, in [.dev/README.md](../../../.dev/README.md), and in agent memory.
 
 Set `status` to the bare word in frontmatter and the icon-plus-word form in the
 index — the vocabulary is in [.dev/README.md](../../../.dev/README.md). Move a
 task to `◐ in-progress` when its subagent starts, not when the run does, so the
 index is true mid-run rather than only at the end.
+
+Close each task at its own merge, not in a batch at the end of the wave. A batch
+close is the failure mode: the run continues, the batch never happens, and the
+index reads `◐ in-progress` for work that shipped an hour ago. `check:index`
+now catches exactly that — a task named by a `Merge T-…` commit whose file
+still says anything but `done` — but catching it late still means the user read
+a false index in between.
 
 If a merge breaks the build, stop the run. Do not merge further tasks onto a
 broken tree hoping a later one fixes it.
