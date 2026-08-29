@@ -49,13 +49,31 @@ export type LinkKind = (typeof LINK_KINDS)[number]
  * every kind and the order between rules below is transcribed from that
  * function verbatim, not re-derived.
  *
- * One thing is deliberately NOT verbatim: the mockup tests
- * `url.toLowerCase().includes(substring)` against the **whole URL string**,
- * so `https://evil.test/?ref=notion.so` reads as a Notion link — the exact
- * failure T-260828-48's Risks calls out ("`notion.so` appearing anywhere in
- * a URL is not the same as being its host"). Every `type: 'host'` rule here
- * is matched against `new URL(url).hostname` only; `detectLinkKind` below is
- * this map's one caller and is the only place that distinction is applied.
+ * Two things are deliberately NOT verbatim.
+ *
+ * First, the mockup tests `url.toLowerCase().includes(substring)` against
+ * the **whole URL string**, so `https://evil.test/?ref=notion.so` reads as a
+ * Notion link — the exact failure T-260828-48's Risks calls out
+ * ("`notion.so` appearing anywhere in a URL is not the same as being its
+ * host"). Every `type: 'host'` rule here is matched against
+ * `new URL(url).hostname` only.
+ *
+ * Second (T-260828-55), matching a rule as a *substring* of the host is
+ * still wrong in the other direction: `mynotion.com` and `notion.evil.com`
+ * both contain `notion.` and both resolved as Notion. So a host rule is now
+ * a **registrable domain** — the labels immediately before the final label —
+ * and `hostMatchesDomain` below matches it on label boundaries: the host
+ * must be exactly `<domain>.<tld>` or `<anything>.<domain>.<tld>`. That is
+ * why the entries below carry no trailing dot: `notion` matches `notion.so`
+ * and `www.notion.so`, and refuses `mynotion.com`, `notion.evil.com` and
+ * `notion.so.evil.com` alike.
+ *
+ * The single-trailing-label rule means a multi-label public suffix
+ * (`example.co.uk`) is not understood; recognising those needs the Public
+ * Suffix List, which is a network-fetched dataset this app deliberately does
+ * not carry. None of the seven vendors below serve their product from one,
+ * so the cost is a `web` kind on a host no rule was written for — the same
+ * outcome as no rule at all, and never a false positive.
  *
  * The `pdf` rule is `type: 'extension'`, matched against the URL's path —
  * the mockup's own `u.endsWith('.pdf')` is already whole-URL, not
@@ -65,17 +83,37 @@ export type LinkKind = (typeof LINK_KINDS)[number]
  * as the mockup's sequential `if`/`else if` chain would).
  */
 export const LINK_KIND_RULES = [
-  { kind: 'drive', type: 'host', substrings: ['drive.google', 'docs.google'] },
-  { kind: 'notion', type: 'host', substrings: ['notion.'] },
-  { kind: 'github', type: 'host', substrings: ['github.'] },
-  { kind: 'figma', type: 'host', substrings: ['figma.'] },
-  { kind: 'stripe', type: 'host', substrings: ['stripe.'] },
+  { kind: 'drive', type: 'host', domains: ['drive.google', 'docs.google'] },
+  { kind: 'notion', type: 'host', domains: ['notion'] },
+  { kind: 'github', type: 'host', domains: ['github'] },
+  { kind: 'figma', type: 'host', domains: ['figma'] },
+  { kind: 'stripe', type: 'host', domains: ['stripe'] },
   { kind: 'pdf', type: 'extension', suffix: '.pdf' },
-  { kind: 'slack', type: 'host', substrings: ['slack.'] }
+  { kind: 'slack', type: 'host', domains: ['slack'] }
 ] as const satisfies ReadonlyArray<
-  | { readonly kind: LinkKind; readonly type: 'host'; readonly substrings: readonly string[] }
+  | { readonly kind: LinkKind; readonly type: 'host'; readonly domains: readonly string[] }
   | { readonly kind: LinkKind; readonly type: 'extension'; readonly suffix: string }
 >
+
+/**
+ * True when `host` is `<domain>.<tld>` or `<subdomains>.<domain>.<tld>` —
+ * a label-boundary match, never a substring one.
+ *
+ * `host` is expected already lowercased (`URL#hostname` is, for every
+ * non-IP host the parser accepts); `domain` is a rule entry from
+ * `LINK_KIND_RULES`, written without its final label.
+ *
+ * The final label is dropped before comparing so that a rule matches only in
+ * the registrable-domain position: `notion.evil.com` becomes `notion.evil`,
+ * which neither equals `notion` nor ends with `.notion`, and so does not
+ * match — whereas `www.notion.so` becomes `www.notion`, which does.
+ */
+export function hostMatchesDomain(host: string, domain: string): boolean {
+  const labels = host.split('.')
+  if (labels.length < 2) return false
+  const withoutTld = labels.slice(0, -1).join('.')
+  return withoutTld === domain || withoutTld.endsWith(`.${domain}`)
+}
 
 /**
  * Resolves a parsed URL to its `LinkKind`, walking `LINK_KIND_RULES` in
@@ -87,7 +125,7 @@ export function detectLinkKind(url: URL): LinkKind {
   const path = url.pathname.toLowerCase()
   for (const rule of LINK_KIND_RULES) {
     if (rule.type === 'host') {
-      if (rule.substrings.some((substring) => host.includes(substring))) return rule.kind
+      if (rule.domains.some((domain) => hostMatchesDomain(host, domain))) return rule.kind
     } else if (path.endsWith(rule.suffix)) {
       return rule.kind
     }
@@ -116,7 +154,15 @@ export function tryParseLinkUrl(value: string): URL | null {
   }
 }
 
-const linkUrlSchema = z
+/**
+ * Exported so `linkSchema` below can reuse it: before T-260828-55 the read
+ * side declared `url: z.string()`, so the scheme allowlist was a write-side
+ * guarantee only and any row that reached the table by some other route —
+ * a migration, a future import, a hand-edited database — crossed the IPC
+ * boundary unchecked into the sinks (`href`, `shell.openExternal`, the
+ * favicon fetch of T-260828-49) this schema exists to protect.
+ */
+export const linkUrlSchema = z
   .string()
   .min(1, 'url is required')
   .superRefine((value, ctx) => {
@@ -138,7 +184,7 @@ export const linkSchema = z.object({
   id: z.string(),
   entityType: z.enum(LINK_ENTITY_TYPES),
   entityId: z.string(),
-  url: z.string(),
+  url: linkUrlSchema,
   title: z.string(),
   kind: z.enum(LINK_KINDS),
   addedAt: timestampSchema,
