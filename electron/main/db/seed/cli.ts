@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { runFirstRunDataLocationPrompt } from '../../first-run/data-location-prompt'
 import { closeDatabase, getDatabase, openDatabase, resolveDatabasePath } from '../connection'
 import { SeedGuardError, seedFixture } from './index'
 
@@ -35,9 +36,15 @@ app.setName('solo-crm')
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
     console.log(`[seed] app name: ${app.getName()}`)
     console.log(`[seed] database path: ${resolveDatabasePath()}`)
+
+    // T-260828-18: explicit opt-out, not an environment-variable default —
+    // same discipline as OpenDatabaseOptions above. Seeding a fresh profile
+    // must never block on a native dialog; skipping is stated here rather
+    // than left implicit by this module simply never being called.
+    await runFirstRunDataLocationPrompt({ skip: true })
 
     openDatabase()
     try {
