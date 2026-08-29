@@ -143,13 +143,30 @@ const lostEngagement = makeEngagement({
   status: 'lost'
 })
 
+const deliveredEngagement = makeEngagement({
+  id: 'eng-delivered',
+  name: 'VedX support agent',
+  billingCompanyId: 'co-acme',
+  clientCompanyId: 'co-acme',
+  billingModel: 'fixed',
+  status: 'delivered'
+})
+
 const fixedMilestones = [
   makeMilestone({ id: 'ms-1', engagementId: 'eng-fixed', name: 'Kickoff', sort: 0, completedAt: TS }),
   makeMilestone({ id: 'ms-2', engagementId: 'eng-fixed', name: 'Build', sort: 1 }),
   makeMilestone({ id: 'ms-3', engagementId: 'eng-fixed', name: 'Launch', sort: 2 })
 ]
 
-const ALL_ENGAGEMENTS = [retainerEngagement, fixedEngagement, tmEngagement, equityEngagement, noneEngagement, lostEngagement]
+const ALL_ENGAGEMENTS = [
+  retainerEngagement,
+  fixedEngagement,
+  tmEngagement,
+  equityEngagement,
+  noneEngagement,
+  lostEngagement,
+  deliveredEngagement
+]
 const ALL_COMPANIES = [acme, biller, client]
 
 /** Detail route stand-in — proves navigation happened, not just that a link renders. */
@@ -257,7 +274,7 @@ describe('Engagements', () => {
     expect(differentCard.textContent).toContain('for')
   })
 
-  it('shows all six status groups when populated, lost included, and omits an empty group', async () => {
+  it('shows all six status groups when populated, lost included', async () => {
     renderEngagements()
     await screen.findByText('Advisory retainer')
 
@@ -265,10 +282,17 @@ describe('Engagements', () => {
     expect(screen.getByRole('heading', { name: 'Pending' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Proposed' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Held' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Delivered' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Lost' })).toBeTruthy()
-    // No 'delivered' engagement in the fixture — its group is omitted, not
-    // rendered empty.
+  })
+
+  it('omits an empty status group rather than rendering it with a zero count', async () => {
+    renderEngagements({ engagements: ALL_ENGAGEMENTS.filter((engagement) => engagement.status !== 'delivered') })
+    await screen.findByText('Advisory retainer')
+
     expect(screen.queryByRole('heading', { name: 'Delivered' })).toBeNull()
+    // The rest are unaffected.
+    expect(screen.getByRole('heading', { name: 'Lost' })).toBeTruthy()
   })
 
   it('every company name is a real link — Tab/Enter reach it and it navigates to that company', async () => {
