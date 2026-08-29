@@ -46,26 +46,19 @@ export interface LayerManagerContextValue {
   openLayer: (kind: LayerKind, trigger?: HTMLElement | null) => void
   /** Closes `kind` if open and returns focus to its stored trigger. */
   closeLayer: (kind: LayerKind) => void
-  /**
-   * The title the currently-open 'sheet' layer was opened with — see
-   * `openSheet`.
-   *
-   * Nothing reads this today: it was the placeholder shell's own
-   * `<Sheet title>`/`aria-label`, and T-260829-08 deleted that shell. Each
-   * of the four real forms hardcodes its own title and `aria-label`, so no
-   * sheet depends on this for its accessible name.
-   */
-  sheetTitle: string
   /** Opens the generic 'sheet' layer holding `kind`'s real form. A dedicated
    * setter rather than overloading `openLayer` with a payload argument that
    * only one of five layer kinds ever uses.
    *
-   * `kind` leads and is required (T-260829-08): it is the argument that
-   * decides which form appears, so it must not be the one that is easiest
-   * to leave off the end — and with a closed union first, two positional
-   * strings swapped by mistake is a type error rather than a form titled
-   * "New person" containing a company's fields. */
-  openSheet: (kind: SheetKind, title: string, trigger?: HTMLElement | null) => void
+   * `kind` is required (T-260829-08): it is the argument that decides which
+   * form appears, so it must not be the one that is easiest to leave off.
+   *
+   * It took a `title` too until T-260829-11. That title was the placeholder
+   * shell's `<Sheet title>`/`aria-label`, and T-260829-08 deleted the shell;
+   * each of the four real forms hardcodes its own title and `aria-label`, so
+   * nothing read the argument any more. A required argument that feeds
+   * nothing asks every new create button for a string that goes nowhere. */
+  openSheet: (kind: SheetKind, trigger?: HTMLElement | null) => void
 }
 
 export const LayerManagerContext = createContext<LayerManagerContextValue | null>(null)

@@ -294,7 +294,7 @@ export function People() {
             value={mode}
             onChange={handleModeChange}
           />
-          <Button variant="ghost" onClick={(event) => openSheet('person', 'New person', event.currentTarget)}>
+          <Button variant="ghost" onClick={(event) => openSheet('person', event.currentTarget)}>
             <PlusIcon />
             New person
           </Button>
@@ -330,7 +330,7 @@ export function People() {
             // "Add person", distinct from the header's own "New person"
             // button — same reasoning as Companies.tsx's EmptyState action
             // comment: two buttons on one page need two accessible names.
-            <Button variant="primary" onClick={(event) => openSheet('person', 'New person', event.currentTarget)}>
+            <Button variant="primary" onClick={(event) => openSheet('person', event.currentTarget)}>
               <PlusIcon />
               Add person
             </Button>
@@ -387,7 +387,7 @@ function PeopleGrid({
       <button
         type="button"
         className="ccard ccard-new"
-        onClick={(event) => onCreate('person', 'New person', event.currentTarget)}
+        onClick={(event) => onCreate('person', event.currentTarget)}
       >
         <PlusIcon width={22} height={22} />
         <span className="meta">Add person</span>

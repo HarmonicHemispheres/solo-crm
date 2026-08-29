@@ -100,7 +100,6 @@ describe('useGlobalShortcuts', () => {
       isTopmost: () => true,
       openLayer,
       closeLayer: vi.fn(),
-      sheetTitle: '',
       openSheet: vi.fn()
     }
     render(

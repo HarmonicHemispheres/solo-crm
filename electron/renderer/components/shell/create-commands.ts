@@ -30,12 +30,17 @@ export interface CreateCommand {
   /** Mono hint on the palette row; only the quick log has one worth showing (its own shortcut). */
   readonly hint?: string
   /**
-   * Which create form the generic `sheet` layer should hold, and the title
-   * it opens with. Absent for a command that opens a different layer
-   * entirely — see `layer` below. Exactly one of `sheet` / `layer` is set;
-   * `runCreateCommand` is the only place that distinction is read.
+   * Which create form the generic `sheet` layer should hold. Absent for a
+   * command that opens a different layer entirely — see `layer` below.
+   * Exactly one of `sheet` / `layer` is set; `runCreateCommand` is the only
+   * place that distinction is read.
+   *
+   * It carried a `title` alongside `kind` until T-260829-11, which was only
+   * ever forwarded to `openSheet`'s dead `title` argument. What the palette
+   * *shows* is `paletteLabel` and what the New menu shows is `menuLabel` —
+   * both above, both still read, both untouched by that deletion.
    */
-  readonly sheet?: { readonly kind: SheetKind; readonly title: string }
+  readonly sheet?: { readonly kind: SheetKind }
   /** The layer this command opens when it isn't a create form — the quick log. */
   readonly layer?: 'log'
 }
@@ -49,15 +54,10 @@ export interface CreateCommand {
  * menu is a *subset* of this table rather than equal to it.
  */
 export const CREATE_COMMANDS: readonly CreateCommand[] = [
-  { id: 'company', menuLabel: 'Company', paletteLabel: 'New company', sheet: { kind: 'company', title: 'New company' } },
-  { id: 'person', menuLabel: 'Person', paletteLabel: 'New person', sheet: { kind: 'person', title: 'New person' } },
-  {
-    id: 'engagement',
-    menuLabel: 'Engagement',
-    paletteLabel: 'New engagement',
-    sheet: { kind: 'engagement', title: 'New engagement' }
-  },
-  { id: 'todo', menuLabel: 'Todo', paletteLabel: 'New todo', sheet: { kind: 'todo', title: 'New todo' } },
+  { id: 'company', menuLabel: 'Company', paletteLabel: 'New company', sheet: { kind: 'company' } },
+  { id: 'person', menuLabel: 'Person', paletteLabel: 'New person', sheet: { kind: 'person' } },
+  { id: 'engagement', menuLabel: 'Engagement', paletteLabel: 'New engagement', sheet: { kind: 'engagement' } },
+  { id: 'todo', menuLabel: 'Todo', paletteLabel: 'New todo', sheet: { kind: 'todo' } },
   // The palette's "log activity" entry (this task's scope: the quick log is
   // T-260828-35's own overlay and its own ⌘L shortcut — the palette opens
   // it, it does not reimplement it).
@@ -80,7 +80,7 @@ export function runCreateCommand(
   trigger?: HTMLElement | null
 ): void {
   if (command.sheet) {
-    layers.openSheet(command.sheet.kind, command.sheet.title, trigger)
+    layers.openSheet(command.sheet.kind, trigger)
     return
   }
   if (command.layer) layers.openLayer(command.layer, trigger)
