@@ -155,7 +155,7 @@ describe('seedFixture: the mapping the task exists to prove', () => {
   })
 })
 
-describe('seedFixture: service catalogue versions', () => {
+describe('seedFixture: offerings versions', () => {
   it('carries at least two services with exactly two non-overlapping service_versions each', () => {
     withFreshDb((db) => {
       seedFixture(db)

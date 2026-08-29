@@ -129,7 +129,7 @@ affiliations (
   created_at, updated_at
 )
 
--- Catalogue: what you sell, and what it costs
+-- Offerings: what you sell, and what it costs
 service_categories ( id uuid pk, name text, color text, sort integer, created_at, updated_at )
 
 services (
@@ -319,7 +319,7 @@ search_fts  -- FTS5 external-content table over companies.name, people.name,
 - **Timeline view** — Gantt grouped by billing party, bars coloured by model, milestone ticks on fixed bars, rolling retainers fading at the right edge, dashed bars for unsigned work, today marker.
 - Create flow asks "Billed to" and "Work is for" separately, then swaps in model-specific fields.
 
-### 6.5 Catalogue (services & products)
+### 6.5 Offerings (services & products)
 - Management surface, not an analytics surface: create, edit, duplicate, archive; create/rename/delete categories.
 - Filter by all / services / products.
 - Quick-add parses `Name, 4500` / `Name, 4500/mo` / `Name, 175/hr`.
@@ -340,7 +340,7 @@ search_fts  -- FTS5 external-content table over companies.name, people.name,
 - Append-only log across companies, people and engagements. Manual entries plus automatic entries from calendar. **Mail contributes no activity rows** — the Gmail adapter pulls a last-contacted timestamp and writes it to `companies.last_touch_at` / `people.last_contact_at` directly, because §7 forbids pulling message bodies and there would be nothing to show in the log (ADR-001).
 
 ### 6.9 Search and capture
-- `⌘K` command palette over FTS5: companies, people, engagements, catalogue items, todos, activity notes — plus create commands.
+- `⌘K` command palette over FTS5: companies, people, engagements, offerings, todos, activity notes — plus create commands.
 - `⌘L` logs a touch from anywhere.
 - Logging a touch resets that company's cadence clock.
 
@@ -405,7 +405,7 @@ Companies, people, affiliations, engagements, activity, tasks. Command palette o
 Per-company cadence, decay meters, Today view, next-step flag, billing-vs-delivery split, end clients.
 
 **Phase 3 — Money**
-Catalogue with versioning, `revenue_lines`, revenue rollups, milestones, engagement timeline.
+Offerings with versioning, `revenue_lines`, revenue rollups, milestones, engagement timeline.
 
 **Phase 4 — Integrations**
 Stripe first (cleanest API, highest-value data), then timelog CSV import, then calendar and mail.

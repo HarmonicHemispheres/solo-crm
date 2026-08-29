@@ -42,14 +42,14 @@ revenue figure that does not come from a `SUM(amount_cents)` over
 
 "Revenue figure or rollup" means a total, an aggregate, a chart series or a
 metric that answers *how much money*. It does not mean every number with a
-currency symbol. Two things stay legal reads of engagement and catalogue
+currency symbol. Two things stay legal reads of engagement and offerings
 columns, and neither is a finding:
 
 - **A single engagement's own headline price** — §6.4's card rendering
   "$6,500 / mo", "$18,000" or "$175 / hr" from `agreed_rate_cents`,
   `contract_value_cents` or `hourly_rate_cents` (P1-15, mirroring the mockup's
   `headline()`). It states the engagement's terms; it does not aggregate.
-- **The §6.5 catalogue price list**, which reads `service_versions.rate_cents`
+- **The §6.5 offerings price list**, which reads `service_versions.rate_cents`
   and has no `revenue_lines` row by construction — nothing has been sold.
 
 The line is aggregation and attribution. The moment a number sums across
