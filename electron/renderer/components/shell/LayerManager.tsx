@@ -42,7 +42,6 @@ const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'she
  */
 export function LayerManager({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<readonly LayerKind[]>([])
-  const [sheetTitle, setSheetTitle] = useState('')
   // Which real form (T-260828-27) the generic 'sheet' layer is holding.
   // Null only before the first `openSheet` — every caller passes a kind
   // (T-260829-08 made it required), so there is no longer a state in which
@@ -91,7 +90,7 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [])
 
   const openSheet = useCallback(
-    (kind: SheetKind, title: string, trigger?: HTMLElement | null) => {
+    (kind: SheetKind, trigger?: HTMLElement | null) => {
       // Matches `openLayer`'s own idempotency contract (see its comment: "a
       // held or repeated ⌘K [doing] nothing the first press didn't already
       // do") — extended here to the *content* a second call would pick,
@@ -102,7 +101,6 @@ export function LayerManager({ children }: { children: ReactNode }) {
       // which real form is mounted (code review, T-260828-27), discarding
       // every field the user had already typed into the one that was open.
       if (!stackRef.current.includes('sheet')) {
-        setSheetTitle(title)
         setSheetKind(kind)
       }
       openLayer('sheet', trigger)
@@ -153,8 +151,8 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<LayerManagerContextValue>(
-    () => ({ isOpen, isTopmost, openLayer, closeLayer, sheetTitle, openSheet }),
-    [isOpen, isTopmost, openLayer, closeLayer, sheetTitle, openSheet]
+    () => ({ isOpen, isTopmost, openLayer, closeLayer, openSheet }),
+    [isOpen, isTopmost, openLayer, closeLayer, openSheet]
   )
 
   // DOM order is paint order here (see the component comment): a closed

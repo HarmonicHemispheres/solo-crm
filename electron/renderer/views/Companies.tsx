@@ -285,7 +285,7 @@ export function Companies() {
             value={mode}
             onChange={handleModeChange}
           />
-          <Button variant="ghost" onClick={(event) => openSheet('company', 'New company', event.currentTarget)}>
+          <Button variant="ghost" onClick={(event) => openSheet('company', event.currentTarget)}>
             <PlusIcon />
             New company
           </Button>
@@ -323,7 +323,7 @@ export function Companies() {
             // wording) is rendered above this on every branch, so the two
             // buttons need distinct accessible names rather than two
             // identically-labelled "New company" buttons on the same page.
-            <Button variant="primary" onClick={(event) => openSheet('company', 'New company', event.currentTarget)}>
+            <Button variant="primary" onClick={(event) => openSheet('company', event.currentTarget)}>
               <PlusIcon />
               Add company
             </Button>
@@ -411,7 +411,7 @@ function CompaniesGrid({
       <button
         type="button"
         className="ccard ccard-new"
-        onClick={(event) => onCreate('company', 'New company', event.currentTarget)}
+        onClick={(event) => onCreate('company', event.currentTarget)}
       >
         <PlusIcon width={22} height={22} />
         <span className="meta">Add company</span>

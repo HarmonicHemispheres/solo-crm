@@ -30,14 +30,21 @@ function Harness() {
   return (
     <div>
       <button onClick={(e) => openLayer('palette', e.currentTarget)}>open-palette</button>
-      {/* A real `SheetKind`, not a title alone: `openSheet` requires one
-          (T-260829-08), and the kind-less path these two buttons used to
-          exercise — the placeholder shell with no fields — is gone. These
-          still exist to test the open/close mechanism, so they open the
-          same kind twice; what they assert is stacking and idempotency,
-          not the form's contents. */}
-      <button onClick={(e) => openSheet('company', 'New company', e.currentTarget)}>open-sheet</button>
-      <button onClick={(e) => openSheet('company', 'New company', e.currentTarget)}>open-sheet-again</button>
+      {/* A real `SheetKind`: `openSheet` requires one (T-260829-08), and the
+          kind-less path these two buttons used to exercise — the placeholder
+          shell with no fields — is gone. These still exist to test the
+          open/close mechanism, so they open the same kind twice; what they
+          assert is stacking and idempotency, not the form's contents. */}
+      <button onClick={(e) => openSheet('company', e.currentTarget)}>open-sheet</button>
+      <button onClick={(e) => openSheet('company', e.currentTarget)}>open-sheet-again</button>
+      {/* One trigger per remaining `SheetKind`, so the accessible-name test
+          below can open all four. They exist for that test alone — every
+          other test here uses the company pair above. */}
+      <button onClick={(e) => openSheet('person', e.currentTarget)}>open-sheet-person</button>
+      <button onClick={(e) => openSheet('engagement', e.currentTarget)}>
+        open-sheet-engagement
+      </button>
+      <button onClick={(e) => openSheet('todo', e.currentTarget)}>open-sheet-todo</button>
       <button onClick={(e) => openLayer('log', e.currentTarget)}>open-log</button>
       <button
         onClick={(e) => {
@@ -134,6 +141,21 @@ describe('LayerManager', () => {
     // also a dialog named 'New company' (T-260829-08). The field is what
     // separates the real form from it.
     expect(within(dialog).getByLabelText('Name')).toBeTruthy()
+  })
+
+  // The gate on T-260829-11's deletion of `sheetTitle`: every one of the four
+  // forms hardcodes its own `<Sheet title>` and `aria-label`, so none of them
+  // takes its accessible name from anything the layer manager carries. If a
+  // sheet ever did, this fails rather than a screen reader finding out.
+  it.each([
+    ['company', 'open-sheet', 'New company'],
+    ['person', 'open-sheet-person', 'New person'],
+    ['engagement', 'open-sheet-engagement', 'New engagement'],
+    ['todo', 'open-sheet-todo', 'New todo']
+  ])('the %s sheet names itself, not from anything openSheet was passed', (_kind, trigger, name) => {
+    renderHarness()
+    fireEvent.click(screen.getByText(trigger))
+    expect(screen.getByRole('dialog', { name })).toBeTruthy()
   })
 
   it('is idempotent — opening an already-open layer does not stack a second instance', () => {
