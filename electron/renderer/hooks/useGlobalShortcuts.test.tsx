@@ -1,19 +1,34 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createQueryClient } from '../lib/query-client'
+import { stubCrm } from '../lib/test-support/stub-crm'
 import { LayerManager } from '../components/shell/LayerManager'
 import { LayerManagerContext, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
 import { useGlobalShortcuts } from './useGlobalShortcuts'
+
+afterEach(() => {
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
+  delete window.crm
+})
 
 function Harness() {
   useGlobalShortcuts()
   return <input aria-label="somewhere else in the app" />
 }
 
+/** ⌘L now opens P1-09's real quick log (T-260828-35), which reads through
+ * TanStack Query — so the harness carries the same provider + `window.crm`
+ * stub `App.tsx` gives it in production. See `LayerManager.test.tsx`'s
+ * identical note. */
 function renderHarness() {
+  window.crm = stubCrm()
   return render(
-    <LayerManager>
-      <Harness />
-    </LayerManager>
+    <QueryClientProvider client={createQueryClient()}>
+      <LayerManager>
+        <Harness />
+      </LayerManager>
+    </QueryClientProvider>
   )
 }
 
