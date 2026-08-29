@@ -5,7 +5,11 @@
 A CRM for solo founders. Client, project, contact and revenue tracking for a
 one-person consultancy — local-first, no account, no server, no telemetry.
 
-**Status:** planning. No application code yet.
+**Status:** the spine is in. Repositories over the real schema, typed IPC,
+FTS5 search, the create sheets and every list and detail view; a command
+palette, a quick log, a read-only SQL console channel, and a branded Windows
+installer. Not yet built: the integrations (P3/P4), revenue lines, and the
+timelog import that every hours-used figure depends on.
 
 ## Why
 

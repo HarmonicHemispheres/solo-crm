@@ -8,7 +8,6 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
-| ◐ in-progress | [T-260829-02](T-260829-02-release-versioning.md) | Give each release a distinct version so two installers are never the same file name | 📦 build | X-09 |
 | ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
 
 ### Phase 1 — the spine
@@ -95,3 +94,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | R-260828-03 |
 | ● done | [T-260828-19](T-260828-19-relocate-data-root.md) | Move an existing data root to a new folder without losing a write | 🗄 data | R-260828-03 |
 | ● done | [T-260828-49](T-260828-49-favicon-fetch-cache.md) | Fetch and cache favicons in main, once per host, never through a third party | 🔗 integration | R-260828-03 |
+| ● done | [T-260829-02](T-260829-02-release-versioning.md) | Give each release a distinct version so two installers are never the same file name | 📦 build | R-260828-03 |
