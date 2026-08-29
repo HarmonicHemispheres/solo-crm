@@ -1,16 +1,32 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { LayerManager } from './LayerManager'
 import { AppRoutes } from '../../routes'
+import { createQueryClient } from '../../lib/query-client'
+import { stubCrm } from '../../lib/test-support/stub-crm'
+
+// T-260828-28: the Companies route is a real, query-backed view now (the
+// first of the ten to be), so every render through AppRoutes needs a
+// QueryClientProvider the same way App.tsx gives the real app one — and a
+// window.crm to answer its queries, the same convention
+// lib/query-integration.test.tsx uses.
+afterEach(() => {
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
+  delete window.crm
+})
 
 function renderApp(path = '/todos') {
+  window.crm = stubCrm()
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <LayerManager>
-        <AppRoutes />
-      </LayerManager>
-    </MemoryRouter>
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter initialEntries={[path]}>
+        <LayerManager>
+          <AppRoutes />
+        </LayerManager>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
