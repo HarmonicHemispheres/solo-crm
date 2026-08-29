@@ -1,7 +1,7 @@
 ---
 id: T-260828-19
 title: Move an existing data root to a new folder without losing a write
-status: open
+status: in-progress
 category: data
 plan_ref: P0-03
 created: 2026-08-28

@@ -1,7 +1,7 @@
 ---
 id: T-260828-49
 title: Fetch and cache favicons in main, once per host, never through a third party
-status: open
+status: in-progress
 category: integration
 plan_ref: P1-19
 created: 2026-08-28

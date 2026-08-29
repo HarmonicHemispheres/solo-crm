@@ -1,7 +1,7 @@
 ---
 id: T-260829-02
 title: Give each release a distinct version so two installers are never the same file name
-status: open
+status: in-progress
 category: build
 plan_ref: X-09
 created: 2026-08-29
