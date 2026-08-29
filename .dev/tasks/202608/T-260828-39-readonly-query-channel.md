@@ -1,7 +1,7 @@
 ---
 id: T-260828-39
 title: Open a genuinely read-only query channel — second connection plus statement refusal
-status: open
+status: in-progress
 category: ipc
 plan_ref: X-02
 created: 2026-08-28

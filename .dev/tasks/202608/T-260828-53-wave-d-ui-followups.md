@@ -1,7 +1,7 @@
 ---
 id: T-260828-53
 title: Restore the focus ring in the sheets, and close wave D's UI review findings
-status: open
+status: in-progress
 category: ui
 plan_ref:
 created: 2026-08-28

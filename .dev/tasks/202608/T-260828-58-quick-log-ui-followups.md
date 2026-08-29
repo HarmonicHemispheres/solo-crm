@@ -1,7 +1,7 @@
 ---
 id: T-260828-58
 title: Make the quick log’s keyboard selection visible and keep it in view
-status: open
+status: in-progress
 category: ui
 plan_ref: P1-09
 created: 2026-08-28

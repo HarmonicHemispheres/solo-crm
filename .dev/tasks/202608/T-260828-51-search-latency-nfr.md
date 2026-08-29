@@ -1,7 +1,7 @@
 ---
 id: T-260828-51
 title: Make search meet its latency budget — the union view cannot be indexed
-status: open
+status: in-progress
 category: data
 plan_ref: P1-06
 created: 2026-08-28

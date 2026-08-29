@@ -21,8 +21,8 @@ channels. **P1-CUT** marks the subset the task plan says makes the app start.
 | ○ open | [T-260828-37](T-260828-37-command-palette.md) | Build the command palette (⌘K) — search everything, lead with create commands | 🎨 ui | P1-10 · P1-CUT |
 | ○ open | [T-260828-49](T-260828-49-favicon-fetch-cache.md) | Fetch and cache favicons in main, once per host, never through a third party | 🔗 integration | P1-19 |
 | ○ open | [T-260828-50](T-260828-50-links-ui.md) | Build the link rows — paste to add, inline title editing, no layout shift | 🎨 ui | P1-20 |
-| ○ open | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | P1-06 |
-| ○ open | [T-260828-53](T-260828-53-wave-d-ui-followups.md) | Restore the focus ring in the sheets, and close wave D UI review findings | 🎨 ui | *(review)* |
+| ◐ in-progress | [T-260828-51](T-260828-51-search-latency-nfr.md) | Make search meet its latency budget — the union view cannot be indexed | 🗄 data | P1-06 |
+| ◐ in-progress | [T-260828-53](T-260828-53-wave-d-ui-followups.md) | Restore the focus ring in the sheets, and close wave D UI review findings | 🎨 ui | *(review)* |
 
 ### Follow-ups from review
 
@@ -36,13 +36,13 @@ that surfaced them. Each names the review it came from.
 | ○ open | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | 🗄 data | *(review)* |
 | ○ open | [T-260828-56](T-260828-56-chain-walk-tests-and-discriminators.md) | Test the chain walk directly, and stop reporting a cycle as depth exceeded | 🗄 data | *(review)* |
 | ○ open | [T-260828-57](T-260828-57-first-run-chooser-followups.md) | One database path, one sync-folder guard, and a folder proven writable | 🗄 data | *(review)* |
-| ○ open | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | 🎨 ui | *(review)* |
+| ◐ in-progress | [T-260828-58](T-260828-58-quick-log-ui-followups.md) | Make the quick log’s keyboard selection visible and keep it in view | 🎨 ui | *(review)* |
 
 ### Workspace — the two blank pages
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260828-39](T-260828-39-readonly-query-channel.md) | Open a genuinely read-only query channel — second connection plus statement refusal | 🔌 ipc | X-02 |
+| ◐ in-progress | [T-260828-39](T-260828-39-readonly-query-channel.md) | Open a genuinely read-only query channel — second connection plus statement refusal | 🔌 ipc | X-02 |
 | ○ open | [T-260828-40](T-260828-40-workspace-data-view.md) | Build the Workspace Data view — live database facts, table counts, query console | 🎨 ui | X-01 · X-03 |
 
 ## Closed this month
@@ -91,4 +91,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-48](T-260828-48-links-repository.md) | Build the links repository — paste a URL on any entity, host decides the kind | 🗄 data | R-260828-02 |
 | ● done | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | R-260828-02 |
 | ● done | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | R-260828-02 |
-| ● done | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | 🔧 build | R-260828-02 |
+| ● done | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | 📦 build | R-260828-02 |
