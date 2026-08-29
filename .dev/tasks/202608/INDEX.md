@@ -32,7 +32,6 @@ that surfaced them. Each names the review it came from.
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260828-41](T-260828-41-fk-indexes-polymorphic-orphans.md) | Index the foreign-key columns and settle what happens to polymorphic rows on delete | 🗄 data | *(review)* |
-| ◐ in-progress | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | *(review)* |
 | ○ open | [T-260828-46](T-260828-46-repository-lifecycle-gaps.md) | Close the repository lifecycle gaps review found but left out of scope | 🗄 data | *(review)* |
 | ◐ in-progress | [T-260828-54](T-260828-54-test-suite-under-load.md) | Stop the suite failing under concurrency — cap workers, pool the slow files | 🔧 build | *(review)* |
 | ○ open | [T-260828-55](T-260828-55-links-repository-hardening.md) | Store the URL that was validated, and match link hosts on a boundary | 🗄 data | *(review)* |
@@ -92,3 +91,4 @@ that surfaced them. Each names the review it came from.
 | ● done | [T-260828-42](T-260828-42-billed-via-cycle-guard.md) | Refuse a billed-via cycle in the repository, as the seed loader already does | 🗄 data | R-260828-02 |
 | ● done | [T-260828-48](T-260828-48-links-repository.md) | Build the links repository — paste a URL on any entity, host decides the kind | 🗄 data | R-260828-02 |
 | ● done | [T-260828-35](T-260828-35-quick-log.md) | Build the quick log (⌘L) — who, kind, one line, from anywhere | 🎨 ui | R-260828-02 |
+| ● done | [T-260828-43](T-260828-43-extract-repository-machinery.md) | Extract the repository machinery every repository is currently copying | 🗄 data | R-260828-02 |

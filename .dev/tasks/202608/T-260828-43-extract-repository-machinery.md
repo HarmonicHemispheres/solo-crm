@@ -1,11 +1,11 @@
 ---
 id: T-260828-43
 title: Extract the repository machinery every repository is currently copying
-status: in-progress
+status: done
 category: data
 plan_ref:
 created: 2026-08-28
-closed:
+closed: 2026-08-28
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -94,3 +94,47 @@ generic falls out, and skip it if it does not.
 - **Silent behaviour change while moving code.** The whole value here is that
   behaviour is identical; the tests passing unmodified is the only evidence of
   that, so a modified test is the signal the extraction went wrong.
+
+
+---
+
+## Outcome
+
+Merged as the merge commit above. Review non-blocking (1 should-fix, 1 nit).
+
+**Changed:** `electron/main/db/repositories/input.ts` and
+`sqlite-errors.ts` (new), `machinery.test.ts` (new), and all seven
+repositories reduced to their own SQL and mapping — 568 insertions against 380
+deletions across 11 files.
+
+Seven repositories were each carrying their own copy of the same input
+normalisation and SQLite error translation. `links.ts` became the seventh in
+wave F, and its own review flagged that it was adding a copy rather than waiting
+for this task. Four open tasks were queued behind it (T-260828-41, -46, -55,
+-56), all of which touch the files this rewrote.
+
+**No test changed.** That was the review's sharpest question, because a
+"refactor" that edits its tests has moved behaviour while wearing a refactor's
+clothes. The 409 tests under `electron/main/db` pass on the merged tree without
+one of them being touched.
+
+**Verify reported `verify-failed`, and the orchestrator merged anyway.** The one
+failure was `App.test.tsx`, a renderer test this diff cannot reach — it touches
+only `electron/main/db/`. The verify agent did the right thing under the new
+rule: re-ran it in isolation, found it *does* reproduce on a quiet machine at
+5123ms, checked it against clean `main`, confirmed it fails identically there,
+and reported it as pre-existing rather than silently passing or silently
+failing. Characterised afterwards at 2 failures in 3 solo runs — the test body
+takes 5.02s against a 5000ms limit. T-260828-54 owns it.
+
+**Deferred (follow-ups, not blockers):**
+
+- `stripUndefinedValues` spreads an array into a plain object —
+  `{ ...(value as Record<string, unknown>) }` turns `[a, b]` into
+  `{0: a, 1: b}`, because an array is `typeof 'object'` and non-null. No caller
+  passes an array today, which is why nothing caught it; it is now shared by
+  seven repositories, so the blast radius changed even though the code did not.
+- The "declared exactly once" guard roots its scan at `electron/`, so a copy
+  landing elsewhere would not be caught. Harmless while the renderer never
+  touches SQLite, which is an AGENTS.md constraint rather than a property of the
+  guard.
