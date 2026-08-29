@@ -1,6 +1,6 @@
 {
   "name": "solo-crm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A local-first CRM for a one-person consultancy.",
@@ -15,7 +15,7 @@
     "test": "vitest run --project=\"!runtime-boot*\" && vitest run --project=\"runtime-boot*\"",
     "test:unit": "vitest run --project=\"!runtime-boot*\"",
     "seed": "electron-vite build && electron out/main/seed.js",
-    "dist": "electron-vite build && electron-builder --win --publish never",
+    "dist": "node scripts/release-version.mjs check && electron-vite build && electron-builder --win --publish never && node scripts/release-version.mjs record",
     "report:run": "node scripts/run-report.mjs"
   },
   "build": {
