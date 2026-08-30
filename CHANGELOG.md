@@ -5,6 +5,16 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.3.1
+
+- ♻️ **Nothing you can see** — the number moved because the 0.3.0 installer was
+  cut before the last of that release's work merged, and two different programs
+  must not share one installer name. What changed since: a create-sheet title
+  nothing displayed was deleted along with the argument that fed it, and the
+  test that stops the database schema drifting from its migrations was rewritten
+  to rename identifiers structurally rather than by text substitution. If you
+  are on 0.3.0, updating gains you nothing and costs nothing.
+
 ## 0.3.0
 
 - ✨ **Your own icon and logo in the sidebar** — Workspace Settings has a
