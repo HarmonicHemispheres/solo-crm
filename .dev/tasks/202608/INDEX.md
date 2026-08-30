@@ -7,7 +7,12 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
+| ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
+
+The update path is driven and recorded (R-260829-03): the maintenance page
+reads **Update**, not Repair, and the database is byte-identical either side of
+it. What is left needs an uninstall — the Remove path, and the clean-machine
+run that cannot happen while an install exists.
 
 ## Closed this month
 
