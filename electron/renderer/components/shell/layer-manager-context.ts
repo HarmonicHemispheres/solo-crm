@@ -8,12 +8,21 @@ import { createContext, useContext } from 'react'
  * the New dropdown itself; `popover` exists so a future `.info` popover can
  * register with this same stack — nothing in this task opens one.
  *
+ * `tour` (T-260829-15) is the first-run walkthrough overlay, and it joins
+ * this stack rather than owning a `keydown` listener of its own for the
+ * exact reason `Sheet` passes `closeOnEscape={false}`: two document-level
+ * Escape handlers means one keypress closes two layers. Registering here
+ * also buys the tour the two other things this stack already owns — focus
+ * returning to whatever opened it (the Workspace Settings "Take the tour"
+ * button), and `isTopmost`, so a palette opened over the tour takes the
+ * Escape and the tour stays put.
+ *
  * Split into its own file (no component here) rather than living inside
  * LayerManager.tsx: `react-refresh/only-export-components` disallows a file
  * mixing a component export with non-component ones, and this context +
  * hook pair is exactly that kind of non-component export.
  */
-export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover'
+export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover' | 'tour'
 
 /**
  * Which create form the generic `sheet` layer is currently holding

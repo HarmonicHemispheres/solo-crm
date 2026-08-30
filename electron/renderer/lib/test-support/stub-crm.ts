@@ -277,5 +277,15 @@ const STUB_SETTINGS_SNAPSHOT = {
   'view.companies.mode': 'card' as const,
   'view.people.mode': 'card' as const,
   'view.todos.groupBy': 'date' as const,
-  'view.data.snippets': []
+  'view.data.snippets': [],
+  // The one value here that deliberately does NOT match its registry default
+  // (`false`, electron/shared/settings.ts). This stub stands in for a
+  // workspace that is already up and running — every harness that reaches
+  // for it is testing a view, a sheet or the shell, not first run — and a
+  // `false` here would drop T-260829-15's tour overlay on top of all of
+  // them, where a step titled "Companies" collides with the Companies view's
+  // own heading. The three tests that care about the flag (Tour.test.tsx)
+  // set it explicitly in all three of its states, which is the honest place
+  // for that to be asserted.
+  'onboarding.tourSeen': true
 }

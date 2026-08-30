@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../components/primitives/Card'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
@@ -8,6 +8,7 @@ import { EmptyState } from '../components/primitives/EmptyState'
 import { SoloCrmMark, SoloCrmWordmark } from '../components/shell/BrandMarks'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
+import { useLayerManager } from '../components/shell/layer-manager-context'
 import { GLOBAL_SHORTCUTS } from '../hooks/useGlobalShortcuts'
 import { useMotionAttribute } from '../hooks/useMotionAttribute'
 import { formatShortcut } from '../lib/platform'
@@ -39,7 +40,10 @@ import './WorkspaceSettings.css'
  * Identity, Default cadence, Integrations, Backup & appearance, Shortcuts —
  * plus Branding (T-260829-07), the one card here that does not read or write
  * `settings` at all: an image is not a setting value, it lives in its own
- * table behind its own channels (`electron/shared/branding.ts`).
+ * table behind its own channels (`electron/shared/branding.ts`) — and Guided
+ * tour (T-260829-15), which writes no setting from this page either: it
+ * reopens the first-run overlay through the layer manager and the overlay
+ * owns its own `onboarding.tourSeen` write.
  *
  * Every value shown reads and writes through T-260828-25's settings
  * repository (`settings:getAll` / `settings:set`) — there is no second
@@ -634,6 +638,42 @@ function ShortcutsCard() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Guided tour — the way back into T-260829-15's first-run walkthrough after
+// it has been skipped or finished. A card of its own rather than a row in
+// Shortcuts: that card's own header says it is generated from
+// `GLOBAL_SHORTCUTS` and is read-only, and a button that *does* something is
+// not a keyboard reference. It is also the thing an operator would come here
+// looking for by name, which a list of key combinations does not answer.
+//
+// It reopens the overlay without clearing `onboarding.tourSeen` — the flag
+// stays `true` and closing the tour again writes `true` again. Dismissal is
+// final on its own; this is the operator asking, which is the only way back
+// this feature has.
+// ---------------------------------------------------------------------------
+
+function GuidedTourCard() {
+  const { openLayer } = useLayerManager()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  return (
+    <Card>
+      <Card.Header title="Guided tour" />
+      <div className="field">
+        <span className="k">Five screens</span>
+        <span className="v">Today, Companies, People, Engagements, Workspace</span>
+        <Button ref={triggerRef} variant="ghost" onClick={() => openLayer('tour', triggerRef.current)}>
+          Take the tour
+        </Button>
+      </div>
+      <p className="meta settings-foot">
+        The walkthrough a new workspace opens with, and only ever opens with once. Taking it again changes nothing — it
+        reads out what each section is for and writes no record but its own &ldquo;seen&rdquo; flag.
+      </p>
+    </Card>
+  )
+}
+
 function SettingsGlyph() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -680,6 +720,7 @@ export function WorkspaceSettings() {
         <IntegrationsCard snapshot={snapshot} setSetting={setSetting} />
         <BackupAppearanceCard snapshot={snapshot} setSetting={setSetting} />
         <ShortcutsCard />
+        <GuidedTourCard />
       </div>
     </div>
   )
