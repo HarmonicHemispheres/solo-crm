@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { CompanyKind } from './companies'
 
 /**
  * `settings`' wire contract (ADR-002, ADR-004; T-260828-25) — the declared
@@ -167,6 +168,38 @@ export type SettingValue<K extends SettingKey> = z.infer<(typeof SETTINGS_REGIST
 
 /** Every declared key with its current (default, until overridden) value — `getAllSettings`'s return shape. */
 export type SettingsSnapshot = { readonly [K in SettingKey]: SettingValue<K> }
+
+/** The five `cadence.defaultDays.*` keys as a union, derived from the registry
+ * rather than restated — every one of them is declared `z.int().positive()`
+ * above, so `SettingValue<CadenceSettingKey>` is `number` and a snapshot read
+ * through `CADENCE_SETTING_KEY` needs no `as number` at the call site. */
+export type CadenceSettingKey = Extract<SettingKey, `cadence.defaultDays.${string}`>
+
+/**
+ * The one place `cadence.defaultDays.<kind>` keys are composed, as a literal
+ * map rather than a template-literal function — ADR-002 rule 3 names a key
+ * built at a call site a defect outright ("it makes what settings exist
+ * unanswerable by grep"), and `Companies.tsx`'s `MODE_SETTING_KEY` const is
+ * the merged precedent for declaring one instead. A literal also lets `tsc`
+ * prove each value against `SettingKey` on its own, and — the direction that
+ * actually matters — a `cadence.defaultDays.*` key renamed or dropped from
+ * `SETTINGS_REGISTRY` fails the build here instead of silently reading
+ * `undefined` from a snapshot and writing a key the repository rejects.
+ *
+ * It lives in this module, not in the one view that first needed it
+ * (T-260829-13), because ADR-002 rule 3's "keys are declared in one module"
+ * is this module, and there are now two readers: `WorkspaceSettings.tsx`
+ * writes these defaults and `renderer/lib/decay.ts` resolves a company's
+ * null `cadence_days` against them. A view is not somewhere a second reader
+ * can import from without dragging a React tree behind it.
+ */
+export const CADENCE_SETTING_KEY: Record<CompanyKind, CadenceSettingKey> = {
+  client: 'cadence.defaultDays.client',
+  end_client: 'cadence.defaultDays.end_client',
+  prospect: 'cadence.defaultDays.prospect',
+  advisory: 'cadence.defaultDays.advisory',
+  channel: 'cadence.defaultDays.channel'
+}
 
 /**
  * Compile-time pin (T-260828-44), mirroring the runtime pin
