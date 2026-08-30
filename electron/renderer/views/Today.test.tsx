@@ -1,0 +1,639 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useParams } from 'react-router'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
+import { Today } from './Today'
+import { LayerManager } from '../components/shell/LayerManager'
+import { createQueryClient } from '../lib/query-client'
+import { queryKeys } from '../lib/query-keys'
+import { stubCrm } from '../lib/test-support/stub-crm'
+import type { Company } from '../../shared/companies'
+import type { Engagement } from '../../shared/engagements'
+import type { Person } from '../../shared/people'
+import type { Task, TaskFilter } from '../../shared/tasks'
+import type { Activity } from '../../shared/activity'
+import type { SettingsSnapshot } from '../../shared/settings'
+
+/**
+ * T-260829-14's acceptance, as checks.
+ *
+ * The two assertions this file exists for, above the rest:
+ *
+ * - **Going quiet sorts by ratio, not raw days** (P2-04's first criterion).
+ *   `sortsByRatio` below states a case where the day counts and the ratios
+ *   disagree, so a comparator that reads `days` passes nothing.
+ * - **Nothing on the page is a number this view re-derived.** Open todos
+ *   comes from `tasks:countOpen`, and the test for it deliberately hands the
+ *   channel a count that does not match the list length so a `tasks.length`
+ *   shortcut is visible rather than accidentally right.
+ */
+
+afterEach(() => {
+  // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
+  delete window.crm
+})
+
+const DAY_MS = 86_400_000
+
+/** An ISO instant `days` whole days before now — decay is instant arithmetic (`lib/decay.ts`), so fixtures are built the same way rather than as calendar dates. */
+function isoDaysAgo(days: number): string {
+  return new Date(Date.now() - days * DAY_MS - 60_000).toISOString()
+}
+
+/** The user's local calendar day, matching `todo-urgency.ts`'s `localToday()` — `due_on` is date-only and its boundary is the wall clock, not UTC. */
+function localToday(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function addDays(dateOnly: string, delta: number): string {
+  const [year, month, day] = dateOnly.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  date.setUTCDate(date.getUTCDate() + delta)
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
+const TODAY = localToday()
+
+function makeCompany(overrides: Partial<Company> & { id: string; name: string }): Company {
+  return {
+    kind: 'client',
+    website: null,
+    billsDirectly: true,
+    billedViaCompanyId: null,
+    introducedByCompanyId: null,
+    cadenceDays: 7,
+    lastTouchAt: isoDaysAgo(1),
+    budgetNote: null,
+    notes: null,
+    since: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides
+  }
+}
+
+function makeTask(overrides: Partial<Task> & { id: string; title: string }): Task {
+  return {
+    status: 'todo',
+    isNextStep: false,
+    dueOn: null,
+    waitingSince: null,
+    doneAt: null,
+    companyId: null,
+    engagementId: null,
+    personId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides
+  }
+}
+
+function makeEngagement(overrides: Partial<Engagement> & { id: string; name: string }): Engagement {
+  return {
+    billingCompanyId: null,
+    clientCompanyId: null,
+    offeringVersionId: null,
+    agreedRateCents: null,
+    billingModel: null,
+    status: 'active',
+    startedOn: '2026-01-01',
+    endsOn: null,
+    renewsOn: null,
+    hoursIncluded: null,
+    contractValueCents: null,
+    hourlyRateCents: null,
+    estimatedHours: null,
+    notToExceedCents: null,
+    notes: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides
+  }
+}
+
+function makePerson(overrides: Partial<Person> & { id: string; name: string }): Person {
+  return {
+    email: null,
+    phone: null,
+    notes: null,
+    lastContactAt: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides
+  }
+}
+
+function makeActivity(overrides: Partial<Activity> & { id: string; title: string }): Activity {
+  return {
+    occurredAt: isoDaysAgo(1),
+    kind: 'note',
+    body: null,
+    companyId: null,
+    personId: null,
+    engagementId: null,
+    source: 'manual',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides
+  }
+}
+
+function DetailStub({ testId }: { testId: string }) {
+  const params = useParams()
+  return <div data-testid={testId}>{params.id}</div>
+}
+
+interface RenderOptions {
+  companies?: readonly Company[]
+  openTasks?: readonly Task[]
+  waitingTasks?: readonly Task[]
+  countOpen?: number
+  engagements?: readonly Engagement[]
+  people?: readonly Person[]
+  activity?: readonly Activity[]
+  crmOverrides?: Parameters<typeof stubCrm>[0]
+}
+
+function renderToday({
+  companies = [makeCompany({ id: 'ezdeploy', name: 'EZDeploy' })],
+  openTasks = [],
+  waitingTasks = [],
+  countOpen,
+  engagements = [],
+  people = [],
+  activity = [],
+  crmOverrides = {}
+}: RenderOptions = {}) {
+  // Stateful rather than fixed returns, matching Todos.test.tsx's own helper:
+  // a completion's `onSettled` invalidates and refetches in the background,
+  // and a fixed return would silently undo the write the test just made —
+  // hiding a real regression behind the optimistic cache write alone.
+  let currentOpen = [...openTasks]
+  let currentCount = countOpen ?? openTasks.length
+
+  window.crm = stubCrm({
+    'companies:list': vi.fn(async () => ({ ok: true as const, data: companies })),
+    'tasks:list': vi.fn(async (filter?: TaskFilter) => {
+      if (filter?.status === 'waiting') return { ok: true as const, data: waitingTasks }
+      if (filter?.open) return { ok: true as const, data: currentOpen }
+      return { ok: true as const, data: [...currentOpen, ...waitingTasks] }
+    }),
+    'tasks:countOpen': vi.fn(async () => ({ ok: true as const, data: { count: currentCount } })),
+    'tasks:update': vi.fn(async (input: { id: string; patch: { status?: string | null } }) => {
+      if (input.patch.status === 'done') {
+        const wasOpen = currentOpen.some((task) => task.id === input.id)
+        currentOpen = currentOpen.filter((task) => task.id !== input.id)
+        if (wasOpen) currentCount = Math.max(0, currentCount - 1)
+      }
+      const task = openTasks.find((candidate) => candidate.id === input.id) ?? makeTask({ id: input.id, title: 'stub' })
+      return { ok: true as const, data: { ok: true as const, data: { ...task, status: 'done' as const } } }
+    }),
+    'engagements:list': vi.fn(async () => ({ ok: true as const, data: engagements })),
+    'people:list': vi.fn(async () => ({ ok: true as const, data: people })),
+    'activity:list': vi.fn(async () => ({ ok: true as const, data: activity })),
+    ...crmOverrides
+  })
+
+  const queryClient = createQueryClient()
+  const result = render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/']}>
+        <LayerManager>
+          <Routes>
+            <Route path="/" element={<Today />} />
+            <Route path="/company/:id" element={<DetailStub testId="company-detail" />} />
+            <Route path="/person/:id" element={<DetailStub testId="person-detail" />} />
+            <Route path="/todos" element={<div data-testid="todos-view" />} />
+          </Routes>
+        </LayerManager>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  return { ...result, queryClient }
+}
+
+/** The `.card` a card's `<h2>` heading sits in — headings, not text, because "Companies" is also a stat label. */
+function card(name: string): HTMLElement {
+  const heading = screen.getByRole('heading', { name })
+  const found = heading.closest('.card')
+  if (!found) throw new Error(`"${name}" card not found`)
+  return found as HTMLElement
+}
+
+/** The `.row` buttons inside a card, in DOM order. */
+function rowTexts(cardEl: HTMLElement): string[] {
+  return [...cardEl.querySelectorAll('button.row')].map((row) => row.textContent ?? '')
+}
+
+describe('Today', () => {
+  it('renders the header, four stats and three cards — and none of §6.1’s money figures', async () => {
+    renderToday({
+      companies: [makeCompany({ id: 'ezdeploy', name: 'EZDeploy' })],
+      openTasks: [makeTask({ id: 't1', title: 'Send the SOW', dueOn: addDays(TODAY, -1) })],
+      countOpen: 4,
+      engagements: [makeEngagement({ id: 'e1', name: 'Retainer', status: 'active' })],
+      activity: [makeActivity({ id: 'a1', title: 'Kickoff call', kind: 'call' })]
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Today' })).toBeTruthy()
+    // The whole page has one loading state and one error state (Today.tsx),
+    // so waiting on any card is waiting on all eight queries.
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    for (const label of ['Open todos', 'Cadence health', 'Active engagements', 'Companies']) {
+      expect(screen.getByText(label)).toBeTruthy()
+    }
+    for (const heading of ['Going quiet', 'Next up', 'Recent']) {
+      expect(screen.getByRole('heading', { name: heading })).toBeTruthy()
+    }
+
+    // ui-design.md: "gold marks exactly one hero value per view".
+    expect(document.querySelectorAll('.stat.hero')).toHaveLength(1)
+
+    // The §6.1 deviation, asserted rather than only documented (Today.tsx's
+    // header): the two money stats and the twelve-month chart are deferred
+    // to P3-05 because `revenue_lines` is empty, and porting the mockup's
+    // per-engagement `mrr()`/`backlog()` is the thing AGENTS.md forbids.
+    expect(screen.queryByText(/recurring/i)).toBeNull()
+    expect(screen.queryByText(/backlog/i)).toBeNull()
+    expect(document.body.textContent).not.toContain('$')
+  })
+
+  it('Going quiet sorts by ratio, not raw days', async () => {
+    // The scope's own example is a `channel` (cadence 30) 20 days quiet
+    // beside a `client` (cadence 7) 9 days quiet. 20/30 is 0.67 — `warn`,
+    // not `late` — so that channel is not in this list at all, which is
+    // itself the per-relationship point and is asserted below. For the
+    // *ordering* the channel has to be late too, so it is 35 days quiet
+    // (1.17) against the client's 9 days (1.29): the client is more overdue
+    // on a quarter of the day count.
+    renderToday({
+      companies: [
+        makeCompany({ id: 'chan', name: 'Channel Partners', kind: 'channel', cadenceDays: 30, lastTouchAt: isoDaysAgo(35) }),
+        makeCompany({ id: 'client', name: 'Rinvii', kind: 'client', cadenceDays: 7, lastTouchAt: isoDaysAgo(9) }),
+        makeCompany({ id: 'fine', name: 'Slow Channel', kind: 'channel', cadenceDays: 30, lastTouchAt: isoDaysAgo(20) })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const rows = rowTexts(card('Going quiet'))
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toContain('Rinvii')
+    expect(rows[1]).toContain('Channel Partners')
+    // 20 days on a 30-day cadence is not late — a global day threshold would
+    // have listed it ahead of the 9-day client.
+    expect(rows.join(' ')).not.toContain('Slow Channel')
+  })
+
+  it('a never-touched company renders at the top of Going quiet, determinate and with no NaN', async () => {
+    renderToday({
+      companies: [
+        makeCompany({ id: 'client', name: 'Rinvii', cadenceDays: 7, lastTouchAt: isoDaysAgo(9) }),
+        makeCompany({ id: 'new', name: 'Untouched Co', cadenceDays: 7, lastTouchAt: null })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const quiet = card('Going quiet')
+    const rows = rowTexts(quiet)
+    expect(rows[0]).toContain('Untouched Co')
+
+    // ADR-001 rule 5 / P2-04: maximally stale, drawn as a full late bar with
+    // a real label — never a blank, never a NaN.
+    const meter = quiet.querySelector('button.row .decay')
+    expect(meter?.className).toContain('late')
+    expect(meter?.textContent).toContain('never')
+    expect(quiet.querySelector('button.row .decay .fill')?.getAttribute('style')).toContain('100%')
+    expect(document.body.textContent).not.toContain('NaN')
+  })
+
+  it('with no companies it renders the three first-run steps, not four zero stats', async () => {
+    renderToday({ companies: [] })
+
+    expect(await screen.findByRole('heading', { name: 'Start here' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add a company' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add a person' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open an engagement' })).toBeTruthy()
+
+    expect(screen.queryByText('Cadence health')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Going quiet' })).toBeNull()
+    expect(document.querySelectorAll('.stat')).toHaveLength(0)
+  })
+
+  it('the first-run "Add a company" step opens the company create sheet', async () => {
+    renderToday({ companies: [] })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a company' }))
+    expect(screen.getByRole('dialog', { name: 'New company' })).toBeTruthy()
+  })
+
+  it('with companies present but none late, Going quiet says everyone is current', async () => {
+    renderToday({
+      companies: [
+        makeCompany({ id: 'a', name: 'EZDeploy', cadenceDays: 14, lastTouchAt: isoDaysAgo(1) }),
+        makeCompany({ id: 'b', name: 'Rinvii', cadenceDays: 30, lastTouchAt: isoDaysAgo(3) })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const quiet = card('Going quiet')
+    expect(within(quiet).getByText('Everyone is current.')).toBeTruthy()
+    expect(rowTexts(quiet)).toHaveLength(0)
+  })
+
+  it('every Going quiet row navigates to /company/:id for that company', async () => {
+    renderToday({
+      companies: [makeCompany({ id: 'rinvii', name: 'Rinvii', cadenceDays: 7, lastTouchAt: isoDaysAgo(30) })]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const [row] = [...card('Going quiet').querySelectorAll('button.row')]
+    fireEvent.click(row)
+    expect((await screen.findByTestId('company-detail')).textContent).toBe('rinvii')
+  })
+
+  it('a Going quiet row shows the company’s next-step todo as its subtitle, its cadence when it has none', async () => {
+    renderToday({
+      companies: [
+        makeCompany({ id: 'rinvii', name: 'Rinvii', cadenceDays: 7, lastTouchAt: isoDaysAgo(30) }),
+        makeCompany({ id: 'ez', name: 'EZDeploy', cadenceDays: 14, lastTouchAt: isoDaysAgo(30) })
+      ],
+      openTasks: [
+        makeTask({ id: 'ns', title: 'Send the renewal quote', isNextStep: true, companyId: 'rinvii', dueOn: addDays(TODAY, 1) })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const rows = rowTexts(card('Going quiet'))
+    expect(rows.find((row) => row.includes('Rinvii'))).toContain('Send the renewal quote')
+    expect(rows.find((row) => row.includes('EZDeploy'))).toContain('every 14d')
+  })
+
+  it('Next up shows the five most urgent open todos, most overdue first', async () => {
+    renderToday({
+      companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })],
+      openTasks: [
+        makeTask({ id: 't-soon', title: 'Due tomorrow', dueOn: addDays(TODAY, 1) }),
+        makeTask({ id: 't-worst', title: 'Very overdue', dueOn: addDays(TODAY, -9) }),
+        makeTask({ id: 't-bad', title: 'A bit overdue', dueOn: addDays(TODAY, -2) }),
+        makeTask({ id: 't-none', title: 'No date at all', dueOn: null }),
+        makeTask({ id: 't-later-1', title: 'Later one', dueOn: addDays(TODAY, 20) }),
+        makeTask({ id: 't-later-2', title: 'Later two', dueOn: addDays(TODAY, 30) })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Next up' })
+    const titles = [...card('Next up').querySelectorAll('.todo .tx')].map((el) => el.textContent ?? '')
+    expect(titles).toHaveLength(5)
+    expect(titles[0]).toContain('Very overdue')
+    expect(titles[1]).toContain('A bit overdue')
+    expect(titles[2]).toContain('Due tomorrow')
+    // `sortByDue` puts an undated task after every dated one, so with six
+    // open todos the one with no date is the row that does not make the cut
+    // — not the furthest-future one.
+    expect(titles.join(' ')).not.toContain('No date at all')
+    expect(titles[4]).toContain('Later two')
+  })
+
+  it('Open todos comes from tasks:countOpen, not from the length of the Next up slice', async () => {
+    renderToday({
+      companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })],
+      openTasks: [makeTask({ id: 't1', title: 'One', dueOn: addDays(TODAY, -1) })],
+      waitingTasks: [makeTask({ id: 'w1', title: 'Waiting', status: 'waiting', waitingSince: isoDaysAgo(3) })],
+      // Deliberately not 1: the server's definition of "open" is the only
+      // source for this stat (T-260828-23), so a `tasks.length` shortcut
+      // would read 1 here rather than 17.
+      countOpen: 17
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const stat = screen.getByText('Open todos').closest('.stat') as HTMLElement
+    expect(within(stat).getByText('17')).toBeTruthy()
+    expect(stat.textContent).toContain('1 overdue · 1 waiting')
+  })
+
+  it('completing a todo in Next up removes it from the card and decrements the Open todos stat', async () => {
+    renderToday({
+      companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })],
+      openTasks: [
+        makeTask({ id: 't1', title: 'Send the SOW', dueOn: addDays(TODAY, -1) }),
+        makeTask({ id: 't2', title: 'Book the review', dueOn: addDays(TODAY, 1) })
+      ],
+      countOpen: 2
+    })
+
+    await screen.findByRole('heading', { name: 'Next up' })
+    const stat = screen.getByText('Open todos').closest('.stat') as HTMLElement
+    expect(within(stat).getByText('2')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark "Send the SOW" done' }))
+
+    await waitFor(() => expect(screen.queryByText('Send the SOW')).toBeNull())
+    // Not just the optimistic write: the refetch `onSettled` triggers reads
+    // the stub's own decremented count, so a view that drifted from the
+    // channel would snap back to 2 here.
+    await waitFor(() => expect(within(stat).getByText('1')).toBeTruthy())
+    expect(screen.getByText('Book the review')).toBeTruthy()
+  })
+
+  it('a failed companies:list shows the error, not the fresh-workspace card', async () => {
+    renderToday({
+      companies: [],
+      crmOverrides: {
+        'companies:list': vi.fn(async () => ({
+          ok: false as const,
+          error: { code: 'handler-error' as const, message: 'database is locked' }
+        }))
+      }
+    })
+
+    expect(await screen.findByText('database is locked')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Start here' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add a company' })).toBeNull()
+  })
+
+  it('the Recent card lists the newest activity and opens the quick log', async () => {
+    renderToday({
+      companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })],
+      activity: [
+        makeActivity({ id: 'a1', title: 'Kickoff call', kind: 'call', companyId: 'ez' }),
+        makeActivity({ id: 'a2', title: 'Follow-up email', kind: 'email' })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Recent' })
+    const recent = card('Recent')
+    expect(within(recent).getByText('Kickoff call')).toBeTruthy()
+    expect(within(recent).getByText('Follow-up email')).toBeTruthy()
+
+    fireEvent.click(within(recent).getByRole('button', { name: 'Add a touch' }))
+    expect(screen.getByRole('dialog', { name: 'Log a touch' })).toBeTruthy()
+  })
+
+  it('the header’s Log a touch button opens the quick log, and Next up links to /todos', async () => {
+    renderToday({ companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })] })
+
+    await screen.findByRole('heading', { name: 'Next up' })
+    fireEvent.click(screen.getByRole('button', { name: 'All todos' }))
+    expect(await screen.findByTestId('todos-view')).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §8 / P2-04's budget, in the shape of CommandPalette.latency.test.tsx: the
+// view renders at 10x the requirements' reference volume in under 100ms.
+//
+// The measurement is of the view's own render, against a query cache already
+// holding every answer — which is exactly what the budget is about. The IPC
+// round trips are not this view's work and are measured where they happen
+// (`search.latency.test.ts` and the repository suites); what this file owns
+// is the cost of turning ~2,100 cached records into the page, including the
+// decay computation for every company and the sort over every late one.
+//
+// On an idle 8-core Windows machine (jsdom, median of 5 renders after 2
+// warm-ups) this measures 52ms against the 100ms budget — a margin of about
+// 2x, which the run prints so a merely close pass is visible in the output
+// rather than only in a failure. jsdom is strictly slower at DOM work than a
+// real renderer, so a comfortable pass here is not hiding a real-browser
+// failure; the margin is also what keeps a loaded machine from turning this
+// into a false failure.
+// ---------------------------------------------------------------------------
+
+/**
+ * The seed's own ten companies as `[cadenceDays, days since last touch]` —
+ * `planning/solo-crm-mockup.html`'s `companies` array measured against its
+ * own `TODAY` (2026-08-27), which `electron/main/db/seed/fixture.ts` ports
+ * verbatim. Four of the ten are late (`programetrix` 99/30, `radial` 28/21,
+ * `northbank` 74/30, `thompson` 50/14), three are `warn` and three are `ok`.
+ *
+ * Cycling these is what makes 100 companies a faithful *10x of the seed*
+ * rather than a workspace shape nobody has: it reproduces the seed's own
+ * 40% late proportion, so "Going quiet" draws about forty rows. Giving every
+ * company the same short cadence would put ninety-odd rows in one card and
+ * measure a page the app does not produce.
+ */
+const SEED_CADENCE_AND_TOUCH: ReadonlyArray<readonly [number, number]> = [
+  [7, 1],
+  [7, 2],
+  [10, 8],
+  [14, 8],
+  [30, 99],
+  [21, 28],
+  [7, 6],
+  [21, 16],
+  [30, 74],
+  [14, 50]
+]
+
+const COMPANY_COUNT = 100
+const PERSON_COUNT = 1_000
+const ENGAGEMENT_COUNT = 500
+const TASK_COUNT = 500
+const ACTIVITY_COUNT = 500
+
+/** §8's first-paint budget, in milliseconds. */
+const BUDGET_MS = 100
+const WARMUP_RENDERS = 2
+const MEASURED_RENDERS = 5
+// Building the fixture once and rendering it seven times is under a second on
+// an idle machine. This is a hang guard, not the performance assertion — the
+// assertion is the median below, which a loaded machine slows without breaking.
+const TEST_TIMEOUT_MS = 30_000
+
+function rows<T>(count: number, make: (index: number) => T): T[] {
+  return Array.from({ length: count }, (_unused, index) => make(index))
+}
+
+describe('Today at 10x data volume', () => {
+  it(
+    'renders inside the frame budget',
+    async () => {
+      const settingsResult = await stubCrm()['settings:getAll']()
+      if (!settingsResult.ok) throw new Error('stub settings snapshot unavailable')
+      const settings: SettingsSnapshot = settingsResult.data
+
+      const companies = rows(COMPANY_COUNT, (index) => {
+        const [cadenceDays, daysQuiet] = SEED_CADENCE_AND_TOUCH[index % SEED_CADENCE_AND_TOUCH.length]
+        return makeCompany({
+          id: `company-${index}`,
+          name: `Acme Company ${index}`,
+          cadenceDays,
+          lastTouchAt: isoDaysAgo(daysQuiet)
+        })
+      })
+      const people = rows(PERSON_COUNT, (index) => makePerson({ id: `person-${index}`, name: `Acme Person ${index}` }))
+      const engagements = rows(ENGAGEMENT_COUNT, (index) =>
+        makeEngagement({ id: `engagement-${index}`, name: `Acme Engagement ${index}` })
+      )
+      const tasks = rows(TASK_COUNT, (index) =>
+        makeTask({
+          id: `task-${index}`,
+          title: `Acme todo ${index} — about the length a real one has`,
+          dueOn: addDays(TODAY, (index % 30) - 15),
+          companyId: `company-${index % COMPANY_COUNT}`
+        })
+      )
+      const activity = rows(ACTIVITY_COUNT, (index) =>
+        makeActivity({
+          id: `activity-${index}`,
+          title: `Acme touch ${index}`,
+          companyId: `company-${index % COMPANY_COUNT}`
+        })
+      )
+
+      window.crm = stubCrm()
+
+      // Built once, outside every timed region, and reused: `staleTime` is
+      // Infinity (query-client.ts) so a remount reads the cache rather than
+      // refetching, and priming it is fixture setup, not the view's work.
+      const client: QueryClient = createQueryClient()
+      client.setQueryData(queryKeys.companies.list(), companies)
+      client.setQueryData(queryKeys.tasks.openList(), tasks)
+      client.setQueryData(queryKeys.tasks.waitingList(), [])
+      client.setQueryData(queryKeys.tasks.countOpen(), { count: tasks.length })
+      client.setQueryData(queryKeys.engagements.list(), engagements)
+      client.setQueryData(queryKeys.people.list(), people)
+      client.setQueryData(queryKeys.activity.list(), activity)
+      client.setQueryData(queryKeys.settings.list(), settings)
+
+      function renderOnce() {
+        return render(
+          <QueryClientProvider client={client}>
+            <MemoryRouter initialEntries={['/']}>
+              <LayerManager>
+                <Today />
+              </LayerManager>
+            </MemoryRouter>
+          </QueryClientProvider>
+        )
+      }
+
+      // Proves the measurement below is of the real page, not of a loading
+      // paragraph — a primed cache renders content on the first pass.
+      const warmup = renderOnce()
+      expect(screen.getByRole('heading', { name: 'Going quiet' })).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Next up' })).toBeTruthy()
+      // Without this the fixture could quietly stop producing late companies
+      // and the budget below would pass over an empty card — a fast render of
+      // nothing. Forty of the hundred are late, the seed's own proportion.
+      expect(rowTexts(card('Going quiet')).length).toBe(40)
+      warmup.unmount()
+
+      for (let i = 0; i < WARMUP_RENDERS; i++) renderOnce().unmount()
+
+      const timings: number[] = []
+      for (let i = 0; i < MEASURED_RENDERS; i++) {
+        const started = performance.now()
+        const view = renderOnce()
+        timings.push(performance.now() - started)
+        view.unmount()
+      }
+      timings.sort((a, b) => a - b)
+      const median = timings[Math.floor(timings.length / 2)]
+
+      console.log(`[today] median render at 10x volume: ${median.toFixed(2)}ms of a ${BUDGET_MS}ms budget`)
+      expect(median).toBeLessThan(BUDGET_MS)
+    },
+    TEST_TIMEOUT_MS
+  )
+})
