@@ -1,10 +1,10 @@
 ---
 id: T-260829-15
 title: Walk a new operator through the app once, skippable, and never nag again
-status: in-progress
+status: done
 category: ui
 created: 2026-08-29
-closed:
+closed: 2026-08-30
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -166,3 +166,82 @@ disappear.
 - Near no AGENTS.md gotcha directly: no network, no telemetry, no filesystem, no
   SQLite from the renderer. The only persisted state is one non-secret boolean
   in the table ADR-002 designated for exactly this.
+
+---
+
+## Outcome
+
+**Changed:**
+
+- `electron/renderer/components/shell/Tour.tsx` (new) — a controller that owns
+  when the overlay opens and the one settings write closing it produces, plus
+  the card itself as a separate component mounted only while the layer is open
+  (so every open starts on step 1 from a fresh mount, not from a reset effect).
+- `electron/renderer/components/shell/tour-steps.ts` (new) — the five steps as
+  data. A fourth new file the scope did not list, forced by
+  `react-refresh/only-export-components`: a file may not export both a
+  component and a constant, the same rule that produced
+  `layer-manager-context.ts`. `Tour.test.tsx` reads it to assert content.
+- `electron/renderer/components/shell/Tour.css`, `Tour.test.tsx` (new).
+- `Shell.tsx` — mounts `<Tour />`, so whether a new operator sees it does not
+  depend on which route the app opened to.
+- `layer-manager-context.ts`, `LayerManager.tsx` — a sixth `'tour'`
+  `LayerKind`.
+- `electron/shared/settings.ts` — `onboarding.tourSeen`, `z.boolean()`,
+  default `false`.
+- `WorkspaceSettings.tsx` / `.test.tsx` — a Guided tour card; the test file
+  gained a `SettingsHost` wrapper (MemoryRouter + LayerManager + a sibling
+  `<Tour />`) because the view now calls `useLayerManager`.
+- `stub-crm.ts` — sets `onboarding.tourSeen: true`, the only value in that
+  snapshot that deliberately diverges from its registry default, commented in
+  place. Every harness reaching for the stub is testing a view, a sheet or the
+  shell, not first run; `false` would drop the overlay on all of them.
+- `Rail.test.tsx`, `Shell.test.tsx` — harness updates.
+
+**The two decisions the scope left open, and how they went:**
+
+1. **The tour joins the layer stack** rather than owning a `keydown` listener.
+   That is the bug `Sheet`'s `closeOnEscape={false}` exists to avoid — two
+   document-level Escape handlers means one keypress closes two layers — and
+   joining also buys focus-return to the Settings trigger and `isTopmost` for
+   free. Pinned by a test: ⌘K over the open tour, then Escape, and the palette
+   closes while the tour stays.
+2. **"Take the tour" is a card of its own,** not a row in Shortcuts. That
+   card's header states it is generated from `GLOBAL_SHORTCUTS` and read-only;
+   an action button contradicts its documented contract.
+
+**The design decision worth keeping:** every close path — Skip, Finish,
+Escape, both navigating actions — writes the flag through *one* effect
+watching the layer close, not through four button handlers. "A skip is as
+final as a finish" is therefore true by construction rather than by four
+handlers each remembering.
+
+**Review:** read against the acceptance criteria; no blocking findings. Five
+mutants across the builder's run and the orchestrator's:
+
+| Mutant | Result |
+|---|---|
+| Remove the `settings:set` call from the close path | 4 tests red |
+| Invert the empty-workspace condition | 1 test red |
+| Focus trap made a no-op | 1 test red |
+| `Back` no longer disabled on step 1 | 1 test red |
+| Remove the `autoOpenedRef` auto-open guard | **survived — fixed at merge** |
+
+The survivor was a real gap, not an equivalent mutant. The close path writes
+`true` into the cache immediately, so only a refetch can put `false` back —
+and `settings:set`'s own success invalidates the snapshot, so a write that
+reports success without persisting refetches `false` within the same session.
+With the guard gone the effect's condition is satisfied a second time and the
+overlay reopens on top of the operator who just dismissed it: precisely the
+nag this feature exists to prevent, and the one line standing in its way had
+no test. Rather than opening a follow-up for a single test, the orchestrator
+added it at merge — `does not reopen when the flag does not stick` — and
+confirmed it turns red under the same mutant and green with the guard
+restored. `typecheck` and `lint` clean afterwards.
+
+**Deferred:** nothing cut. The scope's "Out" list stands — no anchored
+spotlights or coach marks, no seeded example data, no step for Revenue or
+Offerings while both are still `<h1>` placeholders, and the main-process
+first-run data-location prompt untouched. Scrim clicks deliberately do not
+close the overlay: an accidental outside click permanently dismissing it is
+the wrong default when dismissal is final.

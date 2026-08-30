@@ -8,12 +8,12 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ◐ in-progress | [T-260829-14](T-260829-14-today-view.md) | Build the Today view — what is owed, what is going quiet, what just happened | 🎨 ui | P2-04 |
-| ◐ in-progress | [T-260829-15](T-260829-15-first-run-tour.md) | Walk a new operator through the app once, skippable, and never nag again | 🎨 ui | — |
 
-The first three tasks of Phase 2, scoped 2026-08-29 and awaiting approval.
-T-260829-13 blocks T-260829-14; T-260829-15 is independent of both. T-260829-14
-declines P2-04's ADR-003 allowance for provisional revenue figures and says why
-in its scope — that is the decision to approve or reject before it runs.
+Building in R-260829-03, on the decay module T-260829-13 merged. It declines
+P2-04's ADR-003 allowance for provisional revenue figures — no money hero
+stats and no twelve-month chart until `revenue_lines` has something in it —
+and its scope says why, so the omission reads as a decision rather than as
+unfinished work.
 
 ### Needs a person at a keyboard
 
@@ -29,6 +29,7 @@ Neither is buildable by an agent.
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260829-15](T-260829-15-first-run-tour.md) | Walk a new operator through the app once, skippable, and never nag again | 🎨 ui | R-260829-03 |
 | ● done | [T-260829-13](T-260829-13-decay-computation.md) | Compute cadence decay from a company's own clock, in one shared function | 🎨 ui | R-260829-03 |
 | ● done | [T-260829-12](T-260829-12-post-rename-drizzle-snapshot.md) | Rename the drift test’s base structurally, not by substituting over raw JSON | 🗄 data | R-260829-02 |
 | ● done | [T-260829-11](T-260829-11-drop-unread-sheet-title.md) | Delete the sheet title nothing reads, and the openSheet parameter that feeds it | 🎨 ui | R-260829-01 |

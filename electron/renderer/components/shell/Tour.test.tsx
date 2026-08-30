@@ -262,6 +262,65 @@ describe('the first-run tour', () => {
     expect(reread.data['onboarding.tourSeen']).toBe(true)
   })
 
+  /**
+   * Added by the orchestrator at merge (R-260829-03), not by the builder: a
+   * mutant that replaced `autoOpenedRef`'s guard with a no-op left all 14
+   * tests green, which made the one line standing between a dismissal and a
+   * nag unpinned.
+   *
+   * The state it defends is reachable without anything failing loudly. The
+   * close path writes `true` into the cache immediately, so a refetch is the
+   * only thing that can put `false` back — and `settings:set`'s own success
+   * invalidates the snapshot, so a write that reports success without
+   * persisting (a refused row, a value that fails its schema on the way in)
+   * refetches `false` within the same session. With the guard gone, the
+   * effect's condition is satisfied a second time and the overlay reopens on
+   * top of the operator who just skipped it. That is the single failure mode
+   * this whole feature is written to avoid, so it gets a test rather than a
+   * comment.
+   */
+  it('does not reopen when the flag does not stick — a dismissal is final for the session either way', async () => {
+    const sets: SettingEntry[] = []
+    window.crm = stubCrm({
+      // Deliberately stateless: every read says the tour is unseen, however
+      // many times it is written. `boot()`'s stub mutates its snapshot on
+      // set, which is the honest happy path and is what the test above
+      // covers; this one is the same code with the write not landing.
+      'settings:getAll': vi.fn(async () => ({
+        ok: true as const,
+        data: { ...BASE_SNAPSHOT, 'onboarding.tourSeen': false }
+      })),
+      'settings:set': vi.fn(async (entry: SettingEntry) => {
+        sets.push(entry)
+        return { ok: true as const, data: { ok: true as const, data: entry } }
+      }),
+      'companies:list': vi.fn(async () => ({ ok: true as const, data: [] }))
+    })
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter initialEntries={['/']}>
+          <LayerManager>
+            <AppRoutes />
+            <LocationProbe />
+          </LayerManager>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+
+    const dialog = await screen.findByRole('dialog', { name: 'Guided tour' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Skip tour' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Guided tour' })).toBeNull())
+    // The write went out and its success invalidated the snapshot, so the
+    // refetch below is the app's own doing, not the test's.
+    await waitFor(() => expect(sets).toContainEqual({ key: 'onboarding.tourSeen', value: true }))
+    await waitFor(() => expect(window.crm['settings:getAll']).toHaveBeenCalledTimes(2))
+
+    // The refetch has landed and said `false`. Nothing may bring it back.
+    expect(screen.queryByRole('dialog', { name: 'Guided tour' })).toBeNull()
+  })
+
   // ---------------------------------------------------------------------
   // The two navigating actions.
   // ---------------------------------------------------------------------
