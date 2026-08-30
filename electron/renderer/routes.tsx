@@ -6,6 +6,7 @@ import { CompanyDetail } from './views/CompanyDetail'
 import { People } from './views/People'
 import { PersonDetail } from './views/PersonDetail'
 import { Engagements } from './views/Engagements'
+import { Today } from './views/Today'
 import { Todos } from './views/Todos'
 import { WorkspaceSettings } from './views/WorkspaceSettings'
 import { WorkspaceData } from './views/WorkspaceData'
@@ -29,7 +30,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route element={<ShellLayout />}>
-        <Route index element={<ViewPlaceholder title="Today" />} />
+        <Route index element={<Today />} />
         <Route path="todos" element={<Todos />} />
         <Route path="revenue" element={<ViewPlaceholder title="Revenue" />} />
         <Route path="activity" element={<Activity />} />

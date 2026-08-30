@@ -185,7 +185,14 @@ function ActivityGlyph() {
   )
 }
 
-function ActivityItem({
+/**
+ * One `.tli` timeline row. Exported for the Today view's "Recent" card
+ * (T-260829-14, whose Scope asks for five rows "matching `Activity.tsx`'s
+ * existing item rendering") — sharing the component is what makes that
+ * literally true rather than approximately, and importing it carries
+ * `Activity.css`'s `.tl`/`.tli` rules along with the markup.
+ */
+export function ActivityItem({
   activity,
   companiesById,
   peopleById,

@@ -9,7 +9,19 @@ import { QuickAdd } from '../components/primitives/QuickAdd'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
-import { parseDateOnly, formatDateOnly } from '../../shared/format'
+// The date arithmetic, the buckets and the urgency ordering live in their
+// own module so the Today view can import them instead of restating them
+// (T-260829-14) — `react-refresh/only-export-components` is why they cannot
+// simply be exported from this file. Nothing about them changed in the move.
+import {
+  DATE_GROUPS,
+  bucketFor,
+  dueMeta,
+  localToday,
+  quickAddDefaultsForDateGroup,
+  sortByDue,
+  type DateGroupKey
+} from './todo-urgency'
 import type { CreateTaskInput, Task } from '../../shared/tasks'
 import type { Company } from '../../shared/companies'
 import type { Engagement } from '../../shared/engagements'
@@ -27,119 +39,6 @@ import './Todos.css'
  * already fetched through a server-declared filter (`open: true` or
  * `status: 'waiting'`), not a locally re-derived predicate.
  */
-
-// ---------------------------------------------------------------------------
-// Local-date arithmetic — this task's Risks: "Date-bucket boundaries
-// computed in local time against UTC timestamps... comparing it against a
-// timestamp is how 'Today' ends up off by one overnight." `due_on` is a
-// date-only value with no timezone of its own (CONVENTIONS.md); the only
-// place local vs. UTC actually matters is deciding what *today* is — that
-// has to be the user's wall-clock day, not `formatDateOnly`'s UTC one, or a
-// user west of UTC sees "Today" flip to "Overdue" hours before their local
-// midnight. Everything downstream of that (bucketing, `addDays`) reuses
-// `format.ts`'s own UTC-safe date-only helpers, exactly as CONVENTIONS.md
-// requires for any other date-only value.
-// ---------------------------------------------------------------------------
-
-/** The user's local calendar day, as a `dateOnlySchema` string — deliberately
- * built from `Date`'s LOCAL accessors (`getFullYear`/`getMonth`/`getDate`),
- * not `formatDateOnly`'s UTC ones, for the reason in the comment above. */
-function localToday(): string {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-/** `dueOn` minus `today`, in whole days — positive is in the future, negative in the past. Both arguments are `dateOnlySchema` strings, parsed with the UTC-safe helper (safe here: a date-only value carries no timezone to get wrong). */
-function daysUntil(dueOn: string, today: string): number {
-  const due = parseDateOnly(dueOn).getTime()
-  const from = parseDateOnly(today).getTime()
-  return Math.round((due - from) / 86_400_000)
-}
-
-/** `dateOnly` shifted by `delta` days, staying in UTC-safe date-only arithmetic throughout (never a local Date method). */
-function addDays(dateOnly: string, delta: number): string {
-  const date = parseDateOnly(dateOnly)
-  date.setUTCDate(date.getUTCDate() + delta)
-  return formatDateOnly(date)
-}
-
-/** `Sep 5`, read back in UTC so the same date-only value never displays a day off from what it stores. */
-function formatDueDate(dueOn: string): string {
-  return parseDateOnly(dueOn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
-}
-
-function daysSinceTimestamp(timestamp: string): number {
-  return Math.max(0, Math.round((Date.now() - new Date(timestamp).getTime()) / 86_400_000))
-}
-
-// ---------------------------------------------------------------------------
-// Date-mode buckets — Overdue, Today, This week, Later, No date, Waiting
-// (this task's Scope, verbatim). `bucketFor` never reads `waiting` from the
-// open-tasks query — it can't: `OPEN_STATUS_SQL` already excludes it — so
-// the `waiting` case only ever fires for rows drawn from the separate
-// `waitingList()` query, one exact-status ask, not a second "open".
-// ---------------------------------------------------------------------------
-
-type DateGroupKey = 'overdue' | 'today' | 'thisWeek' | 'later' | 'noDate' | 'waiting'
-
-interface DateGroupSpec {
-  readonly key: DateGroupKey
-  readonly label: string
-}
-
-const DATE_GROUPS: readonly DateGroupSpec[] = [
-  { key: 'overdue', label: 'Overdue' },
-  { key: 'today', label: 'Today' },
-  { key: 'thisWeek', label: 'This week' },
-  { key: 'later', label: 'Later' },
-  { key: 'noDate', label: 'No date' },
-  { key: 'waiting', label: 'Waiting' }
-]
-
-function bucketFor(task: Task, today: string): DateGroupKey {
-  if (task.status === 'waiting') return 'waiting'
-  if (task.dueOn == null) return 'noDate'
-  const delta = daysUntil(task.dueOn, today)
-  if (delta < 0) return 'overdue'
-  if (delta === 0) return 'today'
-  if (delta <= 7) return 'thisWeek'
-  return 'later'
-}
-
-/**
- * The `dueOn`/`status` a quick-add under a given date bucket should create
- * so the new row lands in that bucket for real once the create round-trips
- * and the list refetches — this task's Risks: "Quick-add inheriting the
- * group only visually — the row appears in the right place until the next
- * refetch moves it." Each value here is chosen so `bucketFor` maps it right
- * back to `key`, so there is nothing for a refetch to correct.
- */
-function quickAddDefaultsForDateGroup(key: DateGroupKey, today: string): Pick<CreateTaskInput, 'dueOn' | 'status'> {
-  switch (key) {
-    case 'overdue':
-      return { dueOn: addDays(today, -1) }
-    case 'today':
-      return { dueOn: today }
-    case 'thisWeek':
-      return { dueOn: addDays(today, 3) }
-    case 'later':
-      return { dueOn: addDays(today, 14) }
-    case 'noDate':
-      return { dueOn: null }
-    case 'waiting':
-      return { dueOn: null, status: 'waiting' }
-  }
-}
-
-function sortByDue(a: Task, b: Task): number {
-  if (a.dueOn == null && b.dueOn == null) return a.title.localeCompare(b.title)
-  if (a.dueOn == null) return 1
-  if (b.dueOn == null) return -1
-  return a.dueOn.localeCompare(b.dueOn) || a.title.localeCompare(b.title)
-}
 
 interface TaskGroup {
   readonly key: string
@@ -189,31 +88,6 @@ function buildClientGroups(tasks: readonly Task[], companies: readonly Company[]
     ...companyGroups,
     { key: UNASSIGNED_KEY, label: 'Unassigned', companyId: null, tasks: [...unassigned].sort(sortByDue) }
   ]
-}
-
-// ---------------------------------------------------------------------------
-// Due display — text (not colour alone) is what distinguishes an overdue
-// row from a due-today one (this task's Risks / ui-design.md); `cls` only
-// tints text that already says "3d overdue" vs. "today" vs. "waiting 6d".
-// ---------------------------------------------------------------------------
-
-interface DueMeta {
-  readonly cls: 'over' | 'soon' | 'later' | 'wait'
-  readonly label: string
-}
-
-function dueMeta(task: Task, today: string): DueMeta {
-  if (task.status === 'waiting') {
-    const elapsed = task.waitingSince ? daysSinceTimestamp(task.waitingSince) : 0
-    return { cls: 'wait', label: `waiting ${elapsed}d` }
-  }
-  if (task.dueOn == null) return { cls: 'later', label: 'no date' }
-  const delta = daysUntil(task.dueOn, today)
-  if (delta < 0) return { cls: 'over', label: `${-delta}d overdue` }
-  if (delta === 0) return { cls: 'soon', label: 'today' }
-  if (delta === 1) return { cls: 'soon', label: 'tomorrow' }
-  if (delta <= 7) return { cls: 'soon', label: formatDueDate(task.dueOn) }
-  return { cls: 'later', label: formatDueDate(task.dueOn) }
 }
 
 // ---------------------------------------------------------------------------
@@ -516,8 +390,15 @@ function TodoGroupCard({
  * one-`onClick` contract would mean nesting buttons inside its own button,
  * which is invalid HTML. `Card`, `Tag` (mockup: `.due`) and the row's own
  * `.todo`/`.check` styling (Todos.css) still come straight from the mockup.
+ *
+ * Exported for the Today view's "Next up" card (T-260829-14), which shows
+ * the same five rows this view shows in its Overdue/Today buckets and must
+ * not draw a second, subtly different todo row to do it. Importing the
+ * component also carries `Todos.css` with it, so the row's styling arrives
+ * with the markup instead of depending on some other view happening to have
+ * been loaded first.
  */
-function TodoRow({
+export function TodoRow({
   task,
   today,
   companies,
