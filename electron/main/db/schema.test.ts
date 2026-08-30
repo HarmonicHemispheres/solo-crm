@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { closeDatabase, getDatabase, openDatabase } from './connection'
 import { MIGRATIONS, type MigrationDefinition } from './migrations'
+import {
+  applyRenames,
+  renamedTableName,
+  renamesInMigrations,
+  type DrizzleSnapshot
+} from './test-support/snapshot-renames'
 
 /**
  * Asserts the *shape* migration 0001 produces — every table requirements §5
@@ -78,6 +84,31 @@ function tableInfo(db: Database.Database, table: string): ColumnInfo[] {
   return db.prepare(`PRAGMA table_info(${table})`).all() as ColumnInfo[]
 }
 
+/**
+ * A child process's output with its stack frames removed, for embedding in
+ * an assertion message.
+ *
+ * Not tidiness. Vitest parses an assertion *message* for stack frames the
+ * same way it parses a real stack, so `at render10 (…\drizzle-kit\bin.cjs:
+ * 1450:31)` — which is what drizzle-kit prints when it aborts on a missing
+ * TTY — sends it to read a source map out of drizzle-kit's bundle. That read
+ * throws `SyntaxError: Unexpected end of JSON input` **inside the reporter**,
+ * and the failure is then never printed at all: the run reports one
+ * unhandled error, zero failed tests, and a file that "passed 22 of 27".
+ *
+ * Found by T-260829-12 while performing the acceptance criterion that this
+ * test still explains the created-or-renamed case. It did not — the
+ * explanation was what stopped it being shown. The first line of drizzle's
+ * output is the one that says why, and it survives this.
+ */
+function withoutStackFrames(output: string): string {
+  return output
+    .split('\n')
+    .filter((line) => !/^\s+at\s/.test(line))
+    .join('\n')
+    .trim()
+}
+
 /** Every `CREATE INDEX ...;` statement in a migration's text, one per entry, semicolon stripped. */
 function createIndexStatements(sql: string): string[] {
   return sql
@@ -103,54 +134,14 @@ function createTableStatements(sql: string): string[] {
   return statements
 }
 
-/**
- * Every `ALTER TABLE … RENAME TO …` / `ALTER TABLE … RENAME COLUMN … TO …`
- * a checked-in migration performs, as `from`/`to` pairs — read out of the
- * migrations themselves rather than restated here, so a future rename cannot
- * land in a migration and be forgotten in this file.
- *
- * Backticks are optional in the pattern because a hand-written migration may
- * quote identifiers the way drizzle-kit does or not at all.
- */
-function renamesInMigrations(migrations: readonly MigrationDefinition[]): { from: string; to: string }[] {
-  const renames: { from: string; to: string }[] = []
-  const renameTable = /ALTER\s+TABLE\s+`?(\w+)`?\s+RENAME\s+TO\s+`?(\w+)`?/gi
-  const renameColumn = /ALTER\s+TABLE\s+`?\w+`?\s+RENAME\s+COLUMN\s+`?(\w+)`?\s+TO\s+`?(\w+)`?/gi
-  for (const migration of migrations) {
-    for (const pattern of [renameTable, renameColumn]) {
-      pattern.lastIndex = 0
-      for (const match of migration.sql.matchAll(pattern)) {
-        renames.push({ from: match[1], to: match[2] })
-      }
-    }
-  }
-  return renames
-}
-
-/**
- * `text` with every rename applied, longest `from` first.
- *
- * Longest-first matters because these identifiers nest: `service_versions`
- * contains `service_version`, and drizzle's own foreign-key names concatenate
- * several of them (`service_versions_service_id_services_id_fk`). Substituting
- * `services` before `service_versions` would corrupt the longer name. Each
- * match is parked on a sentinel that cannot appear in JSON before any `to`
- * value is written back, so a rename whose target is another rename's source
- * cannot be applied twice.
- */
-function applyRenames(text: string, renames: readonly { from: string; to: string }[]): string {
-  // U+0000 cannot appear unescaped in JSON, so no snapshot can contain it.
-  const sentinel = (i: number): string => `\u0000${i}\u0000`
-  const ordered = [...renames].sort((a, b) => b.from.length - a.from.length)
-  let result = text
-  ordered.forEach((rename, i) => {
-    result = result.split(rename.from).join(sentinel(i))
-  })
-  ordered.forEach((rename, i) => {
-    result = result.split(sentinel(i)).join(rename.to)
-  })
-  return result
-}
+// `renamesInMigrations` and `applyRenames` used to live here. T-260829-12
+// moved them to `test-support/snapshot-renames.ts` and made the rename
+// structural — a walk over the parsed snapshot — rather than a substitution
+// over its raw JSON text. That module carries the reasoning, and for the
+// first time direct tests: this file can only reach them through a
+// `drizzle-kit` child process, and only for the renames 0006 happens to
+// perform, which is no way to find out what renaming a column called
+// `name` would do to a snapshot in which every table has one.
 
 describe('schema.ts and the checked-in migrations cannot drift', () => {
   it(
@@ -221,27 +212,21 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         const renames = renamesInMigrations(MIGRATIONS)
         expect(renames.length, 'renamesInMigrations found no renames to apply').toBeGreaterThan(0)
         const snapshot0001 = readFileSync(join(migrationsDir, 'meta', '0001_snapshot.json'), 'utf-8')
-        const renamedBase = JSON.parse(applyRenames(snapshot0001, renames)) as Record<string, unknown>
+        const renamedBase = applyRenames(JSON.parse(snapshot0001) as DrizzleSnapshot, renames)
         renamedBase.prevId = (JSON.parse(snapshot0001) as { id: string }).id
         renamedBase.id = '00000000-0000-0000-0000-0000000006ce'
-        // Guard on the transform itself. `applyRenames` substitutes over the
-        // snapshot's raw text — which is what lets one pass fix drizzle's
-        // compound foreign-key names
-        // (`engagements_service_version_id_service_versions_id_fk`) at the
-        // same time as the table keys, but which also means a future rename
-        // whose *source* is a token that appears somewhere it does not mean
-        // would rewrite more than it should. A column renamed from `name` or
-        // `type` is the realistic case: every table in a drizzle snapshot has
-        // a `"name"` key.
-        //
-        // That failure is closed rather than open — an over-substituted base
-        // stops matching 0004 and 0005 and this test goes red — but it would
-        // go red somewhere unreadable. So it is caught here instead: the
-        // derived base must hold exactly the tables a fully migrated database
-        // has, which is what `EXPECTED_TABLES` independently spells out.
-        expect(Object.keys((renamedBase as { tables: Record<string, unknown> }).tables).sort()).toEqual(
-          [...EXPECTED_TABLES].sort()
-        )
+        // Guard on the transform itself, kept from when `applyRenames`
+        // substituted over the snapshot's raw text and could therefore
+        // rewrite a token that merely looked like an identifier. T-260829-12
+        // made the rename structural, which should make this redundant —
+        // `from` is now compared with `===` against one field at a time. It
+        // stays because it costs a set comparison and fails loudly and in
+        // one place, where a base that has quietly gone wrong otherwise
+        // surfaces as an unreadable mismatch against 0004 and 0005 much
+        // further down: the derived base must hold exactly the tables a
+        // fully migrated database has, which is what `EXPECTED_TABLES`
+        // independently spells out.
+        expect(Object.keys(renamedBase.tables).sort()).toEqual([...EXPECTED_TABLES].sort())
         writeFileSync(join(outDir, 'meta', '0001a_renamed_snapshot.json'), JSON.stringify(renamedBase, null, 2))
 
         // drizzle-kit treats --schema as a glob, and its globber only
@@ -269,7 +254,7 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
           'drizzle-kit generated no migration. The usual cause is a table renamed in schema.ts with no ' +
             'matching `ALTER TABLE … RENAME TO` in a checked-in migration: drizzle sees one table gone and ' +
             'another arrived, opens its interactive "created or renamed?" prompt, and aborts without a TTY. ' +
-            `Renames applied to the base snapshot were: ${JSON.stringify(renames)}. drizzle-kit said: ${result.stdout}${result.stderr}`
+            `Renames applied to the base snapshot were: ${JSON.stringify(renames)}. drizzle-kit said: ${withoutStackFrames(result.stdout + result.stderr)}`
         ).toHaveLength(1)
         // Normalize line endings: git's autocrlf checks the committed file out
         // with CRLF on Windows while drizzle-kit always emits LF.
@@ -369,9 +354,7 @@ const MIGRATION_0001_TABLES = [
  * `favicons`. The search relations 0002/0003 add are absent for the reason
  * ADR-009 gives — `search_source` is not a table of records at all.
  */
-const EXPECTED_TABLES = MIGRATION_0001_TABLES.map(
-  (table) => applyRenames(table, renamesInMigrations(MIGRATIONS)) // a whole-name substitution: these are bare identifiers, not compound FK names
-)
+const EXPECTED_TABLES = MIGRATION_0001_TABLES.map((table) => renamedTableName(table, renamesInMigrations(MIGRATIONS)))
 
 // ADR-002's exemption class: keyed by natural identity, no UUID primary key,
 // no `created_at`. Every other table in EXPECTED_TABLES gets both.

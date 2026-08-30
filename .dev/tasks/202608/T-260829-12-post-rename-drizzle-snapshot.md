@@ -1,10 +1,10 @@
 ---
 id: T-260829-12
 title: Rename the drift test's base structurally, not by substituting over raw JSON
-status: open
+status: done
 category: data
 created: 2026-08-29
-closed:
+closed: 2026-08-29
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -131,10 +131,38 @@ development tool. Any schema change at all.
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+**Changed:**
 
-**Changed:** files that actually moved, one line each.
+- `electron/main/db/test-support/snapshot-renames.ts` (new) — `renamesInMigrations`, `applyRenames` and `renamedTableName`, moved out of `schema.test.ts` so they can be tested without a `drizzle-kit` child process. The rename is now a walk over the parsed snapshot; `from` is compared with `===` against one field at a time.
+- `electron/main/db/test-support/snapshot-renames.test.ts` (new) — 23 direct tests, in the fast `node` pool.
+- `electron/main/db/schema.test.ts` — imports the three functions, keeps every assertion, and gained `withoutStackFrames` (see below).
 
-**Review:** what `code-review` found and what was done about each finding.
+**What the scope's list of places a rename must reach was missing.** Read out of `meta/0001_snapshot.json` rather than taken on trust, as the scope asked. It named the tables map, table `name`, columns, foreign keys and indexes. Also present and also reachable by a rename: **`uniqueConstraints`** and **`compositePrimaryKeys`** (both carry a `columns` array — `taggings_tag_entity_unique` is the live example), and **`checkConstraints`**, which store SQL text rather than structure (`companies_billed_via_company_not_self` holds `("companies"."billed_via_company_id" IS NULL OR …)`). Check constraints are the one place a rename still has to touch text; only the double-quoted form is rewritten, and an *unquoted* whole-word occurrence throws rather than being guessed at.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+Two things deliberately **not** renamed, which the textual version would have rewritten had they ever contained a renamed token: index/unique/check constraint **names**, which are literals written in `schema.ts` and which SQLite's `ALTER TABLE … RENAME` does not touch either; and a foreign key whose stored name is not drizzle's derived one, which was named by hand. Foreign key names that *are* conventional are **recomputed** from the parts rather than substituted — which is what the textual pass was really doing when it rewrote `engagements_service_version_id_service_versions_id_fk`.
+
+`renamesInMigrations` now returns statement order and tags each rename with its kind, and a column rename carries the table it belongs to. Both were forced by the structure: 0006 renames `service_versions` and then renames a column of the **new** name, so grouping by kind looks up a table that does not exist yet.
+
+**Proved equivalent before being trusted.** A throwaway test applied both the old textual implementation and the new structural one to the real 0001 snapshot and compared the results — identical, to the byte, `JSON.stringify` included. Mutating it (passing an empty rename list to one side) turned it red, so it was a real comparison. Deleted after running; it would have required keeping the old implementation forever.
+
+**Review:** no blocking findings. Eight mutants, all caught — **two of them caught nothing on the first pass and are the reason this task delivered two tests it would otherwise have missed**:
+
+- Changing the column-list `swap` from `===` to `.includes` passed all 19 tests. Nothing exercised the whole-identifier property on a *column list*, which is half of what the task exists to guarantee. Added a column `service_id_note` alongside `service_id`, in an index over both.
+- Changing `renamedTableName` to substring matching also passed. The real rename set does not distinguish the two — `service_versions` does not contain `services`. Added `service_versions_archive` and `legacy_services`.
+
+The other six: prefix-matching in `withRenamedKey` (5 red), dropping the conventional-FK-name recompute (3), a table rename no longer following `fk.tableTo` (3), dropping `renamedTableName`'s kind guard (1), accepting unquoted identifiers in a check constraint (1), and reversing statement order (the file fails to collect — loud, if not pretty).
+
+**One defect found and fixed while performing the acceptance criteria.** The criterion that the drift test "still explains the created-or-renamed case" turned out to be false, and had been since T-260829-10. Renaming a table in `schema.ts` with no migration does fail the test — but the failure was **never printed**. drizzle-kit's abort message carries a stack trace, the assertion interpolated it, and vitest parses assertion *messages* for stack frames the same way it parses real ones: `at render10 (…\drizzle-kit\bin.cjs:1450:31)` sent it to read a source map out of drizzle-kit's bundle, which threw `SyntaxError: Unexpected end of JSON input` **inside the reporter**. The run then said `Tests 22 passed (27)`, one unhandled error, and no failed test — a failing gate that reads as a passing one at a glance.
+
+Confirmed pre-existing by reproducing it against `HEAD`'s copy of the file before any of this task's changes. Fixed with `withoutStackFrames`, which drops `at …` frames and keeps the line that says why (`Interactive prompts require a TTY terminal`). The message now renders in full, and it is strictly more informative than before: the renames it prints are structured.
+
+**Acceptance, performed:**
+
+- Column added to `schema.ts` with no migration — `driftProbeColumn: text('drift_probe_column')` on `companies`. Red: `expected 'ALTER TABLE \`companies\` ADD \`drift_pr…' to be ''`, at the residue assertion.
+- Table renamed in `schema.ts` with no migration — `companies` → `accounts`. Red at the length assertion, with the created-or-renamed explanation and `drizzle-kit said: Error: Interactive prompts require a TTY terminal…`.
+- The delta is still compared against `0004_fk_indexes_polymorphic_cascade.sql` and `0005_branding.sql` by their own SQL: the only lines in `git diff` mentioning either are comments.
+- `EXPECTED_TABLES` guard kept, with its comment rewritten to say why it stays now that it should be redundant.
+- `PRAGMA foreign_key_check` on a fully migrated seeded database still empty — `0006_offerings_rename.test.ts`, 7 passed.
+- `npm run typecheck`, `npm run lint`, `npm test`: 1304 + 80 = **1384 passing**, up 23 from 1361.
+
+**Deferred:** nothing.

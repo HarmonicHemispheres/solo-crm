@@ -10,33 +10,17 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | ○ open | [T-260828-15](T-260828-15-real-window-qa-pass.md) | Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard | 🎨 ui | P0-10 |
 | ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
 
-### Phase 1 — the spine
-
-Nothing below exists yet, and together they are why every page in the installed
-app is empty: there are no repositories, and `window.crm` exposes two proof
-channels. **P1-CUT** marks the subset the task plan says makes the app start.
-
-| | ID | Title | Cat | Plan |
-|---|---|---|---|---|
-
-### Follow-ups from review
-
-Real findings from review, deferred rather than widening the diff of the task
-that surfaced them. Each names the review it came from.
-
-| | ID | Title | Cat | Plan |
-|---|---|---|---|---|
-| ○ open | [T-260829-12](T-260829-12-post-rename-drizzle-snapshot.md) | Rename the drift test’s base structurally, not by substituting over raw JSON | 🗄 data | — |
-
-### Workspace — the two blank pages
-
-| | ID | Title | Cat | Plan |
-|---|---|---|---|---|
+Both need a person at a keyboard: a real window on a real display, and an
+installer run against an installed copy. Nothing else this month is open —
+the three subsections that used to sit here (Phase 1, follow-ups from review,
+the two blank Workspace pages) are all empty and have been removed rather than
+left standing as headings over nothing.
 
 ## Closed this month
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260829-12](T-260829-12-post-rename-drizzle-snapshot.md) | Rename the drift test’s base structurally, not by substituting over raw JSON | 🗄 data | R-260829-02 |
 | ● done | [T-260829-11](T-260829-11-drop-unread-sheet-title.md) | Delete the sheet title nothing reads, and the openSheet parameter that feeds it | 🎨 ui | R-260829-01 |
 | ● done | [T-260829-07](T-260829-07-branding-card-rail-override.md) | Upload an icon and a logo in Workspace Settings, and show them in the rail | 🎨 ui | R-260829-01 |
 | ● done | [T-260829-10](T-260829-10-offerings-rename-identifiers.md) | Rename the catalogue identifiers to offerings, before anything is built on them | 🗄 data | R-260829-01 |
