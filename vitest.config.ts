@@ -97,7 +97,22 @@ export const RUNTIME_BOOT_RENDERER_FILES = [
   // pass/fail depends on what else is running does not belong in a parallel
   // pool. No timeout is raised here — it does not need one at 1.3s; it needs to
   // stop sharing CPU.
-  'electron/renderer/App.test.tsx'
+  'electron/renderer/App.test.tsx',
+  // T-260829-14 / R-260829-03, and the clearest case in this list: its
+  // `Today at 10x data volume` block does not merely render heavily, it
+  // *measures* — §8's 100ms budget, as the median of five renders of 100
+  // companies, 1,000 people and 500 engagements each. A wall-clock budget
+  // asserted while eight workers compete for CPU measures the machine's
+  // load rather than the view. Solo it is 58ms; in the fast pool alongside
+  // 95 other files it read 198ms and failed the gate, having passed every
+  // check on its own branch. Nothing here is weakened to accommodate that
+  // — the budget is still 100 and the fixture still asserts its own shape
+  // (40 late rows of 100) so the measurement cannot go vacuous. The file
+  // moves whole rather than being split, matching `routes.test.tsx` and
+  // `App.test.tsx` above; the seventeen behavioural tests it carries along
+  // cost about three seconds of serial time, which is cheaper than a
+  // shared fixture module extracted at merge.
+  'electron/renderer/views/Today.test.tsx'
 ]
 
 export default defineConfig({

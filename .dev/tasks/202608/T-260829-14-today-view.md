@@ -267,3 +267,16 @@ that rationale) rather than extracting a shared module outside Touches, and
 named the extraction as a worthwhile follow-up in `Today.tsx`'s own comment.
 Not written up as a task: it is a tidy-up with no behavioural consequence,
 and the note sits where the next person to touch these files will read it.
+
+**Found at the gate, after this task closed:** the latency test passed on its
+branch and in isolation (58ms) and failed the full-suite run at **198ms**. Not
+a regression — a wall-clock budget asserted while eight workers compete for
+CPU measures the machine's load, not the view. `vitest.config.ts` moves
+`Today.test.tsx` into `RUNTIME_BOOT_RENDERER_FILES`, whose own header states
+the rule it now satisfies: "a file whose pass/fail depends on what else is
+running does not belong in a parallel pool." The budget was not touched — it
+is still 100ms, the fixture still asserts its own shape (40 late rows of 100),
+and in the serial pool the median reads **57.58ms**, the same number the
+builder measured. The file moves whole rather than split, matching
+`routes.test.tsx` and `App.test.tsx`; the seventeen behavioural tests it
+carries cost about three seconds of serial time.
