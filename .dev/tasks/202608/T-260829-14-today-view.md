@@ -1,11 +1,11 @@
 ---
 id: T-260829-14
 title: Build the Today view — what is owed, what is going quiet, what just happened
-status: in-progress
+status: done
 category: ui
 plan_ref: P2-04
 created: 2026-08-29
-closed:
+closed: 2026-08-30
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -186,3 +186,84 @@ stats "just for now".
   `mrr`/`backlog`-shaped computation over `engagements`.
 - Near the renderer boundary: no `window.crm` call outside the declared
   channels, nothing from Node. `no-renderer-node-access` will catch the latter.
+
+---
+
+## Outcome
+
+**Changed:**
+
+- `electron/renderer/views/Today.tsx`, `Today.css`, `Today.test.tsx` (new) —
+  the header (clock glyph on `--verdigris`, the mockup's own info-popover
+  text, a "Log a touch" ghost button), four stats, and the Going quiet / Next
+  up / Recent cards, plus the three-step first-run card.
+- `electron/renderer/views/todo-urgency.ts` (new) — see the deviation below.
+- `routes.tsx` — the index route renders `<Today />`.
+- `Todos.tsx` — imports the moved helpers, exports `TodoRow`.
+- `Activity.tsx` — exports `ActivityItem`.
+- `query-keys.ts` — **unchanged.** The scope predicted a new key; the
+  existing per-entity keys composed, and the settings query shares
+  `queryKeys.settings.list()` with `Shell.tsx`/`Rail.tsx`, so Today adds no
+  second `settings:getAll`.
+
+**Deviation from Touches, accepted:** the scope said to export Todos'
+comparator and date helpers *from* `Todos.tsx`. `react-refresh/only-export-components`
+is error-level in `eslint.config.js` and forbids a file exporting both
+components and non-components, so they moved verbatim to a sibling
+`todo-urgency.ts` — the same shape `workspace-data-facts.ts` and `nav.ts`
+already have, and the same rule that produced `layer-manager-context.ts` and
+`tour-steps.ts` in T-260829-15. Bodies and comments unchanged; `Todos.test.tsx`
+passes untouched. `TodoRow`/`ActivityItem` are component-only exports, so lint
+is unaffected and importing them carries `Todos.css`/`Activity.css` with the
+markup rather than depending on load order.
+
+**The scope's own Going-quiet example was wrong, and the builder caught it.**
+It asked for a test pairing a `channel` (cadence 30) 20 days quiet against a
+`client` (cadence 7) 9 days quiet. 20/30 is 0.67 — band `warn` — so the
+channel never enters the list at all, and the pair would have exercised the
+filter while appearing to test the sort. The shipped test uses channel 35d/30
+(1.17) against client 9d/7 (1.29), so the client sorts first on a quarter of
+the day count, and keeps a 20d channel in the fixture asserted *absent*. That
+is the per-relationship point stated more directly than the scope managed.
+
+**Latency:** median render at 10× seed volume is **58ms of the 100ms budget**
+(§8). The fixture cycles the mockup's own ten `[cadence, days-quiet]` pairs so
+100 companies reproduce the seed's ~40% late proportion, asserted `toBe(40)`
+so the measurement cannot go vacuous. A first attempt gave every company
+cadence 7, produced 93 late rows and measured 121ms — a workspace shape the
+seed does not have, not a regression.
+
+**Review:** read against the acceptance criteria; no blocking findings. Seven
+mutants across the builder's run and the orchestrator's:
+
+| Mutant | Result |
+|---|---|
+| `byPctDescending` reversed | 2 tests red |
+| the `late` filter dropped | 3 tests red |
+| empty-state condition inverted | 14 of 15 red |
+| hero count from `openTasks.length` instead of `tasks:countOpen` | 1 test red |
+| `companies.length - quiet.length` → `companies.length` | **survived — fixed at merge** |
+| `status === 'active'` → `status !== 'lost'` | **survived — fixed at merge** |
+| name tiebreak dropped from `byPctDescending` | **survived — fixed at merge** |
+
+The three survivors were this task's acceptance being too weak, not the
+builder skipping it: the criteria asked that four stats *render*, and they
+did. But two of the four stat values and the sort's tiebreak were consequently
+unasserted — Cadence health could have read the total company count and
+Active engagements could have counted everything but `lost`, both visibly
+wrong numbers on the first screen of the app, with a green suite. Rather than
+open a follow-up for three small tests, the orchestrator added them at merge:
+`Cadence health counts the companies that are current`, `Active engagements
+counts the active ones only`, and `breaks a tie in Going quiet by name`. Each
+was confirmed to turn red under its own mutant and green with the code
+restored. `typecheck` and `lint` clean afterwards.
+
+**Deferred:** the scope's "Out" list stands in full — no money stats, no
+twelve-month chart, no linked-systems strip, no inline next-step editing
+(P2-05), no cadence rings on the Companies grid. Five per-view copies of
+`.cmark`/`initials` and three of `KIND_LABEL` now exist; the builder followed
+the codebase's established per-view pattern (`Companies.tsx`'s header states
+that rationale) rather than extracting a shared module outside Touches, and
+named the extraction as a worthwhile follow-up in `Today.tsx`'s own comment.
+Not written up as a task: it is a tidy-up with no behavioural consequence,
+and the note sits where the next person to touch these files will read it.

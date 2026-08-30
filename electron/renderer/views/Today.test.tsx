@@ -412,6 +412,90 @@ describe('Today', () => {
     expect(stat.textContent).toContain('1 overdue · 1 waiting')
   })
 
+
+  /**
+   * The three tests below were added by the orchestrator at merge
+   * (R-260829-03), not by the builder. Mutation testing found that two of the
+   * four stat *values* and the sort's tiebreak were unasserted: the opening
+   * test checks that each stat's label is on the page, and `Open todos` has
+   * the dedicated test above, but `Cadence health` and `Active engagements`
+   * could each have read any number at all. Three mutants passed all fifteen
+   * tests — `companies.length - quiet.length` → `companies.length`,
+   * `status === 'active'` → `status !== 'lost'`, and dropping the name
+   * tiebreak from `byPctDescending`. The scope's acceptance asked that four
+   * stats *render*, which they did; that was the criterion being too weak,
+   * not the builder skipping it.
+   */
+
+  it('Cadence health counts the companies that are current, not all of them', async () => {
+    renderToday({
+      companies: [
+        // 9 days quiet against a 7-day cadence: 1.29, late.
+        makeCompany({ id: 'late-1', name: 'Aardvark', kind: 'client', cadenceDays: 7, lastTouchAt: isoDaysAgo(9) }),
+        // 3 of 30: current, and comfortably so.
+        makeCompany({ id: 'ok-1', name: 'Basilisk', kind: 'channel', cadenceDays: 30, lastTouchAt: isoDaysAgo(3) }),
+        makeCompany({ id: 'ok-2', name: 'Cormorant', kind: 'channel', cadenceDays: 30, lastTouchAt: isoDaysAgo(3) })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const stat = screen.getByText('Cadence health').closest('.stat') as HTMLElement
+
+    // 2, not 3. A stat that ignored `quiet` would read the company count.
+    expect(within(stat).getByText('2')).toBeTruthy()
+    expect(stat.textContent).toContain('of 3 current')
+  })
+
+  it('Active engagements counts the active ones only, not everything that is not lost', async () => {
+    renderToday({
+      companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })],
+      engagements: [
+        makeEngagement({ id: 'e1', name: 'Retainer', status: 'active' }),
+        makeEngagement({ id: 'e2', name: 'Second retainer', status: 'active' }),
+        // The four that are not active are not all the same kind of
+        // not-active — two have not started, two have stopped — and none of
+        // them belongs in a count a person reads as "what I am working on".
+        // `Companies.tsx` counts a company's own engagements with this same
+        // predicate, so a wider one here would make the dashboard disagree
+        // with the card.
+        makeEngagement({ id: 'e3', name: 'Not started', status: 'pending' }),
+        makeEngagement({ id: 'e4', name: 'Quoted', status: 'proposed' }),
+        makeEngagement({ id: 'e5', name: 'Paused', status: 'held' }),
+        makeEngagement({ id: 'e6', name: 'Finished', status: 'delivered' })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const stat = screen.getByText('Active engagements').closest('.stat') as HTMLElement
+
+    // 2, not 5 (everything but `lost`) and not 6 (everything).
+    expect(within(stat).getByText('2')).toBeTruthy()
+  })
+
+  it('breaks a tie in Going quiet by name, so equally overdue companies hold their order', async () => {
+    // Identical cadence and identical last touch: `pct` is exactly equal, so
+    // the comparator's first branch is the only thing deciding the order.
+    // Without the tiebreak this is `b.pct - a.pct` returning 0 for every
+    // pair, and Array#sort's behaviour on a comparator that never
+    // discriminates is not a promise the language makes — "ordering on a
+    // non-unique column with no tiebreaker" is on `.dev/README.md`'s own
+    // list of defects this project has shipped before.
+    const quiet = { kind: 'client' as const, cadenceDays: 7, lastTouchAt: isoDaysAgo(21) }
+    renderToday({
+      companies: [
+        makeCompany({ id: 'c-3', name: 'Zebra Industries', ...quiet }),
+        makeCompany({ id: 'c-1', name: 'Aardvark Systems', ...quiet }),
+        makeCompany({ id: 'c-2', name: 'Marmot Consulting', ...quiet })
+      ]
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    // `.nm` rather than the row's whole text, which leads with the company
+    // mark's initials.
+    const names = [...card('Going quiet').querySelectorAll('.nm')].map((el) => el.textContent ?? '')
+
+    expect(names).toEqual(['Aardvark Systems', 'Marmot Consulting', 'Zebra Industries'])
+  })
   it('completing a todo in Next up removes it from the card and decrements the Open todos stat', async () => {
     renderToday({
       companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })],
