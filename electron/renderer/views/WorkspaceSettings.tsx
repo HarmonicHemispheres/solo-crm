@@ -21,6 +21,7 @@ import {
 } from '../../shared/branding'
 import { COMPANY_KINDS, type CompanyKind } from '../../shared/companies'
 import {
+  CADENCE_SETTING_KEY,
   CURRENCY_CODES,
   INTEGRATION_SOURCES,
   type CurrencyCode,
@@ -436,26 +437,11 @@ const KIND_VARIANT: Record<CompanyKind, TagVariant> = {
 
 const CADENCE_STEPS = [7, 14, 30, 90] as const
 
-/**
- * The one place `cadence.defaultDays.<kind>` keys are composed, as a literal
- * map rather than a template-literal function — ADR-002 rule 3 names a key
- * built at a call site a defect outright ("it makes what settings exist
- * unanswerable by grep"), and Companies.tsx's `MODE_SETTING_KEY` const is
- * the merged precedent for declaring one instead. A literal here also drops
- * the `as SettingKey` cast the function version needed: `tsc` proves each
- * value against the `SettingKey` union on its own, and — the direction that
- * actually matters — a `cadence.defaultDays.*` key renamed or dropped from
- * `SETTINGS_REGISTRY` now fails this file to compile instead of silently
- * reading `undefined` from `snapshot` and writing a key the repository
- * rejects.
- */
-const CADENCE_SETTING_KEY: Record<CompanyKind, SettingKey> = {
-  client: 'cadence.defaultDays.client',
-  end_client: 'cadence.defaultDays.end_client',
-  prospect: 'cadence.defaultDays.prospect',
-  advisory: 'cadence.defaultDays.advisory',
-  channel: 'cadence.defaultDays.channel'
-}
+// `CADENCE_SETTING_KEY` — the one declared place these keys are composed —
+// moved to `electron/shared/settings.ts` in T-260829-13, where ADR-002 rule
+// 3's "keys are declared in one module" already points and where
+// `renderer/lib/decay.ts` (which resolves a null `cadence_days` against these
+// defaults) can import it without importing a view. It is imported above.
 
 function CadenceCard({
   snapshot,
@@ -469,7 +455,7 @@ function CadenceCard({
       <Card.Header title="Default cadence" actions={<span className="meta">days between touches</span>} />
       {COMPANY_KINDS.map((kind) => {
         const key = CADENCE_SETTING_KEY[kind]
-        const value = snapshot[key] as number
+        const value = snapshot[key]
         return (
           <div className="setrow" key={kind}>
             <div style={{ flex: 1 }}>
