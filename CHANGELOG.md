@@ -5,6 +5,47 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.4.0
+
+- ✨ **Today is a real screen** — the page the app opens on has been a heading
+  and nothing else since the beginning. It now leads with what is owed: open
+  todos, how many companies are current against their own cadence, active
+  engagements, and the size of the book; then the companies going quiet, the
+  five most urgent todos with a tick box and a quick-add, and what was logged
+  most recently. Going quiet is ordered by how far past each company's *own*
+  cadence it is, not by raw days — a client you check on weekly and a referral
+  channel you check on monthly are both nine days quiet and only one of them
+  is a problem. A company nobody has ever touched sorts to the top rather than
+  disappearing.
+- ✨ **A first-run walkthrough, skipped once and gone for good** — five cards
+  on a fresh workspace explaining where to start and why contacts, companies
+  and engagements are kept apart. Skip is as final as finishing it. It only
+  appears on a workspace with no companies in it, so updating into this
+  version never shows it, and *Take the tour* in Workspace Settings brings it
+  back whenever you want it.
+- ✨ **An empty workspace says what to do** — with no companies yet, Today
+  shows three ordered steps that open the right form, instead of four zeroes
+  and three empty cards.
+- 🐛 **Every cadence bar was invisible** — the little bar next to a company
+  showing how overdue a check-in is has been rendering at zero width
+  everywhere it appears: the Companies grid, company detail, People, and now
+  Today. It had the right colour and the right animation and painted nothing,
+  because of one missing line of CSS carried over from the original design
+  file. Four views' worth of "at a glance" was blank.
+- 🐛 **Dates and names ran together in the activity timeline** — "9:32 AMRinvii"
+  rather than "9:32 AM · Rinvii", on the Activity view and in Today's Recent
+  card. Three stylesheets were fighting over the same names and the wrong one
+  was winning.
+- 🐛 **Loading the sample data broke the app** — `npm run seed` wrote one
+  column in a format the app refuses, so Today and Todos showed an error
+  instead of any content. Only affects development, but it made a freshly
+  seeded workspace look broken.
+- ⚡ **Revenue figures are absent rather than invented** — Today does not show
+  a monthly-recurring or backlog figure yet. The numbers behind them are not
+  being tracked until a later release, and a made-up number on the first
+  screen is worse than no number. What is shown instead is counted from what
+  is actually in the database.
+
 ## 0.3.1
 
 - ♻️ **Nothing you can see** — the number moved because the 0.3.0 installer was
