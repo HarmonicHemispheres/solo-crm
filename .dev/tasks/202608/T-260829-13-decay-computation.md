@@ -1,11 +1,11 @@
 ---
 id: T-260829-13
 title: Compute cadence decay from a company's own clock, in one shared function
-status: in-progress
+status: done
 category: ui
 plan_ref: P2-03
 created: 2026-08-29
-closed:
+closed: 2026-08-30
 ---
 
 <!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
@@ -161,3 +161,63 @@ Nothing else. A diff that reaches a `views/` file has left its scope.
 - Near AGENTS.md's renderer boundary only trivially: this is a pure function in
   `renderer/lib/` with no IPC and no Node access, which is why it is `ui` and
   not `data`.
+
+---
+
+## Outcome
+
+
+**Changed:**
+
+- `electron/renderer/lib/decay.ts` (new) — `decayForCompany(company, settings,
+  now)` returning `{days, pct, band, cadenceDays, label}`, plus `Decay`,
+  `DecayBand` and `DecayInput` (a named alias for the `Pick<Company, …>` the
+  scope specified, so a test states a three-field literal rather than a
+  fifteen-field one). `now` is required; `Date.now()` is never read inside.
+- `electron/renderer/lib/decay.test.ts` (new) — 16 tests.
+- `electron/shared/settings.ts` — gains `CADENCE_SETTING_KEY` and a derived
+  `CadenceSettingKey` type. See the deviation below.
+- `electron/renderer/views/WorkspaceSettings.tsx` — the map's declaration
+  replaced by an import, and the `as number` cast it needed dropped.
+
+**Deviation from Touches, accepted:** the scope said two new files and nothing
+else, allowing at most one file to move `CADENCE_SETTING_KEY` out of the view.
+The builder moved it to `electron/shared/settings.ts` instead, costing two
+files. That is the better home and was accepted: this module's own header
+already claims to be ADR-002 rule 3's "one module" where keys are declared, a
+`renderer/lib` module cannot import from a view without dragging a React tree
+into a pure computation and its test, and deriving `CadenceSettingKey` as
+`Extract<SettingKey, 'cadence.defaultDays.${string}'>` makes
+`SettingValue<CadenceSettingKey>` resolve to `number`, which is what removed
+the cast at the existing call site. The `import type { CompanyKind }` is
+type-only and `companies.ts` imports only zod and `./types`, so there is no
+cycle.
+
+**Every unknowable case lands in `late`, not in `NaN`:** never touched
+(`pct: Infinity`, `label: 'never'`), a zero cadence, a company with neither
+its own cadence nor a kind to inherit one from, and an unparseable timestamp.
+`bandFor` leads with `!Number.isFinite(pct)`, so nothing non-finite can reach
+`ok`. That is ADR-001 rule 5 made mechanical rather than left to each caller.
+
+**Review:** read against the acceptance criteria; no blocking findings, so it
+merged as built. Six mutants across the builder's run and the orchestrator's:
+
+| Mutant | Result |
+|---|---|
+| `pct >= 1` → `pct > 1` | 3 tests red |
+| null-cadence fallback → hardcoded `14` | 2 tests red |
+| drop `!Number.isFinite(pct)` from `bandFor` | 1 test red |
+| `Math.floor` → `Math.round` in `wholeDaysSince` | 1 test red |
+| `cadenceDays > 0` → `cadenceDays >= 0` | **survived — equivalent mutant** |
+
+The survivor is not a coverage gap. With a zero cadence, `>= 0` divides and
+yields `Infinity`/`NaN` where `> 0` short-circuits to `Infinity`; `bandFor`'s
+non-finite guard maps both to `late`, and `DecayMeter` clamps both to a full
+bar. Two independent guards where one would do, and the distinction is
+unobservable by construction. Left as is.
+
+**Deferred:** nothing cut. The scope's own "Out" list stands — no view renders
+this yet (T-260829-14 is the first consumer), the Companies grid stays
+ring-less, P2-02's settings surface is untouched and `WorkspaceSettings.tsx`
+still carries its honest "these defaults move no company yet" caption, because
+after this task that is still true for everything created through the sheet.

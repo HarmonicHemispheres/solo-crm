@@ -1,7 +1,7 @@
 ---
 id: T-260829-14
 title: Build the Today view — what is owed, what is going quiet, what just happened
-status: open
+status: in-progress
 category: ui
 plan_ref: P2-04
 created: 2026-08-29
