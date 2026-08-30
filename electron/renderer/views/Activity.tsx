@@ -443,7 +443,7 @@ export function Activity() {
         )
       ) : (
         <Card>
-          <div className="tl">
+          <div className="tl tl-log">
             {visibleRows.map((activity) => (
               <ActivityItem
                 key={activity.id}

@@ -490,7 +490,20 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
         task.status,
         task.isNextStep ? 1 : 0,
         shiftDateOnlyOrNull(task.dueOn, offsetDays),
-        shiftDateOnlyOrNull(task.waitingSince, offsetDays),
+        // `waiting_since` is a timestamp, not a date-only value —
+        // `tasks.waitingSince` is `timestampSchema.nullable()`
+        // (electron/shared/tasks.ts) and the repository stamps it with
+        // `nowTimestamp()` on the todo -> waiting transition. It was written
+        // here through `shiftDateOnlyOrNull` like `due_on` above it, which
+        // put bare `YYYY-MM-DD` strings in the column: every `tasks:list`
+        // against a seeded database then failed its response schema, and
+        // Today, Todos and every other task-listing view rendered "the
+        // response was not in the expected shape" instead of any content.
+        // Found by driving the built app against a seeded profile
+        // (T-260828-15); no unit test covered it because nothing read the
+        // seeded rows back through their wire schema — see index.test.ts's
+        // round-trip block, added with this fix.
+        task.waitingSince ? shiftToTimestamp(task.waitingSince, offsetDays, task.key) : null,
         task.doneOn ? shiftToTimestamp(task.doneOn, offsetDays, task.key) : null,
         task.companyKey ? companyIds.get(task.companyKey) : null,
         task.engagementKey ? engagementIds.get(task.engagementKey) : null,

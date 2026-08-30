@@ -1,11 +1,11 @@
 ---
 id: T-260828-15
 title: Real-window QA pass — focus rings, rail `inert`, breakpoints, route-meta guard
-status: open
+status: done
 category: ui
 plan_ref: P0-10
 created: 2026-08-28
-closed:
+closed: 2026-08-30
 ---
 
 ## Why
@@ -136,3 +136,110 @@ devtools. The jsdom tests assert what they can reach; a real window is where
 **Boot it with `npm run dev`, or install the built artefact.** The rail fix is
 the one to look at first — resize below 900px, close the rail, and Tab through
 the page.
+
+---
+
+## Outcome
+
+Closed 2026-08-30 (R-260829-03). The two criteria left open in the progress
+note above are now met, against a real Chromium window rather than jsdom.
+
+**How the pass was run.** `scripts/window-pass.mjs` (new) boots the built app
+— `out/main` + `out/preload` + `out/renderer`, the same entry `npm run dev`
+uses — with `--user-data-dir` pointing at a throwaway, freshly seeded profile,
+attaches over the Chrome DevTools Protocol, and records geometry plus a
+screenshot per route per width. It never touches the operator's own database,
+and because the temp profile already holds a `solocrm.db`, main resolves the
+first-run location flow with no dialog, exactly as its comment says.
+
+It is deliberately **not** wired into `npm test`. That would be the automated
+visual-regression tooling this task's Scope puts out of bounds; the note there
+says it is "worth its own decision if this pass finds enough". It found
+enough — that decision is the user's, not this task's.
+
+### The list, at 1440 / 900 / 700
+
+| Check | 1440 | 900 | 700 |
+|---|---|---|---|
+| No horizontal body scroll | pass (1430/1430) | pass (890/890) | pass (690/690) |
+| No element past the viewport | pass | pass | pass |
+| Rail on-canvas ≥900, off-canvas below | pass | pass (`visibility:hidden`, `left:-250px`) | pass |
+| Rail not focusable when off-canvas | pass | pass | pass |
+| Tokens applied (`--verdigris` #5BA4A4, body #0B0E14) | pass | pass | pass |
+| Exactly one gold hero value | pass | pass | pass |
+| Focus ring visible on rail nav | pass (2px solid #5BA4A4) | pass | pass |
+| Stat grid reflows without clipping | pass (4 across) | pass (3+1) | pass (3+1) |
+| Cards collapse rather than scroll sideways | pass | pass | pass |
+
+The `900` column is the breakpoint boundary itself and behaves as the mockup
+specifies: the rail leaves the flow and the hamburger appears.
+
+### Three defects found, all fixed on main
+
+**1. Every cadence decay bar rendered at 0px, in four views.** `.decay .fill`
+is a `<span>`, therefore `display: inline`, and `width` does not apply to a
+non-replaced inline box. The bar computed `width: 100%`, animated to
+completion with `forwards`, and painted nothing: an empty grey track wherever
+a cadence meter appears. `.track` escapes only by accident, because `.decay`
+is a flex container and blockifies its children. Measured: `display: inline`
+→ 0px; with `display: block` → 56px, the full track.
+
+This was transcribed faithfully from the mockup, which carries the same
+declaration and could not reveal it. **No jsdom test could have caught it** —
+jsdom computes no layout, so `getBoundingClientRect()` is 0 for everything and
+a width assertion passes against the broken CSS. It has been shipping since
+the Companies view landed (T-260828-28): `DecayMeter` is consumed by
+Companies, CompanyDetail, People and Today.
+
+*Correction to this run's own record:* T-260829-13's "Why" claims `DecayMeter`
+"shipped in T-260828-11 and no view renders either one". That is wrong — four
+views render it. The claim came from a `grep -l … | head` whose output was
+truncated before the `views/` entries. The task's actual value stands (the
+decay arithmetic was still duplicated per view, which is why `Companies.tsx`
+carries its own `decayColor` mirroring DecayMeter's thresholds), but the
+premise was overstated and is corrected here rather than left standing.
+
+**2. Three stylesheets declared the same unscoped `.tli` selectors.**
+`Activity.css`, `CompanyDetail.css` and `PersonDetail.css` each transcribed
+the mockup's timeline classes — `.tl`, `.tli`, `.tli .t/.d/.note` — into the
+global namespace. Whichever the bundler emitted last styled all three views.
+The detail views won, and they declare `.tli .d { display: block }` because
+their meta row is plain text; Activity's is a `Tag`, a timestamp and a
+variable number of entity links needing `display: flex; gap: 5px`. The result
+was `Aug 29, 2026, 9:32 AMRinvii` — every element butted against the next — on
+the Activity view and in Today's Recent card, which renders the same
+`ActivityItem`. Fixed by scoping this file's rules under `.tl-log`; measured
+after: `display: flex`, 5px between each child.
+
+`CompanyDetail.css` and `PersonDetail.css` declare byte-identical timeline
+blocks, so they cannot disagree with each other — scoping Activity is the
+whole fix for the visible collision. What remains is duplication, not a
+defect, and is recorded as a follow-up rather than restyled here.
+
+**3. `npm run seed` produced a database the app refuses.** Not a layout
+finding, but the pass could not start without fixing it, so it is recorded
+here. `tasks.waiting_since` is `timestampSchema` and the repository stamps it
+with `nowTimestamp()`, but the seed wrote it through `shiftDateOnlyOrNull` —
+the date-only shifter — putting bare `YYYY-MM-DD` in the column. Every
+`tasks:list` against a seeded database then failed its response schema, and
+Today, Todos and every other task-listing view rendered *"tasks:list: the
+response was not in the expected shape"* instead of any content. The fix is
+one line; the adjacent `done_at` already used the right helper.
+
+The guard added with it is the general one: `seed/index.test.ts` now reads
+every seeded row back through the repository the app calls and parses it with
+the wire schema the IPC layer validates against, for all five entity kinds. A
+field added to any of those schemas is covered without this list changing.
+Verified by reverting the one-line fix: the new test goes red, and only it.
+The neighbouring test named `companies.last_touch_at` in its title while never
+querying that column — also fixed, with `people.last_contact_at` added.
+
+**Not exercised, and not claimed:** the full keyboard walk of every stop, and
+the layer-dialog role/focus-return/aria audit with devtools. The focus ring
+and rail focusability were measured; `Esc`/`⌘K`/`⌘L` were not driven by hand.
+`scripts/window-pass.mjs` is where that would be added.
+
+**Changed:** `scripts/window-pass.mjs` (new), `DecayMeter.css`,
+`Activity.css`, `Activity.tsx`, `Today.tsx`, `db/seed/index.ts`,
+`db/seed/index.test.ts`. Gate green: typecheck, lint, **1438 tests**,
+`check:index`.

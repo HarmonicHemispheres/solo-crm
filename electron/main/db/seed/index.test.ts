@@ -5,6 +5,16 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { timestampSchema } from '../../../shared/types'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
+import { listCompanies } from '../repositories/companies'
+import { listPeople } from '../repositories/people'
+import { listEngagements } from '../repositories/engagements'
+import { listTasks } from '../repositories/tasks'
+import { listActivity } from '../repositories/activity'
+import { companySchema } from '../../../shared/companies'
+import { personSchema } from '../../../shared/people'
+import { engagementSchema } from '../../../shared/engagements'
+import { taskSchema } from '../../../shared/tasks'
+import { activitySchema } from '../../../shared/activity'
 import type { CompanySeed } from './fixture'
 import { MOCKUP_TODAY, companies as companiesFixture } from './fixture'
 import { FixtureIntegrityError, SeedGuardError, orderCompaniesForInsert, seedFixture } from './index'
@@ -235,8 +245,32 @@ describe('seedFixture: timestamps are written via the shared helpers, never a SQ
     withFreshDb((db) => {
       seedFixture(db)
       const activityRows = db.prepare('SELECT occurred_at FROM activity').all() as { occurred_at: string }[]
+      expect(activityRows.length).toBeGreaterThan(0)
       for (const row of activityRows) {
         expect(() => timestampSchema.parse(row.occurred_at)).not.toThrow()
+      }
+
+      // `companies.last_touch_at` is named in this test's title and was not
+      // actually queried — the assertion existed only in the name. Added
+      // alongside the `waiting_since` fix (T-260828-15's real-window pass),
+      // because a test that reads as covering a column while checking a
+      // different one is worse than no test: it answers the question wrong
+      // when someone greps for it. `people.last_contact_at` is the same
+      // column by ADR-001 and gets the same check.
+      const touched = db
+        .prepare('SELECT last_touch_at FROM companies WHERE last_touch_at IS NOT NULL')
+        .all() as { last_touch_at: string }[]
+      expect(touched.length).toBeGreaterThan(0)
+      for (const row of touched) {
+        expect(() => timestampSchema.parse(row.last_touch_at)).not.toThrow()
+      }
+
+      const contacted = db
+        .prepare('SELECT last_contact_at FROM people WHERE last_contact_at IS NOT NULL')
+        .all() as { last_contact_at: string }[]
+      expect(contacted.length).toBeGreaterThan(0)
+      for (const row of contacted) {
+        expect(() => timestampSchema.parse(row.last_contact_at)).not.toThrow()
       }
     })
   })
@@ -380,6 +414,74 @@ describe('seedFixture: the non-empty-database guard', () => {
   it('an empty database seeds without needing --force', () => {
     withFreshDb((db) => {
       expect(() => seedFixture(db)).not.toThrow()
+    })
+  })
+})
+
+/**
+ * The guard that would have caught the `waiting_since` defect, and the one
+ * that catches the next one of its kind without anybody remembering to add
+ * a column to a list.
+ *
+ * The block above this one checks named timestamp columns one at a time,
+ * and that is exactly how the bug got through: `waiting_since` was written
+ * with `shiftDateOnlyOrNull` (bare `YYYY-MM-DD`) while
+ * `tasks.waitingSince` is declared `timestampSchema.nullable()`, and no
+ * assertion named that column. Every `tasks:list` against a seeded database
+ * failed its response schema, so Today, Todos and every other task-listing
+ * view rendered "the response was not in the expected shape" — a completely
+ * broken `npm run seed` with a green suite. It was found by driving the
+ * built app against a seeded profile (T-260828-15's real-window pass), which
+ * is far too late and far too manual for a wrong string in a column.
+ *
+ * So this reads every seeded row back through the repository the app
+ * actually calls, and parses it with the same wire schema the IPC layer
+ * validates responses against. It is exhaustive by construction: a field
+ * added to any of these five schemas, or a column whose written format
+ * stops matching its declared one, fails here without this file changing.
+ * That is the difference between a checklist and a contract.
+ */
+describe('seedFixture: every seeded row satisfies the wire schema the IPC layer validates against', () => {
+  it('tasks — including waiting_since, the column that shipped as a bare date', () => {
+    withFreshDb((db) => {
+      seedFixture(db)
+      const tasks = listTasks(db)
+      expect(tasks.length).toBeGreaterThan(0)
+      for (const task of tasks) expect(() => taskSchema.parse(task)).not.toThrow()
+
+      // Named explicitly as well as covered by the parse above, because this
+      // is the specific regression: at least one seeded task must actually
+      // be `waiting` with a stamped `waiting_since`, or the parse proves
+      // nothing about the column that broke.
+      const waiting = tasks.filter((task) => task.status === 'waiting')
+      expect(waiting.length).toBeGreaterThan(0)
+      for (const task of waiting) {
+        expect(task.waitingSince).not.toBeNull()
+        expect(() => timestampSchema.parse(task.waitingSince)).not.toThrow()
+      }
+    })
+  })
+
+  it('companies, people, engagements and activity', () => {
+    withFreshDb((db) => {
+      seedFixture(db)
+
+      const companies = listCompanies(db)
+      const people = listPeople(db)
+      const engagements = listEngagements(db)
+      const activity = listActivity(db)
+
+      // Each list must be non-empty or its loop below asserts nothing — the
+      // vacuous-pass failure mode this project has hit before.
+      expect(companies.length).toBeGreaterThan(0)
+      expect(people.length).toBeGreaterThan(0)
+      expect(engagements.length).toBeGreaterThan(0)
+      expect(activity.length).toBeGreaterThan(0)
+
+      for (const row of companies) expect(() => companySchema.parse(row)).not.toThrow()
+      for (const row of people) expect(() => personSchema.parse(row)).not.toThrow()
+      for (const row of engagements) expect(() => engagementSchema.parse(row)).not.toThrow()
+      for (const row of activity) expect(() => activitySchema.parse(row)).not.toThrow()
     })
   })
 })

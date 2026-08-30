@@ -98,34 +98,56 @@
 
 /* ── timeline ─────────────────────────── */
 
-.tl {
+/*
+ * `.tl-log` scopes this file's timeline rules (T-260828-15's real-window
+ * pass). `.tl`, `.tli`, `.tli .t/.d/.note` were transcribed from the mockup
+ * into THREE stylesheets — here, CompanyDetail.css and PersonDetail.css —
+ * with no scoping, so all three defined the same global selectors and
+ * whichever the bundler emitted last styled all of them. The detail views
+ * won, and they declare `.tli .d { display: block }` because their meta row
+ * is plain text; this file's is a Tag, a timestamp and a variable number of
+ * entity links laid out with `display: flex; gap: 5px`. The result was
+ * "Aug 29, 2026, 9:32 AMRinvii" — every element in the row butted against
+ * the next — on the Activity view and in Today's Recent card, which renders
+ * this same `ActivityItem`.
+ *
+ * Scoping only this file is the whole fix for the *visible* collision:
+ * CompanyDetail.css and PersonDetail.css declare byte-identical timeline
+ * blocks, so they cannot disagree with each other. What is left is
+ * duplication rather than a defect — two copies of one block that should be
+ * one shared stylesheet, alongside the `.cmark`/`KIND_LABEL` copies
+ * T-260829-14 named. That consolidation is a task, not a QA-pass edit: it
+ * changes what three views look like and this pass's own scope rules out
+ * restyling.
+ */
+.tl.tl-log {
   padding: 5px 15px 12px;
 }
 
-.tli {
+.tl-log .tli {
   display: flex;
   gap: 12px;
   padding: 12px 0;
   position: relative;
 }
 
-.tli:not(:last-child) {
+.tl-log .tli:not(:last-child) {
   border-bottom: 1px solid var(--border);
 }
 
-.tli .body {
+.tl-log .tli .body {
   flex: 1;
   min-width: 0;
 }
 
-.tli .t {
+.tl-log .tli .t {
   font-size: 13px;
   font-weight: 600;
   display: block;
   line-height: 1.4;
 }
 
-.tli .d {
+.tl-log .tli .d {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--faint);
@@ -137,7 +159,7 @@
   letter-spacing: .3px;
 }
 
-.tli .note {
+.tl-log .tli .note {
   font-size: 12.5px;
   color: var(--mute);
   margin-top: 5px;

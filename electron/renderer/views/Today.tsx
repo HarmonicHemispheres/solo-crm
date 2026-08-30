@@ -483,7 +483,7 @@ export function Today() {
           {recent.length === 0 ? (
             <EmptyState>Nothing logged yet.</EmptyState>
           ) : (
-            <div className="tl">
+            <div className="tl tl-log">
               {recent.map((activity) => (
                 <ActivityItem
                   key={activity.id}

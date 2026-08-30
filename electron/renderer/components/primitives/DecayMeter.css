@@ -14,6 +14,21 @@
 }
 
 .decay .fill {
+  /* `display: block` is load-bearing, not tidiness. `.fill` is a <span>, so
+     it is `display: inline` by default — and `width`/`height` do not apply
+     to a non-replaced inline box. Without this the bar computed `width:
+     100%` and rendered at 0px: coloured correctly, animated to completion,
+     and invisible. Every cadence meter in the app was an empty grey track.
+     `.track` escapes the same fate only by accident, because `.decay` is a
+     flex container and its children are blockified.
+     Transcribed from the mockup, which has the same defect and could not
+     show it — its own Going quiet list is empty at the fixture's date. No
+     jsdom test can catch this either: jsdom computes no layout, so
+     `getBoundingClientRect()` is 0 for everything and a width assertion
+     would pass against the broken CSS. Found by driving the built app
+     (T-260828-15's real-window pass) and confirmed by injecting this one
+     declaration: 0px -> 56px, the full track. */
+  display: block;
   height: 100%;
   border-radius: 2px;
   width: 0;

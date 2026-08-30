@@ -1,7 +1,7 @@
 ---
 id: T-260829-03
 title: Drive the installer maintenance page by hand — repair, remove, and the database that must survive
-status: open
+status: in-progress
 category: build
 plan_ref: X-09
 created: 2026-08-29
