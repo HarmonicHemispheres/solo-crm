@@ -8,6 +8,8 @@ import { GLOBAL_SHORTCUTS } from '../hooks/useGlobalShortcuts'
 import { formatShortcut } from '../lib/platform'
 import { MemoryRouter } from 'react-router'
 import { Rail } from '../components/shell/Rail'
+import { LayerManager } from '../components/shell/LayerManager'
+import { Tour } from '../components/shell/Tour'
 import { SETTINGS_KEYS, type SettingsSnapshot } from '../../shared/settings'
 import type { CrmApi, SettingEntry } from '../../shared/ipc-types'
 import type { BrandingSlot, BrandingSlotState } from '../../shared/branding'
@@ -38,7 +40,33 @@ const DEFAULT_SNAPSHOT: SettingsSnapshot = {
   'view.companies.mode': 'card',
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
-  'view.data.snippets': []
+  'view.data.snippets': [],
+  // `true` — this harness is an established workspace, not a first run. The
+  // flag's three states are Tour.test.tsx's subject; here it only has to
+  // stay out of the way of the cards this file is about.
+  'onboarding.tourSeen': true
+}
+
+/**
+ * The view plus the two providers it stopped being free-standing without in
+ * T-260829-15: the Guided tour card calls `useLayerManager`, and the tour it
+ * opens navigates. Spelled once here rather than at each of the six render
+ * sites below, which are otherwise about entirely different things.
+ */
+function SettingsHost() {
+  return (
+    <MemoryRouter initialEntries={['/workspace/settings']}>
+      <LayerManager>
+        <WorkspaceSettings />
+        {/* The same sibling relationship the real tree has: `ShellLayout`
+            renders the routed view and `<Tour />` next to each other under
+            one `LayerManager`. Without it the Guided tour button would open
+            a layer with nothing mounted to render it — a green test for a
+            button that does nothing visible. */}
+        <Tour />
+      </LayerManager>
+    </MemoryRouter>
+  )
 }
 
 /** Renders with a stateful `settings:getAll`/`settings:set` pair — a `set`
@@ -59,7 +87,7 @@ function renderSettings(overrides: Partial<SettingsSnapshot> = {}) {
   const queryClient = createQueryClient()
   return render(
     <QueryClientProvider client={queryClient}>
-      <WorkspaceSettings />
+      <SettingsHost />
     </QueryClientProvider>
   )
 }
@@ -121,7 +149,13 @@ describe('WorkspaceSettings', () => {
       // reason this list's comment already gives: the assertion's job is that
       // no registry key is unaccounted for, not that every key is controlled
       // from this page.
-      'view.data.snippets'
+      'view.data.snippets',
+      // T-260829-15's first-run flag. Accounted for here rather than given a
+      // control: the Guided tour card below *reopens* the overlay, and the
+      // overlay owns the write — there is no switch on this page that reads
+      // or sets the flag, and a "mark the tour unseen" toggle would be a way
+      // to make the app nag on the next restart.
+      'onboarding.tourSeen'
     ])
     expect([...SETTINGS_KEYS].sort()).toEqual([...covered].sort())
   })
@@ -142,7 +176,7 @@ describe('WorkspaceSettings', () => {
     // change still in effect."
     rerender(
       <QueryClientProvider client={createQueryClient()}>
-        <WorkspaceSettings />
+        <SettingsHost />
       </QueryClientProvider>
     )
     await waitFor(() => expect((screen.getByLabelText('Currency') as HTMLSelectElement).value).toBe('EUR'))
@@ -287,7 +321,7 @@ describe('WorkspaceSettings', () => {
     })
     render(
       <QueryClientProvider client={createQueryClient()}>
-        <WorkspaceSettings />
+        <SettingsHost />
       </QueryClientProvider>
     )
     expect(screen.getByText('Loading settings…')).toBeTruthy()
@@ -299,10 +333,43 @@ describe('WorkspaceSettings', () => {
     })
     render(
       <QueryClientProvider client={createQueryClient()}>
-        <WorkspaceSettings />
+        <SettingsHost />
       </QueryClientProvider>
     )
     await waitFor(() => expect(screen.getByText('boom')).toBeTruthy())
+  })
+
+  // -------------------------------------------------------------------------
+  // Guided tour (T-260829-15) — the way back in after a skip. The tour's own
+  // behaviour is Tour.test.tsx's subject; what this page owes is that the
+  // button opens it, at step 1, on a workspace whose flag is already set.
+  // -------------------------------------------------------------------------
+
+  it('“Take the tour” reopens the overlay at step 1 even though onboarding.tourSeen is already true', async () => {
+    renderSettings({ 'onboarding.tourSeen': true })
+    const button = await screen.findByRole('button', { name: 'Take the tour' })
+    expect(screen.queryByRole('dialog', { name: 'Guided tour' })).toBeNull()
+
+    fireEvent.click(button)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Guided tour' })
+    expect(within(dialog).getByText('1 of 5')).toBeTruthy()
+    expect(within(dialog).getByRole('heading', { name: 'Today' })).toBeTruthy()
+  })
+
+  it('closing the reopened tour leaves the flag true — the button is not a way to make the app nag again', async () => {
+    renderSettings({ 'onboarding.tourSeen': true })
+    fireEvent.click(await screen.findByRole('button', { name: 'Take the tour' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Guided tour' })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Skip tour' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Guided tour' })).toBeNull())
+    // Every `onboarding.tourSeen` write this page can produce writes `true`.
+    // There is no path here that sets it back to `false`.
+    for (const call of vi.mocked(window.crm['settings:set']).mock.calls) {
+      if (call[0].key === 'onboarding.tourSeen') expect(call[0].value).toBe(true)
+    }
   })
 
   // -------------------------------------------------------------------------
@@ -354,7 +421,7 @@ describe('WorkspaceSettings', () => {
       })
       return render(
         <QueryClientProvider client={createQueryClient()}>
-          <WorkspaceSettings />
+          <SettingsHost />
         </QueryClientProvider>
       )
     }
@@ -482,8 +549,10 @@ describe('WorkspaceSettings', () => {
       render(
         <QueryClientProvider client={createQueryClient()}>
           <MemoryRouter initialEntries={['/workspace/settings']}>
-            <Rail open={false} onNavigate={() => {}} />
-            <WorkspaceSettings />
+            <LayerManager>
+              <Rail open={false} onNavigate={() => {}} />
+              <WorkspaceSettings />
+            </LayerManager>
           </MemoryRouter>
         </QueryClientProvider>
       )

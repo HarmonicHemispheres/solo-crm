@@ -158,7 +158,24 @@ export const SETTINGS_REGISTRY = {
   'view.data.snippets': spec(
     z.array(z.object({ name: z.string().min(1), statement: z.string().min(1) }).strict()),
     [] as { name: string; statement: string }[]
-  )
+  ),
+
+  // T-260829-15's first-run walkthrough. `false` is the honest default —
+  // a fresh install has not seen it — and the overlay's *second* condition
+  // (the workspace holds no companies) is what stops an existing workspace
+  // updating into this version from being shown it.
+  //
+  // Deliberately a boolean and not a version number, and the trade is
+  // written here rather than discovered later: a boolean cannot answer
+  // "seen which version of the tour", so adding a sixth step marks everyone
+  // who saw the five-step tour as done. That is the right way round. The
+  // alternative — `onboarding.tourVersion`, re-nagging every operator on
+  // every edit to the copy — makes an editable overlay into a recurring
+  // interruption, which is the one failure mode that would make this
+  // feature worse than not having it. If a later tour is genuinely worth
+  // re-showing, that is a new key with its own decision, not a silent
+  // change of meaning for this one.
+  'onboarding.tourSeen': spec(z.boolean(), false)
 } as const
 
 export type SettingKey = keyof typeof SETTINGS_REGISTRY

@@ -36,7 +36,10 @@ const SETTINGS_SNAPSHOT: SettingsSnapshot = {
   'view.companies.mode': 'card',
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
-  'view.data.snippets': []
+  'view.data.snippets': [],
+  // `true` — this file is about the rail, not about first run. The tour's
+  // three conditions are asserted in Tour.test.tsx.
+  'onboarding.tourSeen': true
 }
 
 /** A stored slot as `branding:get` would answer with it. The `data:` prefix is

@@ -11,8 +11,14 @@ import './LayerManager.css'
 /** Layers that close `menu` and `popover` when they open — the mockup's own
  * `openForm`/`openLog` both clear `#newMenu`, and `toggleMenu` itself clears
  * `#pop`; this generalises that to every heavier layer opening on top of a
- * lighter one. */
-const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'sheet', 'log', 'menu'])
+ * lighter one. `tour` is listed for the same reason as the other four: it is
+ * a modal panel, not a light transient. Neither of its two open paths can
+ * actually find a menu open (it opens at boot, or from a Settings button
+ * whose own click already reaches the dismiss listener below), so this is a
+ * statement of the layer's weight rather than a behaviour anything exercises
+ * — omitting it would read as "the tour is light like a popover", which is
+ * the wrong thing to say here. */
+const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'sheet', 'log', 'menu', 'tour'])
 
 /**
  * The one place the layer stack lives (T-260828-12's scope: "One place, not
@@ -33,6 +39,14 @@ const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'she
  * handler below is the only thing Esc reaches, so the palette and both
  * sheets stack freely in any order (the mockup keeps the create form and
  * quick-log independent, so ⌘L over a half-filled form must not discard it).
+ *
+ * The sixth kind, `tour` (T-260829-15), registers in this stack but is
+ * *rendered* by `Shell.tsx`, not by the overlays list below: it needs the
+ * routed shell's queries and `useNavigate`, and it is the one layer nothing
+ * ever stacks under, so its position in DOM order — inside `children`,
+ * therefore beneath every overlay here — is exactly where it belongs. It
+ * still gets Esc, focus-return and `isTopmost` from this file, which is the
+ * whole reason it joins the stack instead of listening for Escape itself.
  *
  * All three overlay wrappers are the mockup's `.scrim` at the same
  * z-index, so DOM order decides which paints on top: the overlays render

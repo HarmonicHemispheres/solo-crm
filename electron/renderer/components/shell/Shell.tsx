@@ -7,6 +7,7 @@ import { ipcQueryFn } from '../../lib/ipc'
 import { queryKeys } from '../../lib/query-keys'
 import { Rail } from './Rail'
 import { Topbar } from './Topbar'
+import { Tour } from './Tour'
 import './Shell.css'
 
 /**
@@ -72,6 +73,14 @@ export function ShellLayout() {
           <Outlet />
         </main>
       </div>
+      {/* The first-run walkthrough (T-260829-15). Mounted here, in the one
+          component every route mounts under, for the same reason
+          `useMotionAttribute` is called here: whether a new operator sees
+          the tour cannot depend on which route the app happened to open to.
+          It renders nothing at all unless it is open — it registers as a
+          `'tour'` layer with `LayerManager`, which is what gives it Escape
+          and focus-return without a second document-level key listener. */}
+      <Tour />
     </div>
   )
 }

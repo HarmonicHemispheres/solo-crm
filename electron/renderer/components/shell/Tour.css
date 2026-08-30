@@ -1,0 +1,123 @@
+/*
+ * The first-run tour (T-260829-15). Built from `tokens.css` values only —
+ * the same surface, border, radius, shadow and motion timings the mockup
+ * gives `.pal` and `.sheet`, so this reads as one more panel in the same
+ * family rather than a widget from somewhere else.
+ *
+ * It declares its own scrim instead of reusing `.scrim` (Sheet.css): that
+ * one aligns its panel to `flex-start` under an 11vh top pad, which is right
+ * for a sheet dropping from the top edge and wrong for a card that this
+ * task's Scope puts "in the middle of the window". Two properties differ,
+ * but sharing the class and overriding them would make the tour's position
+ * depend on a stylesheet loaded for an unrelated component.
+ *
+ * Motion: `appearance.motion` is honoured centrally — base.css kills every
+ * animation and transition under `:root[data-motion='off']`, and the OS
+ * `prefers-reduced-motion` query beside it does the same. That removes the
+ * entrance animation and leaves the card rendered at its final position,
+ * which is the behaviour this task asks for: under reduced motion the card
+ * appears without the transition, it does not disappear.
+ */
+
+.tour-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: tour-fade var(--motion-fade) var(--ease-out);
+}
+
+.tour-card {
+  background: var(--surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-14);
+  box-shadow: var(--shadow-panel);
+  animation: tour-fade-up var(--motion-panel) var(--ease-grow);
+  width: min(520px, 94vw);
+  padding: 22px 24px 18px;
+  outline: none;
+}
+
+.tour-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.tour-h h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--papyrus);
+}
+
+/* Metadata, per the design rules: mono, small, faint — the counter is a
+   position, not a sentence. */
+.tour-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.tour-body {
+  margin: 12px 0 20px;
+  color: var(--mute);
+  font-size: 13.5px;
+  line-height: 1.62;
+}
+
+.tour-f {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* The three navigation buttons travel together on the trailing edge; Skip
+   is the lone child on the other side of `.tour-f`'s space-between. */
+.tour-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Below the mobile breakpoint the four buttons no longer fit on one line;
+   they wrap into two rows with Skip still first, rather than the row
+   scrolling sideways. */
+@media (max-width: 700px) {
+  .tour-f {
+    flex-wrap: wrap;
+  }
+
+  .tour-nav {
+    flex: 1;
+    justify-content: flex-end;
+  }
+}
+
+@keyframes tour-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tour-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
