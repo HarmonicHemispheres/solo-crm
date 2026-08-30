@@ -7,9 +7,9 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260829-13](T-260829-13-decay-computation.md) | Compute cadence decay from a company's own clock, in one shared function | 🎨 ui | P2-03 |
+| ◐ in-progress | [T-260829-13](T-260829-13-decay-computation.md) | Compute cadence decay from a company's own clock, in one shared function | 🎨 ui | P2-03 |
 | ○ open | [T-260829-14](T-260829-14-today-view.md) | Build the Today view — what is owed, what is going quiet, what just happened | 🎨 ui | P2-04 |
-| ○ open | [T-260829-15](T-260829-15-first-run-tour.md) | Walk a new operator through the app once, skippable, and never nag again | 🎨 ui | — |
+| ◐ in-progress | [T-260829-15](T-260829-15-first-run-tour.md) | Walk a new operator through the app once, skippable, and never nag again | 🎨 ui | — |
 
 The first three tasks of Phase 2, scoped 2026-08-29 and awaiting approval.
 T-260829-13 blocks T-260829-14; T-260829-15 is independent of both. T-260829-14

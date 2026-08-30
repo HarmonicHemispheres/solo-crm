@@ -1,7 +1,7 @@
 ---
 id: T-260829-15
 title: Walk a new operator through the app once, skippable, and never nag again
-status: open
+status: in-progress
 category: ui
 created: 2026-08-29
 closed:

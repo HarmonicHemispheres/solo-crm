@@ -1,7 +1,7 @@
 ---
 id: T-260829-13
 title: Compute cadence decay from a company's own clock, in one shared function
-status: open
+status: in-progress
 category: ui
 plan_ref: P2-03
 created: 2026-08-29
