@@ -1,7 +1,7 @@
 ---
 id: T-260831-01
 title: Decide how a portable build names its data root, and record it
-status: open
+status: in-progress
 category: docs
 plan_ref: X-09
 created: 2026-08-31

@@ -1,7 +1,7 @@
 ---
 id: T-260831-02
 title: Guard every artifact the release build writes, not only the NSIS one
-status: open
+status: in-progress
 category: build
 plan_ref: X-09
 created: 2026-08-31
