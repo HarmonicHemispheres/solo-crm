@@ -1,10 +1,10 @@
 ---
 id: T-260901-14
 title: Give company detail its logo, its banner and a visible way in to editing
-status: in-progress
+status: done
 category: ui
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -114,3 +114,59 @@ them.
 - The rail's branding row was built once and this is its second instance.
   Copying `BrandingRow` rather than extracting it is how the two acquire
   different refusal behaviour.
+
+## Outcome
+
+Merged into `main` from branch `T-260901-14` (builder `e814f6b`, nothing
+changed at merge). Seven files.
+
+**The decision the scope required: the company sheet is the authoritative
+writer.** `DetailsCard` is read-only and holds no mutation — asserted in
+`CompanyDetail.test.tsx` (`companies:update` never called from the card),
+so the two paths cannot silently become two writers again. The reasoning
+is in the card's own comment: the sheet is what the header's Edit button
+makes discoverable, it is how every other entity is edited, and it can put
+"name is required" against a named field. Consequences the scope did not
+spell out: `notes` joined the sheet (the card showed six columns, the
+sheet covered five); a "Not set" cadence chip carrying a `0` sentinel
+mapped to `null` on the wire, because a chip group cannot show null and
+the inline editor could clear a cadence; and the edit form diffs against
+**what it was seeded with**, not the record — `kind`, `billsDirectly` and
+`cadenceDays` have controls that cannot show null, so a record-diff would
+write a control's default on every save (open a kindless company, Save,
+it becomes a client — there is a test for that mutant). Three inline-edit
+tests went with the behaviour they covered and were replaced by the
+no-writer assertion and a round trip through the sheet. `PersonDetail`
+keeps its inline editing; person is out of scope and that decision is not
+made.
+
+**Header.** `CompanyMark` is image-aware locally (not extracted; T-15 has
+its own). The banner keeps its `hue(name)` gradient until an image is
+stored; with one, `.dbanner.has-image::after` is a one-directional
+`--obsidian` ramp (18% → 82%), which is how it works for a white banner
+and a black one without branching on the image. Upload/Replace/Remove per
+slot sit in one wrapping `.dhead-actions` row, each a `role="group"` named
+for its slot with the refusal rendered inside the group; cancelling
+neither errors nor clears a standing message. Nothing is optimistic — the
+only image shown is one a channel came back with. `editSheet('company',
+id, trigger)` opens `CompanySheet` in edit mode: `CompanySheet` →
+`CompanyEditSheet` (loads, placeholder until then, "no longer exists" for
+a deleted id) → `CompanyForm` seeded in `useState` initialisers, the same
+split as `EngagementSheet`. Edit mode filters the company itself out of
+the Billed via / Introduced by pickers. `BrandingRow` was not extracted:
+the two rows share the two buttons and where a refusal lands and differ
+in preview, caption, content-type set and state type; the comment in
+`CompanyDetail.tsx` says so, and T-15 is the third instance that would
+change the answer.
+
+**Review.** Eight mutants against the two covering files — chosen/cancelled
+swapped, refusal shown on both slots, Edit button unnamed, logo never
+rendered, scrim class dropped, `kind` always sent, "Not set" sending `0`,
+edit opening the wrong id — all died. At merge: three tsc projects, eslint,
+the whole renderer project (609), renderer boot and the integration
+project, all green.
+
+**Not verifiable in jsdom:** the 700px / 3:1-banner overflow criterion is
+asserted structurally (heading, mark and four controls present) and the
+scrim by the `has-image` class that selects it; neither has been eyeballed
+in the running app.
