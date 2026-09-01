@@ -17,6 +17,17 @@ import {
 } from './engagements'
 import { createLinkInputSchema, linkSchema, listLinksInputSchema, updateLinkInputSchema } from './links'
 import {
+  createOfferingCategoryInputSchema,
+  createOfferingInputSchema,
+  duplicateOfferingInputSchema,
+  listOfferingsFilterSchema,
+  offeringCategorySchema,
+  offeringListItemSchema,
+  offeringWithVersionsSchema,
+  updateOfferingCategoryInputSchema,
+  updateOfferingInputSchema
+} from './offerings'
+import {
   affiliationSchema,
   createAffiliationInputSchema,
   createPersonInputSchema,
@@ -481,6 +492,79 @@ export const CHANNEL_CONTRACTS = {
     response: mutationResultSchema(engagementSchema)
   },
   'engagements:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
+
+  // -- offerings + categories (T-260901-07) --------------------------------
+  //
+  // The catalogue T-260901-05's repository owns, reached from the renderer for
+  // the first time here. Every request and response schema below is imported
+  // from `electron/shared/offerings.ts` (ADR-007) — this file declares not one
+  // offering field of its own, so the three vocabularies that module closes
+  // (`OFFERING_TYPES`, `OFFERING_BILLING_MODELS`, `OFFERING_UNITS`) are
+  // enforced on the wire by exactly the tuples the repository validates
+  // against, and cannot drift into a second list.
+  //
+  // Three absences are decisions, not gaps:
+  //
+  // - **No price-change channel.** `updateOfferingInputSchema` has no
+  //   `rateCents` key and is `.strict()`, so `offerings:update` refuses a rate
+  //   rather than ignoring it. Appending a version — closing the current one
+  //   and opening the next, with the effective-date semantics §6.5 requires —
+  //   is P3-02, and a channel here that could write a second version would let
+  //   the UI change a price without them.
+  // - **No `offerings:restore`.** `archiveOffering` has no inverse in the
+  //   repository (its own header says why), and a channel with no
+  //   implementation behind it is surface waiting for a caller.
+  // - **No category archive.** Categories delete, and the delete refuses while
+  //   offerings still point at it — see `offerings:deleteCategory` below.
+  //
+  // `offerings.blurb` is free operator text and crosses as a plain string,
+  // exactly as `companies.notes` does; React escapes it at the render site and
+  // nothing here or in the view interpolates it into markup.
+
+  'offerings:listCategories': { request: z.undefined(), response: z.array(offeringCategorySchema).readonly() },
+  /** The filter is optional and `.strict()`: omitted means every offering, archived included — there is no implicit `active = true` (see `listOfferings`). */
+  'offerings:list': {
+    request: listOfferingsFilterSchema.optional(),
+    response: z.array(offeringListItemSchema).readonly()
+  },
+  /** One offering with its full version history, newest first — `versions[0]` is the same row the list reports as `currentVersion`. */
+  'offerings:get': { request: idRequestSchema, response: offeringWithVersionsSchema.nullable() },
+
+  'offerings:createCategory': {
+    request: createOfferingCategoryInputSchema,
+    response: mutationResultSchema(offeringCategorySchema)
+  },
+  'offerings:updateCategory': {
+    request: z.object({ id: z.string().min(1), patch: updateOfferingCategoryInputSchema }).strict(),
+    response: mutationResultSchema(offeringCategorySchema)
+  },
+  /**
+   * Deleting a category that still holds offerings is refused by the
+   * repository, in the same transaction as the delete, and the refusal names
+   * the count and an example — that sentence reaches the renderer verbatim
+   * through `runMutation`, which is the whole reason mutating channels answer
+   * with `mutationResultSchema` rather than throwing.
+   */
+  'offerings:deleteCategory': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
+
+  /**
+   * `rateCents` is **required** by `createOfferingInputSchema`, so a rateless
+   * offering is refused before any SQL runs — §6.5's "an offering always has
+   * at least one version" is enforced at the wire and again in the
+   * repository's transaction, not by the form remembering to ask.
+   */
+  'offerings:create': { request: createOfferingInputSchema, response: mutationResultSchema(offeringWithVersionsSchema) },
+  'offerings:update': {
+    request: z.object({ id: z.string().min(1), patch: updateOfferingInputSchema }).strict(),
+    response: mutationResultSchema(offeringWithVersionsSchema)
+  },
+  /** Archiving sets `active = false`; nothing is deleted, so the response is the offering as it now reads, not an `{ id }`. */
+  'offerings:archive': { request: idRequestSchema, response: mutationResultSchema(offeringWithVersionsSchema) },
+  /** `overrides` carries the new name and nothing else (`duplicateOfferingInputSchema`); omitting it appends " (copy)". */
+  'offerings:duplicate': {
+    request: z.object({ id: z.string().min(1), overrides: duplicateOfferingInputSchema.optional() }).strict(),
+    response: mutationResultSchema(offeringWithVersionsSchema)
+  },
 
   // -- tasks ----------------------------------------------------------------
 

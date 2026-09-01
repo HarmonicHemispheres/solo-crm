@@ -25,6 +25,18 @@ import {
   updateEngagement
 } from '../db/repositories/engagements'
 import {
+  archiveOffering,
+  createOffering,
+  createOfferingCategory,
+  deleteOfferingCategory,
+  duplicateOffering,
+  getOffering,
+  listOfferingCategories,
+  listOfferings,
+  updateOffering,
+  updateOfferingCategory
+} from '../db/repositories/offerings'
+import {
   countOpenTasks,
   createTask,
   deleteTask,
@@ -332,6 +344,76 @@ export const registry = {
         deleteEngagement(getDatabase(), id)
         return { id }
       })
+  }),
+
+  // ---------------------------------------------------------------------
+  // offerings + categories — T-260901-05's catalogue repository, reached from
+  // the renderer for the first time by T-260901-07.
+  // ---------------------------------------------------------------------
+  //
+  // Every handler passes its already-validated payload straight through, and
+  // every repository entry point re-parses it against the same shared schema
+  // this channel's `request` *is* — the arrangement `links:*` and
+  // `search:query` already follow. Nothing here defaults a name, derives a
+  // version number, appends " (copy)", or decides what "current" means: all
+  // four are the repository's, and a second copy here could disagree with the
+  // stored row.
+  //
+  // Nothing here computes money either. A rate is read back from
+  // `offering_versions` for display, which ADR-003 permits; summing or
+  // projecting one is `revenue_lines`' job and appears in no handler below.
+
+  'offerings:listCategories': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:listCategories'],
+    handler: () => listOfferingCategories(getDatabase())
+  }),
+  'offerings:list': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:list'],
+    handler: (filter) => listOfferings(getDatabase(), filter ?? {})
+  }),
+  'offerings:get': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:get'],
+    handler: ({ id }) => getOffering(getDatabase(), id)
+  }),
+  'offerings:createCategory': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:createCategory'],
+    handler: (input) => runMutation(() => createOfferingCategory(getDatabase(), input))
+  }),
+  'offerings:updateCategory': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:updateCategory'],
+    handler: ({ id, patch }) => runMutation(() => updateOfferingCategory(getDatabase(), id, patch))
+  }),
+  /**
+   * The one refusal in this group a person will actually meet: a category
+   * still holding offerings. `deleteOfferingCategory` throws a `RefusalError`
+   * whose message names the count and an example, and `runMutation` carries
+   * both that sentence and its structured `blocker` back as data — the
+   * category is untouched, because the guard runs inside the same transaction
+   * as the `DELETE`.
+   */
+  'offerings:deleteCategory': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:deleteCategory'],
+    handler: ({ id }) =>
+      runMutation(() => {
+        deleteOfferingCategory(getDatabase(), id)
+        return { id }
+      })
+  }),
+  'offerings:create': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:create'],
+    handler: (input) => runMutation(() => createOffering(getDatabase(), input))
+  }),
+  'offerings:update': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:update'],
+    handler: ({ id, patch }) => runMutation(() => updateOffering(getDatabase(), id, patch))
+  }),
+  'offerings:archive': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:archive'],
+    handler: ({ id }) => runMutation(() => archiveOffering(getDatabase(), id))
+  }),
+  'offerings:duplicate': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:duplicate'],
+    handler: ({ id, overrides }) => runMutation(() => duplicateOffering(getDatabase(), id, overrides ?? {}))
   }),
 
   // ---------------------------------------------------------------------

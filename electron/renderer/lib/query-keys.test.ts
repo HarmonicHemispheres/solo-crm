@@ -35,7 +35,7 @@ describe('queryKeys — T-260828-26 entities', () => {
   })
 
   it('every scoped key starts with its entity’s all() prefix', () => {
-    for (const entity of ['companies', 'people', 'engagements', 'tasks', 'activity', 'settings'] as const) {
+    for (const entity of ['companies', 'people', 'engagements', 'offerings', 'tasks', 'activity', 'settings'] as const) {
       const all = queryKeys[entity].all()
       const detail = queryKeys[entity].detail('x')
       expect(detail.slice(0, all.length)).toEqual(all)
@@ -48,6 +48,29 @@ describe('queryKeys — T-260828-26 entities', () => {
     // delete scope exists to key, which this list still holds — a new entry
     // here has to be justified as a read.
     expect(Object.keys(queryKeys.activity).sort()).toEqual(['all', 'byCompany', 'byEngagement', 'byPerson', 'detail', 'list'])
+  })
+
+  it('T-260901-07: offerings keys follow the shape, and the filtered list is a distinct entry from the unfiltered one', () => {
+    expect(queryKeys.offerings.all()).toEqual(['offerings'])
+    expect(queryKeys.offerings.detail('o1')).toEqual(['offerings', 'detail', 'o1'])
+    expect(queryKeys.offerings.categories()).toEqual(['offerings', 'categories'])
+
+    // `list()` and `list({})` address one entry, the same collapse
+    // `activity.list` performs — otherwise a view that passes an empty filter
+    // object and one that passes nothing would each fetch their own copy.
+    expect(queryKeys.offerings.list()).toEqual(['offerings', 'list'])
+    expect(queryKeys.offerings.list({})).toEqual(['offerings', 'list'])
+    expect(queryKeys.offerings.list({ active: true })).toEqual(['offerings', 'list', { active: true }])
+    expect(queryKeys.offerings.list({ type: 'service' })).not.toEqual(queryKeys.offerings.list({ type: 'product' }))
+
+    for (const key of [
+      queryKeys.offerings.list(),
+      queryKeys.offerings.list({ active: true }),
+      queryKeys.offerings.detail('o1'),
+      queryKeys.offerings.categories()
+    ]) {
+      expect(key.slice(0, queryKeys.offerings.all().length)).toEqual(queryKeys.offerings.all())
+    }
   })
 
   it('T-260828-30: tasks.byCompany and activity.byCompany/byPerson/byEngagement follow [entity, scope, id] and start with all()', () => {
@@ -92,6 +115,20 @@ describe('invalidate', () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ['companies'] })
     expect(spy).toHaveBeenCalledWith({ queryKey: ['tasks'] })
     expect(spy).not.toHaveBeenCalledWith({ queryKey: ['people'] })
+  })
+
+  it('invalidate.offerings covers the categories scope too — one prefix, not two call sites to remember', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
+    queryClient.setQueryData(queryKeys.offerings.categories(), [])
+    queryClient.setQueryData(queryKeys.offerings.list({ active: true }), [])
+    queryClient.setQueryData(queryKeys.companies.list(), [])
+
+    await invalidate.offerings(queryClient)
+
+    expect(queryClient.getQueryState(queryKeys.offerings.categories())?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(queryKeys.offerings.list({ active: true }))?.isInvalidated).toBe(true)
+    // …and stops at its own entity: a category rename does not re-fetch companies.
+    expect(queryClient.getQueryState(queryKeys.companies.list())?.isInvalidated).toBe(false)
   })
 
   it('a prefix invalidation actually marks a longer, real key stale (not just the spy assertion above)', async () => {
