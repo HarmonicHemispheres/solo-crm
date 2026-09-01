@@ -101,7 +101,7 @@ function bridgeToDatabase() {
 
 function renderSheet(onClose = vi.fn()) {
   render(
-    createElement(QueryClientProvider, { client: createQueryClient() }, createElement(EngagementSheet, { onClose }))
+    createElement(QueryClientProvider, { client: createQueryClient() }, createElement(EngagementSheet, { onClose, target: { mode: 'create' } }))
   )
   return { onClose }
 }
