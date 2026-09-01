@@ -14,7 +14,6 @@ the two 📄 docs tasks and the settings ADR are for.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260901-08](T-260901-08-company-images-store.md) | Store a company's logo and banner as bytes, per company | 🗄 data | |
 | ◐ in-progress | [T-260901-09](T-260901-09-settings-rebuild.md) | Rebuild Workspace Settings as a section rail over one vertical page | 🎨 ui | |
 | ○ open | [T-260901-11](T-260901-11-offerings-view.md) | Build the Offerings view | 🎨 ui | P3-07 |
 | ○ open | [T-260901-12](T-260901-12-company-images-ipc.md) | Expose a company's images over IPC, on the picker that never returns a path | 🔌 ipc | |
@@ -35,6 +34,7 @@ the two 📄 docs tasks and the settings ADR are for.
 | ● done | [T-260901-06](T-260901-06-info-popover-primitive.md) | Extract ViewHeader's info popover into a primitive anything can use | 🎨 ui | | R-260901-01 |
 | ● done | [T-260901-10](T-260901-10-sheet-edit-target.md) | Open a sheet on a record that already exists, and give an engagement its edit affordance | 🎨 ui | | R-260901-01 |
 | ● done | [T-260901-07](T-260901-07-offerings-ipc.md) | Expose the offerings repositories over IPC | 🔌 ipc | | R-260901-01 |
+| ● done | [T-260901-08](T-260901-08-company-images-store.md) | Store a company's logo and banner as bytes, per company | 🗄 data | | R-260901-01 |
 
 ## Order
 

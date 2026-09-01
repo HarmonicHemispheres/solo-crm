@@ -1,10 +1,10 @@
 ---
 id: T-260901-08
 title: Store a company's logo and banner as bytes, per company
-status: in-progress
+status: done
 category: data
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -108,3 +108,76 @@ columns, not just its access pattern.
   (as `BRANDING_CONTENT_TYPES` does) keeps the three stores from drifting
   into disagreeing about what the sniffer can return; re-listing the literals
   is the mistake that compiles.
+
+## Outcome
+
+Merged into `main` from branch `T-260901-08` (builder `4d0a73f`, two tests
+added at merge in `9326fe7`). Thirteen files:
+
+- `electron/shared/company-images.ts` — the two slots, the accepted content
+  types (PNG and JPEG — `sniffImageContentType`'s set, aliased not re-listed),
+  the per-slot byte caps, the pixel ceiling, the derivative sizes and
+  `companyImageSlotSchema`. **No per-slot state, request or response schemas
+  yet** — T-260901-12 adds those alongside the channels that need them.
+- `electron/main/images/dimensions.ts` (+ test) — a pure PNG/JPEG header
+  reader, so the pixel ceiling is enforced before any decode.
+- `electron/main/images/derive.ts` — `ImageDeriver = (bytes, slot) =>
+  DerivedImage | null`, `nativeImageDeriver` on Electron's `nativeImage`,
+  `fitWithin`. Its test is Electron-bound and registered in
+  `RUNTIME_BOOT_NODE_FILES` in `vitest.config.ts`; the repository tests inject
+  a fake deriver.
+- `migrations/0007_company_images.sql`, `migrations/index.ts` (version 7),
+  `schema.ts`, `schema.test.ts` — table `company_images`: UUID `id`,
+  `company_id` FK `ON DELETE cascade`, `slot`, original content type, byte
+  length, width, height, `created_at` / `updated_at`, thumbnail content type,
+  byte length and bytes, and `bytes` declared last; unique index on
+  `(company_id, slot)`. The natural pair is a unique index, not the key —
+  the migration header reasons this against ADR-002's exemption.
+- `repositories/company-images.ts` (+ 34 tests) — `readCompanyImage`,
+  `readCompanyImages` (a `Record<slot, StoredCompanyImage | null>`),
+  `listCompanyImageThumbnails` (one query, derivatives only, ordered by
+  `company_id, slot`; `bytes` is never selected), `writeCompanyImage` (company
+  exists → non-empty → byte cap → sniff against the accepted set → header
+  pixel ceiling → derive → upsert `ON CONFLICT (company_id, slot)`) and
+  `clearCompanyImage` (boolean delete).
+- `migrations/0007_company_images.test.ts` — seeded row counts unchanged,
+  second run a no-op.
+
+Every acceptance box is ticked except `npm run verify`, which ran as the
+underlying tools on the scratchpad Node 22.22.0 (see the run summary):
+covering tests, `tsc` for the node, web and integration projects, and eslint
+on the changed paths.
+
+**Review.** Seven mutants against `company-images.test.ts`. Five died as
+written. Two survived — the byte-cap comparison (`>` → `>=`) and the
+replacement's `updated_at` — and were strengthened at merge in `9326fe7`: the
+GIF refusal now asserts the message and that the deriver was never called, and
+a fake-timer test asserts `updated_at` moves on a replacement while
+`created_at` stays. A seventh "survivor" (removing the cascade) was a harness
+artefact — the replace hit the SQL comment's `ON DELETE cascade` before the
+constraint's; applied to the constraint, the count-by-cascade test fails
+`FOREIGN KEY constraint failed`. Dead.
+
+**architecture-review** (the 🗄 data gate): structurally fine.
+
+- Sync-ready schema: kept. UUID key, both timestamps, the natural
+  `(company_id, slot)` pair as a unique index rather than a composite key,
+  reasoned in the migration header against ADR-002. Not an exemption.
+- IPC boundary: untouched — main-only code; no channel yet.
+- Performance: the grid read is one query returning derivatives only, with
+  `bytes` last in the row so a `SELECT *` by mistake pays for it visibly
+  rather than silently. ADR-015's ~84 MB failure mode cannot be reached from
+  this repository.
+- The schema's first `ON DELETE cascade` is **a deliberate tradeoff already
+  decided** by ADR-015 §6 and recorded again in the migration: an image is
+  a property of the company, not a record a refusal should protect, and
+  `deleteCompany`'s `refuseIfReferenced` header scopes its claim to migration
+  0001's foreign keys, so it stays true. No new ADR.
+- Risk check: ADR-015 does address sixty companies' worth of images and the
+  export (its §7); the ADR-012 acceptance was for the two branding images
+  and this task did not have to reopen it.
+
+**Not eyeballed:** `nativeImageDeriver` output was asserted by dimensions and
+content type in `derive.electron.test.ts`, not by looking at a resized image.
+The first view to paint one (T-260901-14) is where a garbage derivative would
+show.
