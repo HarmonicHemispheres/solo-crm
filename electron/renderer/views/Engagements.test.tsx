@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { Engagements } from './Engagements'
 import { LayerManager } from '../components/shell/LayerManager'
 import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
+import { engagementAnchorId } from '../nav'
 import type { Company } from '../../shared/companies'
 import type { Engagement, Milestone } from '../../shared/engagements'
 
@@ -375,5 +376,122 @@ describe('Engagements', () => {
     expect(cardFor('Fixed-scope build').textContent).not.toMatch(/\$/)
     // The one deliberate exception (this task's Scope).
     expect(within(cardFor('Platform advisory')).getByText(/not to exceed \$5000\.00/)).toBeTruthy()
+  })
+
+  // T-260901-10: ADR-005 leaves an engagement with no detail route, so the
+  // list is the only place it can be edited from — and until this task there
+  // was nothing on a card to edit it with.
+  describe('the per-card edit affordance', () => {
+    /** The whole fixture, answered by `engagements:get` as well as `engagements:list`. */
+    function renderWithGet() {
+      renderEngagements()
+      const byId = new Map(ALL_ENGAGEMENTS.map((engagement) => [engagement.id, engagement] as const))
+      const existing = window.crm
+      window.crm = {
+        ...existing,
+        'engagements:get': vi.fn(async (payload: { id: string }) => ({ ok: true as const, data: byId.get(payload.id) ?? null }))
+      }
+    }
+
+    it('gives every card a keyboard-reachable control named after its own engagement', async () => {
+      renderEngagements()
+      await screen.findByText('Advisory retainer')
+
+      for (const engagement of ALL_ENGAGEMENTS) {
+        const button = within(cardFor(engagement.name)).getByRole('button', { name: `Edit "${engagement.name}"` })
+        button.focus()
+        expect(document.activeElement).toBe(button)
+      }
+    })
+
+    it('reveals the control with opacity, not display — so focus can reach it before any hover happens', async () => {
+      renderEngagements()
+      await screen.findByText('Advisory retainer')
+
+      // `display: none` would take it out of the tab order entirely, which
+      // is the difference between "hover-revealed" and "unreachable". The
+      // 700px rule in Engagements.css is the other half of the same point.
+      const actions = cardFor('Advisory retainer').querySelector('.eng-actions')
+      expect(actions).not.toBeNull()
+      expect(actions?.className).toBe('eng-actions')
+    })
+
+    it('opens the engagement sheet in edit mode on that card\'s record, populated', async () => {
+      renderWithGet()
+      await screen.findByText('Advisory retainer')
+
+      fireEvent.click(within(cardFor('Advisory retainer')).getByRole('button', { name: 'Edit "Advisory retainer"' }))
+
+      // The form replaces the loading placeholder once `engagements:get`
+      // answers, so the dialog is re-queried rather than held across it.
+      const name = await screen.findByLabelText('Name')
+      expect((name as HTMLInputElement).value).toBe('Advisory retainer')
+      expect((screen.getByLabelText('Hours included') as HTMLInputElement).value).toBe('20')
+      expect(screen.getByRole('dialog', { name: 'Edit engagement' })).toBeTruthy()
+    })
+
+    it('leaves nothing of one engagement behind when the next one is opened', async () => {
+      renderWithGet()
+      await screen.findByText('Advisory retainer')
+
+      fireEvent.click(within(cardFor('Advisory retainer')).getByRole('button', { name: 'Edit "Advisory retainer"' }))
+      await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Advisory retainer'))
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'half-typed edit' } })
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      fireEvent.click(within(cardFor('Platform advisory')).getByRole('button', { name: 'Edit "Platform advisory"' }))
+      await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Platform advisory'))
+      // T&M's own columns, not the retainer's, and no trace of the edit
+      // typed into the previous one.
+      expect((screen.getByLabelText('Estimated hours') as HTMLInputElement).value).toBe('30')
+      expect(screen.queryByLabelText('Hours included')).toBeNull()
+    })
+
+    it('returns focus to the card control the sheet was opened from', async () => {
+      renderWithGet()
+      await screen.findByText('Advisory retainer')
+
+      const trigger = within(cardFor('Advisory retainer')).getByRole('button', { name: 'Edit "Advisory retainer"' })
+      fireEvent.click(trigger)
+      await screen.findByRole('dialog', { name: 'Edit engagement' })
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(document.activeElement).toBe(trigger)
+    })
+
+    it('leaves the anchor the command palette scrolls to on the card, one per engagement', async () => {
+      renderEngagements()
+      await screen.findByText('Advisory retainer')
+
+      // The restructured card must not move or duplicate this (this task's
+      // Risks) — ⌘K lands on this view and scrolls to the row by id.
+      for (const engagement of ALL_ENGAGEMENTS) {
+        expect(document.querySelectorAll(`#${CSS.escape(engagementAnchorId(engagement.id))}`)).toHaveLength(1)
+      }
+    })
+
+    it('saves the edit through engagements:update and the card shows the new name without a reload', async () => {
+      renderWithGet()
+      await screen.findByText('Advisory retainer')
+
+      const renamed = { ...retainerEngagement, name: 'Advisory retainer (renewed)' }
+      const update = vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: renamed } }))
+      const list = vi.fn(async () => ({
+        ok: true as const,
+        data: ALL_ENGAGEMENTS.map((engagement) => (engagement.id === renamed.id ? renamed : engagement))
+      }))
+      window.crm = { ...window.crm, 'engagements:update': update, 'engagements:list': list }
+
+      fireEvent.click(within(cardFor('Advisory retainer')).getByRole('button', { name: 'Edit "Advisory retainer"' }))
+      await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Advisory retainer'))
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Advisory retainer (renewed)' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+      await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+      // The list is invalidated on success (useSheetMutation), so the card
+      // re-renders from the refetch rather than from a page reload.
+      expect(await screen.findByText('Advisory retainer (renewed)')).toBeTruthy()
+    })
   })
 })

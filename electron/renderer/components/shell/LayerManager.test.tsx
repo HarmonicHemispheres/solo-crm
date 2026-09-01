@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createQueryClient } from '../../lib/query-client'
 import { stubCrm } from '../../lib/test-support/stub-crm'
 import { LayerManager } from './LayerManager'
 import { useLayerManager } from './layer-manager-context'
+import type { Engagement } from '../../../shared/engagements'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -26,7 +27,7 @@ afterEach(() => {
  * or `popover` has to stop that propagation itself; this harness mirrors
  * that contract instead of masking it. */
 function Harness() {
-  const { openLayer, openSheet, closeLayer, isOpen, isTopmost } = useLayerManager()
+  const { openLayer, openSheet, editSheet, closeLayer, isOpen, isTopmost } = useLayerManager()
   return (
     <div>
       <button onClick={(e) => openLayer('palette', e.currentTarget)}>open-palette</button>
@@ -43,6 +44,11 @@ function Harness() {
       <button onClick={(e) => openSheet('person', e.currentTarget)}>open-sheet-person</button>
       <button onClick={(e) => openSheet('engagement', e.currentTarget)}>open-sheet-engagement</button>
       <button onClick={(e) => openSheet('todo', e.currentTarget)}>open-sheet-todo</button>
+      {/* T-260901-10's second call shape: a sheet opened on a record that
+          already exists. Two triggers, two ids, so the tests below can prove
+          the second open shows the second record and none of the first. */}
+      <button onClick={(e) => editSheet('engagement', 'eng-a', e.currentTarget)}>edit-sheet-engagement-a</button>
+      <button onClick={(e) => editSheet('engagement', 'eng-b', e.currentTarget)}>edit-sheet-engagement-b</button>
       <button onClick={(e) => openLayer('log', e.currentTarget)}>open-log</button>
       <button
         onClick={(e) => {
@@ -96,8 +102,8 @@ function Harness() {
  * above it exactly as the query hooks need a client. Nothing below asserts on
  * routing.
  */
-function renderHarness() {
-  window.crm = stubCrm()
+function renderHarness(overrides: Parameters<typeof stubCrm>[0] = {}) {
+  window.crm = stubCrm(overrides)
   return render(
     <MemoryRouter>
       <QueryClientProvider client={createQueryClient()}>
@@ -291,5 +297,80 @@ describe('LayerManager', () => {
     renderHarness()
     fireEvent.click(screen.getByText('open-palette'))
     expect(document.activeElement).toBe(screen.getByPlaceholderText('Search or create…'))
+  })
+
+  // T-260901-10: `openSheet` and `editSheet` are two call shapes, not one
+  // with an optional tail, and the layer manager is what keeps them apart.
+  describe('editSheet — a sheet opened on a record that already exists', () => {
+    const TS = '2026-08-28T00:00:00.000Z'
+    const BLANK: Engagement = {
+      id: 'eng-a',
+      name: 'Engagement A',
+      billingCompanyId: null,
+      clientCompanyId: null,
+      offeringVersionId: null,
+      agreedRateCents: null,
+      billingModel: null,
+      status: null,
+      startedOn: '2026-01-01',
+      endsOn: null,
+      renewsOn: null,
+      hoursIncluded: null,
+      contractValueCents: null,
+      hourlyRateCents: null,
+      estimatedHours: null,
+      notToExceedCents: null,
+      notes: null,
+      createdAt: TS,
+      updatedAt: TS
+    }
+    const ROWS: Record<string, Engagement> = {
+      'eng-a': BLANK,
+      'eng-b': { ...BLANK, id: 'eng-b', name: 'Engagement B' }
+    }
+
+    function renderWithEngagements() {
+      return renderHarness({
+        'engagements:get': vi.fn(async (payload: { id: string }) => ({ ok: true as const, data: ROWS[payload.id] ?? null }))
+      })
+    }
+
+    it('opens the same sheet in edit mode, headed "Edit", with the record already in the fields', async () => {
+      renderWithEngagements()
+      fireEvent.click(screen.getByText('edit-sheet-engagement-a'))
+
+      // The sheet shows its own chrome while `engagements:get` is in flight
+      // and swaps the placeholder for the real form once the record lands —
+      // so the dialog is re-queried rather than held from the first render.
+      const name = await screen.findByLabelText('Name')
+      expect((name as HTMLInputElement).value).toBe('Engagement A')
+      expect(screen.getByRole('dialog', { name: 'Edit engagement' })).toBeTruthy()
+    })
+
+    it('opening on a second record leaves nothing of the first behind', async () => {
+      renderWithEngagements()
+
+      fireEvent.click(screen.getByText('edit-sheet-engagement-a'))
+      const first = await screen.findByLabelText('Name')
+      await waitFor(() => expect((first as HTMLInputElement).value).toBe('Engagement A'))
+      // Type into it, so a form that survived would be visibly stale rather
+      // than merely re-rendered with the same value.
+      fireEvent.change(first, { target: { value: 'half-typed edit' } })
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      fireEvent.click(screen.getByText('edit-sheet-engagement-b'))
+      const second = await screen.findByLabelText('Name')
+      await waitFor(() => expect((second as HTMLInputElement).value).toBe('Engagement B'))
+    })
+
+    it("openSheet with no record still means 'new' — the create form, blank", async () => {
+      renderWithEngagements()
+      fireEvent.click(screen.getByText('open-sheet-engagement'))
+
+      const dialog = screen.getByRole('dialog', { name: 'New engagement' })
+      expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('')
+    })
   })
 })

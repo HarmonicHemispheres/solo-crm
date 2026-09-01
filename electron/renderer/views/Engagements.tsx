@@ -6,6 +6,7 @@ import { Card } from '../components/primitives/Card'
 import { ModelTag, type BillingModel as ModelTagBillingModel } from '../components/primitives/ModelTag'
 import { Tag } from '../components/primitives/Tag'
 import { Button } from '../components/primitives/Button'
+import { IconButton } from '../components/primitives/IconButton'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
 import { useLayerManager } from '../components/shell/layer-manager-context'
@@ -95,6 +96,19 @@ function ViaIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="var(--lapis)" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true" width={11} height={11}>
       <path d="M7 7h6a4 4 0 014 4v6M17 17l-3-3M17 17l3-3" />
+    </svg>
+  )
+}
+
+/** The edit affordance's glyph — a local copy for the same reason `ViaIcon`
+ * above is one: a view's own icons stay with the view (components/icons.tsx's
+ * header: only glyphs a *primitive* renders itself live there), and
+ * LinksCard.tsx already keeps its own identical copy under that rule. */
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+      <path d="M14.5 6.5 17.5 9.5" />
     </svg>
   )
 }
@@ -213,14 +227,19 @@ function EngagementProgress({ engagement, milestones }: { engagement: Engagement
 
 const EMPTY_MILESTONES: readonly Milestone[] = []
 
+/** Opens the engagement sheet on an existing record. `trigger` is where focus returns when the sheet closes — the button that was clicked. */
+type EditEngagement = (id: string, trigger: HTMLElement | null) => void
+
 function EngagementCardRow({
   engagement,
   companiesById,
-  milestones
+  milestones,
+  onEdit
 }: {
   engagement: Engagement
   companiesById: Map<string, Company>
   milestones: readonly Milestone[]
+  onEdit: EditEngagement
 }) {
   const showClient = engagement.clientCompanyId != null && engagement.clientCompanyId !== engagement.billingCompanyId
   return (
@@ -233,6 +252,16 @@ function EngagementCardRow({
       <div className="eng-t">
         <span className="nm trunc">{engagement.name}</span>
         {isTaggableModel(engagement.billingModel) && <ModelTag model={engagement.billingModel}>{MODEL_LABEL[engagement.billingModel]}</ModelTag>}
+        {/* ADR-005 leaves an engagement with no detail route, so the list is
+            where editing has to happen. Icon-only with a label naming the
+            engagement (ui-design.md), revealed on hover or focus and left
+            visible below 700px where there is no hover — the same rule
+            Row.css states for every other row action. */}
+        <div className="eng-actions">
+          <IconButton aria-label={`Edit "${engagement.name}"`} onClick={(event) => onEdit(engagement.id, event.currentTarget)}>
+            <PencilIcon />
+          </IconButton>
+        </div>
       </div>
       <div className="meta" style={{ marginTop: 6 }}>
         <CompanyNameLink id={engagement.billingCompanyId} companiesById={companiesById} />
@@ -259,11 +288,13 @@ interface StatusGroup {
 function StatusCard({
   group,
   companiesById,
-  milestonesByEngagementId
+  milestonesByEngagementId,
+  onEdit
 }: {
   group: StatusGroup
   companiesById: Map<string, Company>
   milestonesByEngagementId: Map<string, readonly Milestone[]>
+  onEdit: EditEngagement
 }) {
   return (
     <Card>
@@ -274,6 +305,7 @@ function StatusCard({
           engagement={engagement}
           companiesById={companiesById}
           milestones={engagement.billingModel === 'fixed' ? (milestonesByEngagementId.get(engagement.id) ?? EMPTY_MILESTONES) : EMPTY_MILESTONES}
+          onEdit={onEdit}
         />
       ))}
     </Card>
@@ -283,7 +315,8 @@ function StatusCard({
 // ---------------------------------------------------------------------------
 
 export function Engagements() {
-  const { openSheet } = useLayerManager()
+  const { openSheet, editSheet } = useLayerManager()
+  const handleEdit: EditEngagement = (id, trigger) => editSheet('engagement', id, trigger)
 
   const engagementsQuery = useQuery({ queryKey: queryKeys.engagements.list(), queryFn: ipcQueryFn('engagements:list') })
   const companiesQuery = useQuery({ queryKey: queryKeys.companies.list(), queryFn: ipcQueryFn('companies:list') })
@@ -378,7 +411,13 @@ export function Engagements() {
       {header}
       <div className="status-grid">
         {groups.map((group) => (
-          <StatusCard key={group.status} group={group} companiesById={companiesById} milestonesByEngagementId={milestonesByEngagementId} />
+          <StatusCard
+            key={group.status}
+            group={group}
+            companiesById={companiesById}
+            milestonesByEngagementId={milestonesByEngagementId}
+            onEdit={handleEdit}
+          />
         ))}
       </div>
     </div>

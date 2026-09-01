@@ -4,6 +4,8 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { createQueryClient } from '../../lib/query-client'
 import { stubCrm } from '../../lib/test-support/stub-crm'
 import { EngagementSheet } from './EngagementSheet'
+import type { SheetFormTarget } from '../shell/layer-manager-context'
+import type { Engagement } from '../../../shared/engagements'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -11,7 +13,7 @@ afterEach(() => {
 })
 
 /** A full `engagementSchema`-shaped row — `window.crm` is typed, so a mocked `engagements:create` response has to satisfy it even though these tests only assert on what was *sent*. */
-const STUB_ENGAGEMENT_ROW = {
+const STUB_ENGAGEMENT_ROW: Engagement = {
   id: 'new-eng',
   name: 'stub',
   billingCompanyId: null,
@@ -68,14 +70,79 @@ const STUB_COMPANIES = [
   }
 ]
 
-function renderSheet(onClose = vi.fn(), overrides: Parameters<typeof stubCrm>[0] = {}) {
+const CREATE: SheetFormTarget = { mode: 'create' }
+
+function renderSheet(onClose = vi.fn(), overrides: Parameters<typeof stubCrm>[0] = {}, target: SheetFormTarget = CREATE) {
   window.crm = stubCrm({ 'companies:list': vi.fn(async () => ({ ok: true as const, data: STUB_COMPANIES })), ...overrides })
   render(
     <QueryClientProvider client={createQueryClient()}>
-      <EngagementSheet onClose={onClose} />
+      <EngagementSheet onClose={onClose} target={target} />
     </QueryClientProvider>
   )
   return { onClose }
+}
+
+/**
+ * An edit sheet opened on `engagement`, with `engagements:get` answering
+ * with it. Waits for the form itself, not the placeholder — every edit test
+ * below is about what the loaded record put in the fields.
+ */
+async function renderEditSheet(engagement: Engagement, overrides: Parameters<typeof stubCrm>[0] = {}, onClose = vi.fn()) {
+  renderSheet(
+    onClose,
+    { 'engagements:get': vi.fn(async () => ({ ok: true as const, data: engagement })), ...overrides },
+    { mode: 'edit', id: engagement.id }
+  )
+  await screen.findByLabelText('Name')
+  return { onClose }
+}
+
+function makeEngagement(overrides: Partial<Engagement> & { id: string; name: string }): Engagement {
+  return { ...STUB_ENGAGEMENT_ROW, ...overrides }
+}
+
+/** A retainer with a value in every shared column, plus an `agreedRateCents` the form must never send back. */
+const RETAINER = makeEngagement({
+  id: 'eng-retainer',
+  name: 'Advisory retainer',
+  billingCompanyId: 'billing-co',
+  clientCompanyId: 'client-co',
+  billingModel: 'retainer',
+  status: 'pending',
+  startedOn: '2026-02-01',
+  endsOn: '2026-12-31',
+  hoursIncluded: 12,
+  agreedRateCents: 15_000
+})
+
+/** The second billing model the acceptance list asks for, with all three of T&M's own columns populated. */
+const TM = makeEngagement({
+  id: 'eng-tm',
+  name: 'Platform advisory',
+  billingCompanyId: 'billing-co',
+  clientCompanyId: 'billing-co',
+  billingModel: 'tm',
+  status: 'active',
+  startedOn: '2026-03-15',
+  endsOn: null,
+  hourlyRateCents: 16_500,
+  estimatedHours: 30,
+  notToExceedCents: 600_000,
+  agreedRateCents: 20_000
+})
+
+/** The `patch` half of the one `engagements:update` call a test made. */
+function patchFrom(update: { mock: { calls: unknown[][] } }): Record<string, unknown> {
+  expect(update).toHaveBeenCalledTimes(1)
+  const payload = update.mock.calls[0][0] as { id: string; patch: Record<string, unknown> }
+  return payload.patch
+}
+
+function stubUpdate() {
+  return vi.fn(async (payload: unknown) => {
+    void payload
+    return { ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT_ROW } }
+  })
 }
 
 async function companySelects() {
@@ -284,5 +351,168 @@ describe('EngagementSheet', () => {
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toBe('the database is read-only right now')
     expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBeNull()
+  })
+
+  it('a create target still opens a blank form headed "New engagement"', async () => {
+    renderSheet()
+    expect(screen.getByRole('dialog', { name: 'New engagement' })).toBeTruthy()
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('')
+    expect(screen.getByRole('button', { name: 'Create' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
+  })
+})
+
+describe('EngagementSheet — edit mode (T-260901-10)', () => {
+  it('heads itself "Edit", not "New", in its title, accessible name and submit label', async () => {
+    await renderEditSheet(RETAINER)
+    const dialog = screen.getByRole('dialog', { name: 'Edit engagement' })
+    expect(within(dialog).getByRole('heading', { name: 'Edit engagement' })).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: 'Save changes' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Create' })).toBeNull()
+  })
+
+  it('populates every field from a retainer record, including its model-specific column', async () => {
+    await renderEditSheet(RETAINER)
+
+    // The company selects need their options before a value can stick —
+    // `companySelects` waits for `companies:list`, same as the create tests.
+    const { billedTo, workIsFor } = await companySelects()
+
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Advisory retainer')
+    expect(billedTo.value).toBe('billing-co')
+    expect(workIsFor.value).toBe('client-co')
+    expect((screen.getByLabelText('Starts') as HTMLInputElement).value).toBe('2026-02-01')
+    expect((screen.getByLabelText('Ends') as HTMLInputElement).value).toBe('2026-12-31')
+    expect((screen.getByLabelText('Hours included') as HTMLInputElement).value).toBe('12')
+    // The two chip groups carry their selection through aria-pressed.
+    expect(screen.getByRole('button', { name: 'Retainer', pressed: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Pending', pressed: true })).toBeTruthy()
+    // The other models' columns are not rendered at all for this model.
+    expect(screen.queryByLabelText('Contract value')).toBeNull()
+    expect(screen.queryByLabelText('Hourly rate')).toBeNull()
+  })
+
+  it("populates a T&M record's three model-specific columns, amounts back in the form they were typed in", async () => {
+    await renderEditSheet(TM)
+
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Platform advisory')
+    expect((screen.getByLabelText('Starts') as HTMLInputElement).value).toBe('2026-03-15')
+    // `endsOn: null` means rolling — an empty date input, never a sentinel.
+    expect((screen.getByLabelText('Ends') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Hourly rate') as HTMLInputElement).value).toBe('165.00')
+    expect((screen.getByLabelText('Estimated hours') as HTMLInputElement).value).toBe('30')
+    expect((screen.getByLabelText('Not to exceed') as HTMLInputElement).value).toBe('6000.00')
+    expect(screen.getByRole('button', { name: 'T&M', pressed: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Active', pressed: true })).toBeTruthy()
+  })
+
+  it('saves through engagements:update carrying only the fields that changed', async () => {
+    const update = stubUpdate()
+    await renderEditSheet(RETAINER, { 'engagements:update': update })
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Advisory retainer (renewed)' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    const payload = update.mock.calls[0][0] as { id: string; patch: Record<string, unknown> }
+    expect(payload.id).toBe('eng-retainer')
+    // Nothing else was touched, so nothing else travels — not the untouched
+    // shared columns, and not the model the untouched hours belong to.
+    expect(payload.patch).toEqual({ name: 'Advisory retainer (renewed)' })
+  })
+
+  it('never sends agreedRateCents — not on an ordinary edit, and not when the billing model changes', async () => {
+    const update = stubUpdate()
+    await renderEditSheet(RETAINER, { 'engagements:update': update })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fixed scope' }))
+    fireEvent.change(screen.getByLabelText('Contract value'), { target: { value: '28500' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    // The record carries agreedRateCents: 15000 and the update schema would
+    // accept the key — `updateEngagement` drops it silently, which is why
+    // "it looked like it worked" is the failure mode this pins. The form
+    // never builds a payload that could contain it.
+    expect(patchFrom(update)).not.toHaveProperty('agreedRateCents')
+  })
+
+  it("switching the billing model sends the new model's columns and none of the old model's", async () => {
+    const update = stubUpdate()
+    await renderEditSheet(RETAINER, { 'engagements:update': update })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fixed scope' }))
+    fireEvent.change(screen.getByLabelText('Contract value'), { target: { value: '28500' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    // Exactly the shape `updateEngagement`'s own "switches billingModel from
+    // retainer to fixed writes the new field and clears the old one" test
+    // (repositories/engagements.test.ts) proves resets the outgoing model's
+    // columns: the discriminant is present and changed, the new model's
+    // column is present, the old model's is absent rather than carried over
+    // stale.
+    expect(patchFrom(update)).toEqual({ billingModel: 'fixed', contractValueCents: 2_850_000 })
+  })
+
+  it("a model-specific edit within the same model still carries the discriminant, which is what the update schema's union needs", async () => {
+    const update = stubUpdate()
+    await renderEditSheet(RETAINER, { 'engagements:update': update })
+
+    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    // Without `billingModel`, `{ hoursIncluded: 20 }` matches no branch of
+    // `updateEngagementInputSchema` — the common-patch branch is .strict()
+    // and holds no model-specific key.
+    expect(patchFrom(update)).toEqual({ billingModel: 'retainer', hoursIncluded: 20 })
+  })
+
+  it('clears a date to NULL rather than an empty string when the user empties it', async () => {
+    const update = stubUpdate()
+    await renderEditSheet(RETAINER, { 'engagements:update': update })
+
+    fireEvent.change(screen.getByLabelText('Ends'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(patchFrom(update)).toEqual({ endsOn: null })
+  })
+
+  it('leaves "Work is for" alone when "Billed to" changes — the create form\'s mirror must not overwrite a stored client company', async () => {
+    const update = stubUpdate()
+    await renderEditSheet(RETAINER, { 'engagements:update': update })
+
+    const { billedTo, workIsFor } = await companySelects()
+    fireEvent.change(billedTo, { target: { value: '' } })
+
+    expect(workIsFor.value).toBe('client-co')
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(patchFrom(update)).toEqual({ billingCompanyId: null })
+  })
+
+  it("shows a stored 'none'-equivalent model as none, and saving an untouched one writes nothing", async () => {
+    const update = stubUpdate()
+    // billingModel NULL — a row from an import, not the create form, which
+    // always sends one. NULL and 'none' say the same thing, so a save that
+    // did not touch the model must not write a value nobody chose.
+    await renderEditSheet(makeEngagement({ id: 'eng-null-model', name: 'Imported', status: 'active' }), {
+      'engagements:update': update
+    })
+
+    expect(screen.getByRole('button', { name: 'None', pressed: true })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(patchFrom(update)).toEqual({})
+  })
+
+  it('says so when the record is gone rather than opening an empty form over it', async () => {
+    renderSheet(vi.fn(), { 'engagements:get': vi.fn(async () => ({ ok: true as const, data: null })) }, { mode: 'edit', id: 'deleted' })
+
+    expect(await screen.findByText('This engagement no longer exists.')).toBeTruthy()
+    expect(screen.queryByLabelText('Name')).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Edit engagement' })).toBeTruthy()
   })
 })

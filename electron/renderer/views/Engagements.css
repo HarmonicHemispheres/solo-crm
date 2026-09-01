@@ -42,6 +42,35 @@
   min-width: 120px;
 }
 
+/* The per-row edit affordance (T-260901-10). Revealed on hover or on focus
+   within the row, so it stays keyboard-reachable — `opacity` rather than
+   `display: none`, which would take it out of the tab order entirely and
+   make "keyboard-reachable" false. Same shape as Row.css's `.row-actions`,
+   including the 700px rule below; the two have no shared home yet for the
+   same reason `.eng`/`.eng-t`/`.via` don't (this file's header). */
+.eng-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 0;
+  transition: opacity var(--motion-fade);
+}
+
+.eng:hover .eng-actions,
+.eng:focus-within .eng-actions {
+  opacity: 1;
+}
+
+/* No hover on touch: below the mockup's 700px breakpoint (--bp-mobile in
+   tokens.css — a media query can't read a custom property in its condition,
+   so this literal is kept in sync by hand, exactly as Row.css notes) the
+   action stays revealed rather than requiring a hover that cannot happen. */
+@media (max-width: 700px) {
+  .eng-actions {
+    opacity: 1;
+  }
+}
+
 .via {
   display: flex;
   align-items: center;

@@ -40,6 +40,22 @@ export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover' | 'tour
  */
 export type SheetKind = 'company' | 'person' | 'engagement' | 'todo'
 
+/**
+ * What a sheet is open *on* — the half of a `SheetTarget` a form actually
+ * needs once `LayerManager`'s switch has dispatched on `kind` (T-260901-10).
+ *
+ * A discriminated union rather than an optional `id?: string`, deliberately.
+ * T-260829-08's lesson was that an optional argument which changes what the
+ * sheet *is* gets left off and fails silently; the same applies one level
+ * down. With this shape a form cannot read `target.id` without having first
+ * proved it is in edit mode, and "create" is a value that had to be written
+ * rather than the absence of one.
+ */
+export type SheetFormTarget = { readonly mode: 'create' } | { readonly mode: 'edit'; readonly id: string }
+
+/** A `SheetFormTarget` plus the kind that decides which form `LayerManager` mounts. */
+export type SheetTarget = SheetFormTarget & { readonly kind: SheetKind }
+
 export interface LayerManagerContextValue {
   /** Is `kind` open at all, regardless of what else is stacked above it? */
   isOpen: (kind: LayerKind) => boolean
@@ -69,8 +85,27 @@ export interface LayerManagerContextValue {
    * shell's `<Sheet title>`/`aria-label`, and T-260829-08 deleted the shell;
    * each of the four real forms hardcodes its own title and `aria-label`, so
    * nothing read the argument any more. A required argument that feeds
-   * nothing asks every new create button for a string that goes nowhere. */
+   * nothing asks every new create button for a string that goes nowhere.
+   *
+   * This still means "new", and only "new" — opening a sheet on a record
+   * that already exists is `editSheet` below, not an optional tail on this
+   * one (T-260901-10). */
   openSheet: (kind: SheetKind, trigger?: HTMLElement | null) => void
+  /**
+   * Opens the generic 'sheet' layer holding `kind`'s form, bound to an
+   * existing record (T-260901-10). A second method rather than an optional
+   * `id` on `openSheet`, for the reason that task's Risks section names: an
+   * optional argument that changes what the sheet *is* re-opens exactly the
+   * hole T-260829-08 closed. `id` is required and sits before `trigger`, so
+   * "edit" cannot be written without saying what is being edited, and a
+   * create call cannot drift into an edit one by a typo.
+   *
+   * The form for `kind` has to support edit mode for this to do anything
+   * useful; `engagement` does (T-260901-10), `company` follows in
+   * T-260901-14. Same idempotency contract as `openSheet`: calling either
+   * while 'sheet' is already open does not swap what is mounted.
+   */
+  editSheet: (kind: SheetKind, id: string, trigger?: HTMLElement | null) => void
 }
 
 export const LayerManagerContext = createContext<LayerManagerContextValue | null>(null)

@@ -100,7 +100,8 @@ describe('useGlobalShortcuts', () => {
       isTopmost: () => true,
       openLayer,
       closeLayer: vi.fn(),
-      openSheet: vi.fn()
+      openSheet: vi.fn(),
+      editSheet: vi.fn()
     }
     render(
       <LayerManagerContext.Provider value={value}>
