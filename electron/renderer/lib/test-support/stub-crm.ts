@@ -250,7 +250,10 @@ const STUB_ENGAGEMENT = {
 const STUB_OFFERING_CATEGORY = {
   id: 'stub-offering-category-id',
   name: 'Stub Category',
-  color: '#C9A84C',
+  // Stored operator data, but a hex literal in a renderer file is exactly
+  // what `local/no-literal-colour` exists to catch, and the schema makes the
+  // column nullable — a test that needs a coloured chip overrides this.
+  color: null,
   sort: 1,
   createdAt: STUB_TIMESTAMP,
   updatedAt: STUB_TIMESTAMP
