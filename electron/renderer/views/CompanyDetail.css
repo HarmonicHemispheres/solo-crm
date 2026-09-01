@@ -223,7 +223,11 @@ textarea.field-input {
   min-width: 120px;
 }
 
-.via {
+/* `.sold-as` shares `.via`'s treatment for the reason Engagements.css states
+   at its own copy of this rule: both are a glyph plus a few mono uppercase
+   words qualifying the row above. Separate names, one shape. */
+.via,
+.sold-as {
   display: flex;
   align-items: center;
   gap: 7px;

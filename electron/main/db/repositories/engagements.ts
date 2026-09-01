@@ -10,6 +10,7 @@ import {
   ENGAGEMENT_STATUSES,
   type Engagement,
   type EngagementStatus,
+  type EngagementWithOffering,
   type ListEngagementsFilter,
   listEngagementsFilterSchema,
   type Milestone,
@@ -40,7 +41,16 @@ import { refuseIfReferenced } from './referential-guard'
  * task's Risks section names as the highest-risk carry-over in the project.
  */
 export { BILLING_MODELS, createEngagementInputSchema, ENGAGEMENT_STATUSES, listEngagementsFilterSchema, updateEngagementInputSchema }
-export type { BillingModel, CreateEngagementInput, Engagement, EngagementStatus, ListEngagementsFilter, Milestone, UpdateEngagementInput }
+export type {
+  BillingModel,
+  CreateEngagementInput,
+  Engagement,
+  EngagementStatus,
+  EngagementWithOffering,
+  ListEngagementsFilter,
+  Milestone,
+  UpdateEngagementInput
+}
 
 // ---------------------------------------------------------------------------
 // Input parsing
@@ -261,6 +271,41 @@ function getEngagementRow(db: Database.Database, id: string): EngagementRow | un
   return db.prepare('SELECT * FROM engagements WHERE id = ?').get(id) as EngagementRow | undefined
 }
 
+/**
+ * The two joined columns the reads add on top of an `EngagementRow` — what
+ * this engagement was *sold as*.
+ *
+ * There is no rate here and there must never be one. `offering_versions` is
+ * reached only to get from the engagement's own `offering_version_id` to the
+ * `offerings` row that owns it; the version's `rate_cents` is not selected,
+ * because the engagement's rate is its own `agreed_rate_cents` snapshot
+ * (P3-03, and `electron/shared/engagements.ts`'s header). Selecting a price
+ * here would be the live-price join P3-03's acceptance rules out, and it would
+ * look right for exactly as long as no offering is ever re-priced.
+ */
+interface OfferingJoinColumns {
+  readonly offering_id: string | null
+  readonly offering_name: string | null
+}
+
+/**
+ * `offering_version_id -> offering_versions.offering_id -> offerings`, both
+ * `LEFT JOIN`s: an engagement sold from nothing keeps every other column and
+ * answers `null` for both, and so does one whose version row was removed out
+ * from under it. Written once here because `listEngagements` and
+ * `getEngagementWithOffering` must resolve it identically — a list that named
+ * an offering the edit sheet then failed to find would be the same bug twice.
+ */
+const OFFERING_JOIN = `
+  LEFT JOIN offering_versions ov ON ov.id = e.offering_version_id
+  LEFT JOIN offerings o ON o.id = ov.offering_id`
+
+const OFFERING_JOIN_COLUMNS = 'o.id AS offering_id, o.name AS offering_name'
+
+function mapEngagementWithOfferingRow(row: EngagementRow & OfferingJoinColumns): EngagementWithOffering {
+  return { ...mapEngagementRow(row), offeringId: row.offering_id, offeringName: row.offering_name }
+}
+
 interface MilestoneRow {
   readonly id: string
   readonly engagement_id: string | null
@@ -296,35 +341,64 @@ function mapMilestoneRow(row: MilestoneRow): Milestone {
  * clauses, never coalesced into "any company on this engagement" — a query
  * from either side of a split billing arrangement returns the engagement
  * that side actually names, and only that side.
+ *
+ * Each row carries the offering it was sold as (`OFFERING_JOIN`) so a card can
+ * label it without a query per row — the name only, never a price.
  */
-export function listEngagements(db: Database.Database, filter: ListEngagementsFilter = {}): readonly Engagement[] {
+export function listEngagements(db: Database.Database, filter: ListEngagementsFilter = {}): readonly EngagementWithOffering[] {
   const clauses: string[] = []
   const params: unknown[] = []
 
   if (filter.status !== undefined) {
-    clauses.push('status = ?')
+    clauses.push('e.status = ?')
     params.push(filter.status)
   }
   if (filter.billingCompanyId !== undefined) {
-    clauses.push('billing_company_id = ?')
+    clauses.push('e.billing_company_id = ?')
     params.push(filter.billingCompanyId)
   }
   if (filter.clientCompanyId !== undefined) {
-    clauses.push('client_company_id = ?')
+    clauses.push('e.client_company_id = ?')
     params.push(filter.clientCompanyId)
   }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
   const rows = db
-    .prepare(`SELECT * FROM engagements ${where} ORDER BY started_on DESC, name COLLATE NOCASE`)
-    .all(...params) as EngagementRow[]
-  return rows.map(mapEngagementRow)
+    .prepare(
+      `SELECT e.*, ${OFFERING_JOIN_COLUMNS}
+       FROM engagements e ${OFFERING_JOIN}
+       ${where}
+       ORDER BY e.started_on DESC, e.name COLLATE NOCASE`
+    )
+    .all(...params) as Array<EngagementRow & OfferingJoinColumns>
+  return rows.map(mapEngagementWithOfferingRow)
 }
 
-/** `null` when no row matches `id` — not an error; callers that need one own the "not found" decision. */
+/**
+ * `null` when no row matches `id` — not an error; callers that need one own
+ * the "not found" decision.
+ *
+ * The plain row, without the offering join: this is what `createEngagement`
+ * and `updateEngagement` answer with, and a mutation response should report
+ * the row it just wrote rather than a shape assembled from another table.
+ */
 export function getEngagement(db: Database.Database, id: string): Engagement | null {
   const row = getEngagementRow(db, id)
   return row ? mapEngagementRow(row) : null
+}
+
+/**
+ * `getEngagement` plus the offering join — `engagements:get`'s read, so the
+ * edit sheet can name what an engagement was sold as even when it was signed
+ * against a version that is no longer current. Without it the sheet could only
+ * recognise an offering whose *current* version happened to match, which is
+ * the live-price reasoning P3-03 exists to keep out of the renderer.
+ */
+export function getEngagementWithOffering(db: Database.Database, id: string): EngagementWithOffering | null {
+  const row = db
+    .prepare(`SELECT e.*, ${OFFERING_JOIN_COLUMNS} FROM engagements e ${OFFERING_JOIN} WHERE e.id = ?`)
+    .get(id) as (EngagementRow & OfferingJoinColumns) | undefined
+  return row ? mapEngagementWithOfferingRow(row) : null
 }
 
 /**

@@ -6,7 +6,7 @@ import { createQueryClient } from '../../lib/query-client'
 import { stubCrm } from '../../lib/test-support/stub-crm'
 import { LayerManager } from './LayerManager'
 import { useLayerManager } from './layer-manager-context'
-import type { Engagement } from '../../../shared/engagements'
+import type { EngagementWithOffering } from '../../../shared/engagements'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -303,13 +303,15 @@ describe('LayerManager', () => {
   // with an optional tail, and the layer manager is what keeps them apart.
   describe('editSheet — a sheet opened on a record that already exists', () => {
     const TS = '2026-08-28T00:00:00.000Z'
-    const BLANK: Engagement = {
+    const BLANK: EngagementWithOffering = {
       id: 'eng-a',
       name: 'Engagement A',
       billingCompanyId: null,
       clientCompanyId: null,
       offeringVersionId: null,
       agreedRateCents: null,
+      offeringId: null,
+      offeringName: null,
       billingModel: null,
       status: null,
       startedOn: '2026-01-01',
@@ -324,7 +326,7 @@ describe('LayerManager', () => {
       createdAt: TS,
       updatedAt: TS
     }
-    const ROWS: Record<string, Engagement> = {
+    const ROWS: Record<string, EngagementWithOffering> = {
       'eng-a': BLANK,
       'eng-b': { ...BLANK, id: 'eng-b', name: 'Engagement B' }
     }

@@ -16,7 +16,7 @@ import { Companies } from '../../views/Companies'
 // values are read from here and not from QuickLog.css itself.
 import mockupHtml from '../../../../planning/solo-crm-mockup.html?raw'
 import type { Company } from '../../../shared/companies'
-import type { Engagement } from '../../../shared/engagements'
+import type { EngagementWithOffering } from '../../../shared/engagements'
 import type { Person } from '../../../shared/people'
 import type { Activity, LogActivityInput } from '../../../shared/activity'
 
@@ -67,12 +67,14 @@ function makePerson(overrides: Partial<Person> & { id: string; name: string }): 
   }
 }
 
-function makeEngagement(overrides: Partial<Engagement> & { id: string; name: string }): Engagement {
+function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: string; name: string }): EngagementWithOffering {
   return {
     billingCompanyId: null,
     clientCompanyId: null,
     offeringVersionId: null,
     agreedRateCents: null,
+    offeringId: null,
+    offeringName: null,
     billingModel: null,
     status: 'active',
     startedOn: '2026-01-01',
@@ -160,7 +162,7 @@ type LogChannel = NonNullable<NonNullable<Parameters<typeof stubCrm>[0]>['activi
 interface Fixtures {
   companies?: readonly Company[]
   people?: readonly Person[]
-  engagements?: readonly Engagement[]
+  engagements?: readonly EngagementWithOffering[]
   log?: LogChannel
   crmOverrides?: Parameters<typeof stubCrm>[0]
 }

@@ -8,7 +8,7 @@ import { createQueryClient } from '../lib/query-client'
 import { queryKeys } from '../lib/query-keys'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { Company } from '../../shared/companies'
-import type { Engagement } from '../../shared/engagements'
+import type { EngagementWithOffering } from '../../shared/engagements'
 import type { Person } from '../../shared/people'
 import type { Task, TaskFilter } from '../../shared/tasks'
 import type { Activity } from '../../shared/activity'
@@ -89,12 +89,14 @@ function makeTask(overrides: Partial<Task> & { id: string; title: string }): Tas
   }
 }
 
-function makeEngagement(overrides: Partial<Engagement> & { id: string; name: string }): Engagement {
+function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: string; name: string }): EngagementWithOffering {
   return {
     billingCompanyId: null,
     clientCompanyId: null,
     offeringVersionId: null,
     agreedRateCents: null,
+    offeringId: null,
+    offeringName: null,
     billingModel: null,
     status: 'active',
     startedOn: '2026-01-01',
@@ -149,7 +151,7 @@ interface RenderOptions {
   openTasks?: readonly Task[]
   waitingTasks?: readonly Task[]
   countOpen?: number
-  engagements?: readonly Engagement[]
+  engagements?: readonly EngagementWithOffering[]
   people?: readonly Person[]
   activity?: readonly Activity[]
   crmOverrides?: Parameters<typeof stubCrm>[0]

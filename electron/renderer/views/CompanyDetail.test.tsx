@@ -6,7 +6,7 @@ import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { CrmApi } from '../../shared/ipc-types'
 import type { Company } from '../../shared/companies'
-import type { Engagement } from '../../shared/engagements'
+import type { EngagementWithOffering } from '../../shared/engagements'
 import type { Task } from '../../shared/tasks'
 import type { Activity } from '../../shared/activity'
 import type { Person, PersonAffiliation } from '../../shared/people'
@@ -52,12 +52,14 @@ function makeCompany(overrides: Partial<Company> & { id: string; name: string })
   }
 }
 
-function makeEngagement(overrides: Partial<Engagement> & { id: string; name: string }): Engagement {
+function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: string; name: string }): EngagementWithOffering {
   return {
     billingCompanyId: null,
     clientCompanyId: null,
     offeringVersionId: null,
     agreedRateCents: null,
+    offeringId: null,
+    offeringName: null,
     billingModel: null,
     status: null,
     startedOn: '2026-01-01',
@@ -230,7 +232,7 @@ interface CrmExtras {
  * acceptance. `extras` is optional and defaults to nothing seeded, so every
  * pre-existing `buildCrm(companies, engagements)` call site above is
  * unchanged. */
-function buildCrm(companySeed: readonly Company[], engagementSeed: readonly Engagement[], extras: CrmExtras = {}): CrmApi {
+function buildCrm(companySeed: readonly Company[], engagementSeed: readonly EngagementWithOffering[], extras: CrmExtras = {}): CrmApi {
   const companies = new Map(companySeed.map((c) => [c.id, c] as const))
   const tasks = new Map((extras.tasks ?? []).map((t) => [t.id, t] as const))
   const activity = new Map((extras.activity ?? []).map((a) => [a.id, a] as const))
@@ -376,6 +378,30 @@ describe('CompanyDetail', () => {
     // Nothing bills to EZDeploy from elsewhere.
     const deliveredCard = screen.getByText('Delivered here, billed elsewhere').closest('.card') as HTMLElement
     expect(within(deliveredCard).getByText('Nothing here yet.')).toBeTruthy()
+  })
+
+  it('labels an engagement card with what it was sold as, and leaves an unsold one unlabelled', async () => {
+    // The same "sold as" label the Engagements view carries (T-260901-13) —
+    // these are the same cards, so the fact is asserted the same way.
+    const sold = makeEngagement({
+      ...samay,
+      offeringVersionId: 'ver-build-1',
+      offeringId: 'off-build',
+      offeringName: 'Delivery build',
+      agreedRateCents: 1_200_000
+    })
+    renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, [sold, platform]))
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    const billedCard = screen.getByText('Billed here').closest('.card') as HTMLElement
+    const soldRow = within(billedCard).getByText('Samay — AI timesheet agent').closest('.eng') as HTMLElement
+    expect(soldRow.querySelector('.sold-as')?.textContent).toContain('sold as Delivery build')
+    // No rate on the card, in either direction: not the agreed snapshot, not
+    // a catalogue price (P3-03).
+    expect(soldRow.textContent).not.toMatch(/12000|\$/)
+
+    const unsoldRow = within(billedCard).getByText('Platform advisory').closest('.eng') as HTMLElement
+    expect(unsoldRow.querySelector('.sold-as')).toBeNull()
   })
 
   it('W+K: shows that same engagement under "delivered here, billed to EZDeploy", with nothing billed here', async () => {

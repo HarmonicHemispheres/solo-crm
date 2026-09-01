@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { nowTimestamp, parseDateOnly, parseTimestamp } from '../../shared/format'
 import { COMPANY_KINDS, type Company, type CompanyKind, type UpdateCompanyInput } from '../../shared/companies'
-import type { BillingModel, Engagement, EngagementStatus } from '../../shared/engagements'
+import type { BillingModel, EngagementStatus, EngagementWithOffering } from '../../shared/engagements'
 import type { Task } from '../../shared/tasks'
 import type { Activity, ActivityKind } from '../../shared/activity'
 import type { Person, PersonAffiliation, PersonWithAffiliations } from '../../shared/people'
@@ -86,6 +86,18 @@ function ViaIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="var(--lapis)" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true" width={11} height={11}>
       <path d="M7 7h6a4 4 0 014 4v6M17 17l-3-3M17 17l3-3" />
+    </svg>
+  )
+}
+
+/** The "sold as" marker (T-260901-13) — the same price-tag glyph the
+ * Engagements view draws beside the same label, kept local for the same
+ * reason `ViaIcon` is. */
+function SoldAsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="var(--lapis)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" width={11} height={11}>
+      <path d="M11.5 3.5H20v8.5l-8.7 8.7a1.6 1.6 0 0 1-2.3 0l-6.2-6.2a1.6 1.6 0 0 1 0-2.3Z" />
+      <path d="M16.5 7.5h.01" />
     </svg>
   )
 }
@@ -613,7 +625,7 @@ function DetailsCard({ companyId, company, companiesById }: { companyId: string;
 // Engagement cards — billed here / delivered here, billed elsewhere
 // ---------------------------------------------------------------------------
 
-function EngagementRow({ engagement, viaLabel }: { engagement: Engagement; viaLabel: string | null }) {
+function EngagementRow({ engagement, viaLabel }: { engagement: EngagementWithOffering; viaLabel: string | null }) {
   return (
     <div className="eng">
       <div className="eng-t">
@@ -627,6 +639,16 @@ function EngagementRow({ engagement, viaLabel }: { engagement: Engagement; viaLa
         <div className="via">
           <ViaIcon />
           {viaLabel}
+        </div>
+      )}
+      {/* The same "sold as" label the Engagements view carries
+          (T-260901-13) — these are the same engagement cards, so the fact
+          appears in the same shape and with the same rule: a name, never a
+          rate. */}
+      {engagement.offeringName != null && (
+        <div className="sold-as">
+          <SoldAsIcon />
+          sold as {engagement.offeringName}
         </div>
       )}
       <div className="meta" style={{ marginTop: 6 }}>
@@ -644,8 +666,8 @@ function EngagementCard({
 }: {
   title: string
   count: number
-  engagements: readonly Engagement[]
-  viaLabelFor: (engagement: Engagement) => string | null
+  engagements: readonly EngagementWithOffering[]
+  viaLabelFor: (engagement: EngagementWithOffering) => string | null
 }) {
   return (
     <Card>

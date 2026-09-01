@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Sheet } from '../primitives/Sheet'
 import { Button } from '../primitives/Button'
 import { Field, ChipField } from './Field'
-import { useCompaniesList } from './queries'
+import { useCompaniesList, useOfferingsList } from './queries'
 import { useSheetMutation } from './useSheetMutation'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
 import { queryKeys } from '../../lib/query-keys'
@@ -16,8 +16,10 @@ import {
   type CreateEngagementInput,
   type Engagement,
   type EngagementStatus,
+  type EngagementWithOffering,
   type UpdateEngagementInput
 } from '../../../shared/engagements'
+import type { OfferingListItem, OfferingUnit } from '../../../shared/offerings'
 
 const BILLING_MODEL_LABELS: Record<BillingModel, string> = {
   retainer: 'Retainer',
@@ -71,6 +73,26 @@ function centsToInput(value: number | null): string {
   return value == null ? '' : centsToDecimalString(value)
 }
 
+/**
+ * How an offering's rate is *quoted* (`electron/shared/offerings.ts`'s
+ * `OFFERING_UNITS`), rendered onto the create picker's option so the price
+ * being copied is visible at the moment it is copied. Display only — the
+ * number stored is `currentVersion.rateCents` itself, untouched.
+ */
+const UNIT_SUFFIX: Record<OfferingUnit, string> = { fixed: '', from: '', mo: '/mo', hr: '/hr' }
+
+/** Module-level so the query key is one stable object rather than a new literal per render. */
+const ACTIVE_OFFERINGS = { active: true } as const
+
+/** `Retainer — $3500.00/mo`, `Rescue — from $12000.00`. A rateless version reads as such rather than as a free offering. */
+function offeringOptionLabel(offering: OfferingListItem): string {
+  const rateCents = offering.currentVersion?.rateCents
+  if (rateCents == null) return `${offering.name} — no rate`
+  const amount = `$${centsToDecimalString(rateCents)}`
+  const priced = offering.unit === 'from' ? `from ${amount}` : `${amount}${offering.unit == null ? '' : UNIT_SUFFIX[offering.unit]}`
+  return `${offering.name} — ${priced}`
+}
+
 export interface EngagementSheetProps {
   onClose: () => void
   /** New engagement, or one that already exists — see `SheetFormTarget`. */
@@ -86,6 +108,7 @@ export interface EngagementSheetProps {
  */
 const FIELD_LABELS = {
   name: 'Name',
+  offeringVersionId: 'Sold as',
   billingCompanyId: 'Billed to',
   clientCompanyId: 'Work is for',
   startedOn: 'Starts',
@@ -120,12 +143,25 @@ type ModelPart =
 /** Every common column this form owns, as an update patch — `agreedRateCents` is not among them, by design (see this file's header). */
 interface CommonPatch {
   name?: string
+  offeringVersionId?: string | null
   billingCompanyId?: string | null
   clientCompanyId?: string | null
   status?: EngagementStatus
   startedOn?: string
   endsOn?: string | null
 }
+
+/**
+ * What the offering picker contributes to a **create** payload: the version
+ * id, and the rate copied off that version at this moment. This is P3-03's one
+ * read of the price list, and the reason `agreedRateCents` appears in exactly
+ * one place in this file.
+ *
+ * Selling from nothing sends `offeringVersionId: null` and **no**
+ * `agreedRateCents` key at all — there is no snapshot to take, and a `null`
+ * rate written alongside a `null` offering would be a value nobody chose.
+ */
+type OfferingCreatePart = { readonly offeringVersionId: string; readonly agreedRateCents: number | null } | { readonly offeringVersionId: null }
 
 /** Does the selected model's own column set differ from what is stored? A model switch is handled separately — this asks only about the columns. */
 function modelColumnsDiffer(part: ModelPart, engagement: Engagement): boolean {
@@ -165,8 +201,8 @@ type EngagementSubmission =
  * ordering is what keeps the edit path off `react-hooks/set-state-in-effect`
  * (and off React's own advice): the form is *mounted* with the record
  * rather than mounted empty and filled in by an effect afterwards. A field
- * added later (the offering picker, T-260901-13; the milestone editor,
- * P3-09) is added to `EngagementForm` alone, seeded the same way.
+ * added later (the milestone editor, P3-09) is added to `EngagementForm`
+ * alone, seeded the same way — as the "Sold as" picker (T-260901-13) is.
  *
  * The one form-level decision worth restating (this task's Why): "Billed to"
  * (`billingCompanyId`) and "Work is for" (`clientCompanyId`) are two
@@ -187,15 +223,25 @@ type EngagementSubmission =
  * `estimatedHours` / `notToExceedCents`; equity and none carry no
  * model-specific column.
  *
- * **`agreedRateCents` is never presented and never sent, in either mode.**
- * `electron/shared/engagements.ts`'s header states why: it is a snapshot
- * taken at signature, writable on create and deliberately dropped by
- * `updateEngagement` even when the update schema accepts the key. A form
- * that echoed the whole record back would send it, the repository would
- * silently discard it, and a control that appears to change it would have
- * been a lie that looked like it worked. So this form owns a named set of
- * columns and sends only from that set — which is also why the update path
- * below builds a diff rather than posting the record it loaded.
+ * **`agreedRateCents` is never an input, and is sent on exactly one path: a
+ * create that names an offering.** `electron/shared/engagements.ts`'s header
+ * states why: it is a snapshot taken at signature, writable on create and
+ * deliberately dropped by `updateEngagement` even when the update schema
+ * accepts the key. So the create payload copies the chosen version's rate
+ * once, at submit (P3-03's single read of the price list — a copy, never a
+ * link), and the edit patch carries no such key at all: `CommonPatch` has no
+ * room for one, and the update path builds a diff from the columns this form
+ * owns rather than posting back the record it loaded. A form that echoed the
+ * whole record would send it, the repository would silently discard it, and a
+ * control that appeared to change it would have been a lie that looked like
+ * it worked.
+ *
+ * The offering itself *is* editable after signature — `updateEngagement`
+ * writes `offering_version_id` — so the edit form keeps the picker, with the
+ * prices stripped out of its options and a caption saying the agreed rate does
+ * not follow. Re-pointing what an engagement was sold as is a real correction;
+ * re-pricing it is a data decision with revenue consequences (ADR-003) that
+ * has no repository path at all.
  */
 export function EngagementSheet({ onClose, target }: EngagementSheetProps) {
   if (target.mode === 'edit') {
@@ -243,12 +289,21 @@ function EngagementEditSheet({ id, onClose }: { id: string; onClose: () => void 
   return <EngagementForm engagement={query.data} onClose={onClose} />
 }
 
-function EngagementForm({ engagement, onClose }: { engagement: Engagement | null; onClose: () => void }) {
+function EngagementForm({ engagement, onClose }: { engagement: EngagementWithOffering | null; onClose: () => void }) {
   const formId = useId()
   const companies = useCompaniesList()
+  // Only what can be sold today. An archived offering is not on the price
+  // list; an engagement already sold from one keeps naming it through
+  // `storedOffering` below, which comes off the record rather than this read.
+  const offerings = useOfferingsList(ACTIVE_OFFERINGS)
   const isEdit = engagement !== null
 
   const [name, setName] = useState(engagement?.name ?? '')
+  // The picker's value is an **offering** id, not a version id: a version is
+  // an internal ordinal nobody sells by name, and resolving it at submit is
+  // what makes "the current version, as of now" true rather than "whatever
+  // version was current when this sheet opened".
+  const [offeringId, setOfferingId] = useState(engagement?.offeringId ?? '')
   const [billingCompanyId, setBillingCompanyId] = useState(engagement?.billingCompanyId ?? '')
   const [clientCompanyId, setClientCompanyId] = useState(engagement?.clientCompanyId ?? '')
   // On an existing engagement "Work is for" already holds a stored value of
@@ -289,6 +344,34 @@ function EngagementForm({ engagement, onClose }: { engagement: Engagement | null
     'Could not save this engagement.',
     FIELD_LABELS
   )
+
+  // An offering with no version at all has no price to copy, so it cannot be
+  // sold from — `createOffering` writes a first version in the same
+  // transaction, so this only excludes rows an import left behind.
+  const sellable = offerings.filter((offering) => offering.currentVersion != null)
+
+  /**
+   * What an engagement already on record was sold as, taken from the record
+   * itself (`engagements:get`'s join) rather than looked up in `sellable`. It
+   * is listed as an option of its own whenever `sellable` does not already
+   * carry it — an offering that has since been archived, and, more subtly, one
+   * sold from a *superseded* version, which the current price list cannot
+   * recognise at all. Without this the select would silently fall back to
+   * "— none —" and a save that never touched the field would unsell the
+   * engagement.
+   */
+  const storedOffering =
+    engagement?.offeringId != null && !sellable.some((offering) => offering.id === engagement.offeringId)
+      ? { id: engagement.offeringId, label: engagement.offeringName ?? engagement.offeringId }
+      : null
+
+  /** The offering picker's contribution to a create payload — see `OfferingCreatePart`. */
+  const readOfferingPart = (): OfferingCreatePart => {
+    const chosen = sellable.find((offering) => offering.id === offeringId)
+    const version = chosen?.currentVersion
+    if (!version) return { offeringVersionId: null }
+    return { offeringVersionId: version.id, agreedRateCents: version.rateCents }
+  }
 
   /** The selected model's own columns, parsed from this form's inputs. Throws `<payload key>: <detail>`, which `handleSubmit` places against the named field. */
   const readModelPart = (): ModelPart => {
@@ -339,6 +422,15 @@ function EngagementForm({ engagement, onClose }: { engagement: Engagement | null
         // build a payload that could contain it.
         const patch: CommonPatch = {}
         if (trimmedName !== engagement.name) patch.name = trimmedName
+        // Re-pointing an engagement at another offering moves
+        // `offering_version_id` and nothing else: `agreedRateCents` is not in
+        // this patch's type, so there is no path here that could re-rate a
+        // signed engagement — see the "Sold as" caption, which says so in the
+        // form rather than leaving it as a surprise. An unchanged selection
+        // (including the stored-but-unlisted case above) writes nothing.
+        if (offeringId !== (engagement.offeringId ?? '')) {
+          patch.offeringVersionId = offeringId ? (sellable.find((offering) => offering.id === offeringId)?.currentVersion?.id ?? null) : null
+        }
         if (billingCompany !== engagement.billingCompanyId) patch.billingCompanyId = billingCompany
         if (clientCompany !== engagement.clientCompanyId) patch.clientCompanyId = clientCompany
         if (status !== engagement.status) patch.status = status
@@ -369,7 +461,7 @@ function EngagementForm({ engagement, onClose }: { engagement: Engagement | null
         startedOn,
         endsOn: ends
       }
-      mutation.mutate({ mode: 'create', input: { ...common, ...modelPart } })
+      mutation.mutate({ mode: 'create', input: { ...common, ...readOfferingPart(), ...modelPart } })
     } catch (err) {
       // `parseCents`/`parseHours` throw `<payload key>: <detail>`, the same
       // shape a repository ValidationError arrives in, so both are placed
@@ -410,6 +502,33 @@ function EngagementForm({ engagement, onClose }: { engagement: Engagement | null
         <Field label="Name" error={errorFor('name')}>
           <input className="inp" value={name} onChange={(event) => setName(event.target.value)} placeholder="Fixed scope SOW" />
         </Field>
+        {/* What this engagement is sold as. On create the options carry their
+            price, because picking one copies that price onto the engagement.
+            On edit they deliberately do not: the rate was set at signature and
+            `updateEngagement` drops `agreedRateCents` outright, so an option
+            reading "$3500.00/mo" beside a control that cannot change the rate
+            would be a promise the repository silently breaks. The caption
+            below says which of the two is happening. */}
+        <Field label="Sold as" error={errorFor('offeringVersionId')}>
+          <select className="inp" value={offeringId} onChange={(event) => setOfferingId(event.target.value)}>
+            <option value="">— none —</option>
+            {sellable.map((offering) => (
+              <option key={offering.id} value={offering.id}>
+                {isEdit ? offering.name : offeringOptionLabel(offering)}
+              </option>
+            ))}
+            {storedOffering && (
+              <option key={storedOffering.id} value={storedOffering.id}>
+                {storedOffering.label}
+              </option>
+            )}
+          </select>
+        </Field>
+        <div className="meta">
+          {isEdit
+            ? 'The agreed rate was set when this was signed and does not change here.'
+            : 'The offering’s rate is copied onto this engagement now, and stays put if the price changes later.'}
+        </div>
         <div className="two">
           <Field label="Billed to" error={errorFor('billingCompanyId')}>
             <select className="inp" value={billingCompanyId} onChange={(event) => setBillingCompanyId(event.target.value)}>

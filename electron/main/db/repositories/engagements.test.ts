@@ -11,10 +11,12 @@ import {
   createEngagement,
   deleteEngagement,
   getEngagement,
+  getEngagementWithOffering,
   listEngagements,
   listMilestones,
   updateEngagement
 } from './engagements'
+import { archiveOffering, createOffering } from './offerings'
 import { NotFoundError, RefusalError, ValidationError } from './errors'
 
 /**
@@ -977,5 +979,169 @@ describe('this file computes no summed, projected or per-month figure (ADR-003 /
 
   it('leaves the comparison updateEngagement actually makes alone', () => {
     expect(adr003Violations('const changing = parsed.billingModel !== currentRow.billing_model')).toEqual([])
+  })
+})
+
+/**
+ * T-260901-13 — selling an engagement from an offering. Every assertion below
+ * reads the stored row back (or the raw column) rather than trusting the
+ * request it sent, because the failure this task exists to prevent is a rate
+ * that *looks* stored and is really re-derived.
+ */
+describe('an engagement sold from an offering', () => {
+  /** `$3,500`, the acceptance list's figure, as the catalogue stores it. */
+  const RATE_CENTS = 350_000
+
+  function rawEngagementRow(db: Database.Database, id: string): { offering_version_id: string | null; agreed_rate_cents: number | null } {
+    return db.prepare('SELECT offering_version_id, agreed_rate_cents FROM engagements WHERE id = ?').get(id) as {
+      offering_version_id: string | null
+      agreed_rate_cents: number | null
+    }
+  }
+
+  it('stores the version it was signed against and a copy of that version\'s rate', () => {
+    withDatabase((db) => {
+      const offering = createOffering(db, { name: 'Advisory retainer', rateCents: RATE_CENTS })
+      const version = offering.versions[0]
+
+      const engagement = createEngagement(db, {
+        name: 'Q4 advisory',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        offeringVersionId: version.id,
+        agreedRateCents: version.rateCents
+      })
+
+      const row = rawEngagementRow(db, engagement.id)
+      expect(row.agreed_rate_cents).toBe(350_000)
+      expect(row.offering_version_id).toBe(version.id)
+    })
+  })
+
+  it('keeps that rate when the catalogue price moves underneath it', () => {
+    withDatabase((db) => {
+      const offering = createOffering(db, { name: 'Advisory retainer', rateCents: RATE_CENTS })
+      const version = offering.versions[0]
+      const engagement = createEngagement(db, {
+        name: 'Q4 advisory',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        offeringVersionId: version.id,
+        agreedRateCents: version.rateCents
+      })
+
+      // Two ways the price can move. Appending a new version is what P3-02
+      // will do; rewriting the signed version's own rate is the harsher case
+      // and the one a live-price join would follow. Neither is reachable
+      // through this repository, so both are raw writes here.
+      db.prepare(
+        `INSERT INTO offering_versions (id, offering_id, version, rate_cents, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).run(randomUUID(), offering.id, 2, 500_000, nowTimestamp(), nowTimestamp())
+      db.prepare('UPDATE offering_versions SET rate_cents = ? WHERE id = ?').run(475_000, version.id)
+
+      const row = rawEngagementRow(db, engagement.id)
+      expect(row.agreed_rate_cents).toBe(350_000)
+      expect(row.offering_version_id).toBe(version.id)
+    })
+  })
+
+  it('is unmoved by archiving the offering it was sold from, and still says what it was sold as', () => {
+    withDatabase((db) => {
+      const offering = createOffering(db, { name: 'Advisory retainer', rateCents: RATE_CENTS })
+      const version = offering.versions[0]
+      const engagement = createEngagement(db, {
+        name: 'Q4 advisory',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        offeringVersionId: version.id,
+        agreedRateCents: version.rateCents
+      })
+
+      archiveOffering(db, offering.id)
+
+      const row = rawEngagementRow(db, engagement.id)
+      expect(row.agreed_rate_cents).toBe(350_000)
+      expect(row.offering_version_id).toBe(version.id)
+      // The join is not filtered by `active`: an archived offering is still
+      // the honest answer to "what was this sold as", and the edit sheet
+      // needs the name to keep the stored value representable.
+      expect(getEngagementWithOffering(db, engagement.id)?.offeringName).toBe('Advisory retainer')
+    })
+  })
+
+  it('never writes agreedRateCents on update, even when the patch carries one', () => {
+    withDatabase((db) => {
+      const offering = createOffering(db, { name: 'Advisory retainer', rateCents: RATE_CENTS })
+      const engagement = createEngagement(db, {
+        name: 'Q4 advisory',
+        billingModel: 'retainer',
+        startedOn: '2026-01-01',
+        offeringVersionId: offering.versions[0].id,
+        agreedRateCents: RATE_CENTS
+      })
+
+      // The update schema accepts the key and the repository drops it — the
+      // exact path a form echoing a whole record back would take, and the
+      // reason `EngagementForm` builds a patch instead.
+      updateEngagement(db, engagement.id, { agreedRateCents: 999_900, name: 'Q4 advisory (renewed)' })
+
+      const row = rawEngagementRow(db, engagement.id)
+      expect(row.agreed_rate_cents).toBe(350_000)
+      expect(getEngagement(db, engagement.id)?.name).toBe('Q4 advisory (renewed)')
+    })
+  })
+
+  it('resolves the offering name on both reads, and answers null when nothing was sold from', () => {
+    withDatabase((db) => {
+      const offering = createOffering(db, { name: 'Advisory retainer', rateCents: RATE_CENTS })
+      const sold = createEngagement(db, {
+        name: 'Sold',
+        billingModel: 'retainer',
+        startedOn: '2026-02-01',
+        offeringVersionId: offering.versions[0].id,
+        agreedRateCents: RATE_CENTS
+      })
+      const unsold = createEngagement(db, { name: 'Unsold', billingModel: 'none', startedOn: '2026-01-01' })
+
+      const listed = listEngagements(db)
+      expect(listed.find((row) => row.id === sold.id)).toMatchObject({
+        offeringId: offering.id,
+        offeringName: 'Advisory retainer'
+      })
+      // Selling from no offering stays legal — both keys are null, and the
+      // row is still listed.
+      expect(listed.find((row) => row.id === unsold.id)).toMatchObject({ offeringId: null, offeringName: null })
+
+      expect(getEngagementWithOffering(db, sold.id)).toMatchObject({ offeringId: offering.id, offeringName: 'Advisory retainer' })
+      expect(getEngagementWithOffering(db, unsold.id)).toMatchObject({ offeringId: null, offeringName: null })
+      expect(getEngagementWithOffering(db, randomUUID())).toBeNull()
+    })
+  })
+
+  it('carries the offering through a filtered list too — the join is on every path, not just the unfiltered one', () => {
+    withDatabase((db) => {
+      const company = createCompany(db, { name: 'EZDeploy' })
+      const offering = createOffering(db, { name: 'Advisory retainer', rateCents: RATE_CENTS })
+      createEngagement(db, {
+        name: 'Sold',
+        billingModel: 'retainer',
+        status: 'active',
+        startedOn: '2026-02-01',
+        billingCompanyId: company.id,
+        offeringVersionId: offering.versions[0].id,
+        agreedRateCents: RATE_CENTS
+      })
+
+      // Every filter clause at once: a bare `status = ?` would be ambiguous
+      // across the joined tables and fail at prepare time, so this is also
+      // the check that the clauses are qualified.
+      const filtered = listEngagements(db, { status: 'active', billingCompanyId: company.id, clientCompanyId: company.id })
+      expect(filtered).toHaveLength(0)
+
+      const byBilling = listEngagements(db, { status: 'active', billingCompanyId: company.id })
+      expect(byBilling).toHaveLength(1)
+      expect(byBilling[0].offeringName).toBe('Advisory retainer')
+    })
   })
 })
