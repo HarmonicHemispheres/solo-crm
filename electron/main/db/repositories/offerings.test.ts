@@ -299,12 +299,18 @@ describe('offering version effective ranges', () => {
         effectiveTo: '2026-06-30'
       })
 
+      // 06-30 is *inside* the first range, so a version starting there is
+      // refused. Asserted *before* the abutting version exists: once an
+      // open-ended 07-01 row is in, any candidate ending after it clashes
+      // with that row instead, and this check would pass even if the end
+      // were exclusive (a mutant that survived at merge until the order
+      // was swapped).
+      expect(() => addVersion(db, offering.id, 500_000, '2026-06-30', null)).toThrow(RefusalError)
+      expect(getOffering(db, offering.id)?.versions).toHaveLength(1)
+
       // The seed's own Discovery Audit pair: 01-01..06-30 then 07-01..open.
       addVersion(db, offering.id, 450_000, '2026-07-01', null)
       expect(getOffering(db, offering.id)?.versions).toHaveLength(2)
-
-      // 06-30 is *inside* the first range, so a version starting there is not.
-      expect(() => addVersion(db, offering.id, 500_000, '2026-06-30', null)).toThrow(RefusalError)
     })
   })
 
@@ -326,6 +332,9 @@ describe('offering version effective ranges', () => {
       // A candidate with no start runs from the beginning of time, so one
       // ending after 2026-07-01 straddles the existing version.
       expect(() => addVersion(db, offering.id, 100_000, null, '2026-08-01')).toThrow(RefusalError)
+      // Ending on the very day the existing version starts is the same
+      // clash — the start is inclusive on this side too.
+      expect(() => addVersion(db, offering.id, 100_000, null, '2026-07-01')).toThrow(RefusalError)
       expect(count(db, 'offering_versions')).toBe(1)
 
       // Ending strictly before the existing version starts is legal.
