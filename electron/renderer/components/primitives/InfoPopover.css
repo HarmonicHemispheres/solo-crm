@@ -1,0 +1,60 @@
+/* .info-wrap, .info, .pop — planning/solo-crm-mockup.html, moved out of
+   ViewHeader.css verbatim (T-260901-06). Nothing here shares a selector with
+   what stayed behind (.vhead, .vicon), so which of the two files the bundler
+   emits first cannot change which rule wins. */
+.info-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.info {
+  width: 19px;
+  height: 19px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-bright);
+  background: var(--surface-2);
+  color: var(--faint);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.info:hover {
+  color: var(--verdigris);
+  border-color: var(--verdigris);
+}
+
+.pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 70;
+  width: max-content;
+  max-width: 320px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-11);
+  padding: 13px 15px;
+  font-size: 12.5px;
+  color: var(--mute);
+  line-height: 1.6;
+  box-shadow: var(--shadow-popover);
+}
+
+.pop.open {
+  animation: pop-fade-up var(--motion-popover) var(--ease-out);
+}
+
+@keyframes pop-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

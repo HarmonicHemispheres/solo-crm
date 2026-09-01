@@ -5,8 +5,11 @@ import { createContext, useContext } from 'react'
  * names: "palette, sheet, log sheet, menu and popover". `sheet` is the
  * generic create-form shell the New menu opens (P1-08 gives it real
  * content); `log` is quick-log (P1-09); `palette` is ⌘K (P1-10); `menu` is
- * the New dropdown itself; `popover` exists so a future `.info` popover can
- * register with this same stack — nothing in this task opens one.
+ * the New dropdown itself; `popover` is the `.info` popover, extracted out of
+ * `ViewHeader` into `primitives/InfoPopover.tsx` by T-260901-06 and
+ * registered with this stack there — that primitive installs no Escape
+ * listener of its own while this provider is above it, so a popover opened
+ * inside an open sheet takes the first Escape and leaves the sheet standing.
  *
  * `tour` (T-260829-15) is the first-run walkthrough overlay, and it joins
  * this stack rather than owning a `keydown` listener of its own for the

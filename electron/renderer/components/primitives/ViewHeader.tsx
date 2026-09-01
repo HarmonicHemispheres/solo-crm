@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { type CSSProperties, type ReactNode } from 'react'
+import { InfoPopover } from './InfoPopover'
 import './ViewHeader.css'
 
 /** `--c` isn't part of the standard style-object typing. */
@@ -21,29 +22,13 @@ export interface ViewHeaderProps {
 }
 
 /** `H()` from the mockup — every view's opening header: accent icon, `<h1>`
- * title, an optional info popover, and a right-aligned actions slot. */
+ * title, an optional info popover, and a right-aligned actions slot.
+ *
+ * The popover itself is `InfoPopover` (T-260901-06) — the same `.info-wrap`
+ * / `.info` / `.pop` markup this file used to render inline, extracted so a
+ * settings section or a single row can carry one too. This header's own
+ * label stays "About this view"; a caller elsewhere names its own section. */
 export function ViewHeader({ icon, accent, title, description, actions }: ViewHeaderProps) {
-  const [open, setOpen] = useState(false)
-  const popoverId = useId()
-  const wrapRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false)
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [open])
-
   return (
     <div className="vhead">
       <div className="t">
@@ -51,25 +36,7 @@ export function ViewHeader({ icon, accent, title, description, actions }: ViewHe
           {icon}
         </span>
         <h1>{title}</h1>
-        {description != null && (
-          <span className="info-wrap" ref={wrapRef}>
-            <button
-              type="button"
-              className="info"
-              aria-label="About this view"
-              aria-expanded={open}
-              aria-controls={popoverId}
-              onClick={() => setOpen((o) => !o)}
-            >
-              i
-            </button>
-            {open && (
-              <div id={popoverId} className="pop open">
-                {description}
-              </div>
-            )}
-          </span>
-        )}
+        {description != null && <InfoPopover aria-label="About this view">{description}</InfoPopover>}
       </div>
       {actions != null && <div className="acts">{actions}</div>}
     </div>
