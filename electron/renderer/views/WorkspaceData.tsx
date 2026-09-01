@@ -160,7 +160,16 @@ function LocationCard({ stats }: { stats: DatabaseStatsResponse }) {
 
   return (
     <Card>
-      <Card.Header title="Location" />
+      {/*
+        The tag is the whole "show, don't tell" of this card: on a portable
+        copy the path alone gives it away to nobody — `D:\SoloCRM\solocrm.db`
+        reads exactly like an ordinary moved data root — and the difference
+        is the one an operator has to know, because it is what determines
+        whether the data travels with the stick or stays on this machine.
+        `portable` is main's verdict, carried on `db:stats` (ADR-013
+        Decision 2); nothing here infers it from the path.
+      */}
+      <Card.Header title="Location" actions={stats.portable ? <Tag variant="verd">portable</Tag> : null} />
       <div className="field">
         <span className="k">Path</span>
         <span className="v mono data-path">{stats.path}</span>
@@ -187,9 +196,11 @@ function LocationCard({ stats }: { stats: DatabaseStatsResponse }) {
         <span className="v mono">{formatWhen(stats.readAt, '')}</span>
       </div>
       <p className="data-note meta">
-        The database lives in this app&apos;s own user-data folder. A path inside Google Drive, Dropbox or iCloud is
-        refused outright rather than opened: file-sync daemons and SQLite corrupt each other, and a synced database is
-        the one way this app can lose data it had.
+        {stats.portable
+          ? 'This is a portable copy: the database sits beside the Solo CRM.exe you launched and travels with it, so nothing is kept in this machine’s own user-data folder and the folder cannot be moved from inside the app — move the .exe instead. '
+          : 'The database lives in this app’s own user-data folder. '}
+        A path inside Google Drive, Dropbox or iCloud is refused outright rather than opened: file-sync daemons and
+        SQLite corrupt each other, and a synced database is the one way this app can lose data it had.
       </p>
       <Toast message={copied} onDismiss={() => setCopied(null)} />
     </Card>

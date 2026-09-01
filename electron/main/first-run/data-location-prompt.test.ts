@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DATA_ROOT_POINTER_FILENAME } from '../db/data-root'
+import { DATA_ROOT_POINTER_FILENAME, resolveDataRoot } from '../db/data-root'
+import { PORTABLE_EXECUTABLE_DIR_ENV, type PortableLaunchProbe } from '../db/portable'
 import { SYNC_FOLDER_GUARD_OVERRIDE_ENV } from '../db/sync-folder-guard'
 import type { FirstRunDialog } from './data-location-prompt'
 import { runFirstRunDataLocationPrompt } from './data-location-prompt'
@@ -381,5 +382,106 @@ describe('the "use the default" behaviour and ADR-006 agree', () => {
     await runFirstRunDataLocationPrompt({ skip: false, userDataDir, dialog })
 
     expect(existsSync(join(userDataDir, DATA_ROOT_POINTER_FILENAME))).toBe(false)
+  })
+})
+
+/**
+ * T-260831-06 / ADR-013 Decision 6. Everything above this block is
+ * T-260828-18's and T-260828-57's, unmodified — that is this task's second
+ * acceptance criterion, and the proof the non-portable chooser still behaves
+ * exactly as it did. The cases below are the portable half, driven through
+ * `portableLaunch`, the test-only injection point that mirrors
+ * `DataRootOptions.portableLaunch` (production calls `observePortableLaunch()`
+ * and uses what the process actually reports).
+ */
+describe('runFirstRunDataLocationPrompt on a portable launch', () => {
+  /**
+   * A portable launch as directories that really exist, so the `realpath`
+   * half of `isSameOrInside` has something to resolve: `extractionDir` sits
+   * inside `tempDir` the way NSIS unpacks into `$PLUGINSDIR\app` under
+   * `%TEMP%`, and `stick` is the folder the operator's `.exe` is in.
+   */
+  function portableLaunchOn(stick: string): PortableLaunchProbe {
+    const tempDir = trackedTmpDir('solo-crm-firstrun-temp-')
+    const extractionDir = join(tempDir, 'app')
+    mkdirSync(extractionDir)
+    return {
+      isPackaged: true,
+      executableDir: extractionDir,
+      tempDir,
+      env: { [PORTABLE_EXECUTABLE_DIR_ENV]: stick }
+    }
+  }
+
+  it('asks nothing at all, and boot goes on to the portable root', async () => {
+    const stick = trackedTmpDir('solo-crm-firstrun-stick-')
+    const userDataDir = trackedTmpDir('solo-crm-firstrun-userdata-')
+    const portableLaunch = portableLaunchOn(stick)
+    const dialog = unusedDialog()
+
+    const outcome = await runFirstRunDataLocationPrompt({ skip: false, userDataDir, dialog, portableLaunch })
+
+    // The chooser cannot appear, because there is no question to ask. "Use
+    // the default" would name a `%APPDATA%` path on the host that the data
+    // will not go to, and "Choose a folder…" ends at
+    // `PortableDataRootPointerError` — the dead end this task closes.
+    expect(outcome).toEqual({ kind: 'portable' })
+    expect(dialog.showMessageBox).not.toHaveBeenCalled()
+    expect(dialog.showOpenDialog).not.toHaveBeenCalled()
+
+    // …and boot proceeds to the portable root rather than the host's
+    // user-data folder. This is `openDatabase()`'s own resolver, given the
+    // same launch, so what the prompt declined to ask and what the app then
+    // does cannot disagree.
+    expect(resolveDataRoot({ userDataDir, portableLaunch })).toBe(stick)
+
+    // Nothing was written into the host's profile — the pointer file's fixed
+    // home is shared with any Solo CRM installed on this machine.
+    expect(existsSync(join(userDataDir, DATA_ROOT_POINTER_FILENAME))).toBe(false)
+  })
+
+  it('answers before it looks at the host profile, whatever that profile contains', async () => {
+    // The host's own `data-location.json` and `solocrm.db` belong to an
+    // installed copy. Reading either would answer "has this been set up
+    // before?" from the wrong machine's files, so the portable branch comes
+    // first and neither of these changes the outcome.
+    const stick = trackedTmpDir('solo-crm-firstrun-stick-')
+    const userDataDir = trackedTmpDir('solo-crm-firstrun-userdata-')
+    writeFileSync(join(userDataDir, DATA_ROOT_POINTER_FILENAME), JSON.stringify({ dataRoot: userDataDir }), 'utf-8')
+    writeFileSync(join(userDataDir, 'solocrm.db'), '', 'utf-8')
+
+    const outcome = await runFirstRunDataLocationPrompt({
+      skip: false,
+      userDataDir,
+      dialog: unusedDialog(),
+      portableLaunch: portableLaunchOn(stick)
+    })
+
+    expect(outcome).toEqual({ kind: 'portable' })
+  })
+
+  it('leaves an ordinary installed launch on the chooser', async () => {
+    // The guard against the failure mode this task's Risks names: skipping
+    // the chooser on a *non*-portable launch would silently take away the
+    // choice T-260828-18 exists to offer. A packaged build running from a
+    // real install directory is not portable, and is still asked.
+    const userDataDir = trackedTmpDir('solo-crm-firstrun-userdata-')
+    const programs = trackedTmpDir('solo-crm-firstrun-installed-')
+    const dialog = scriptedDialog([0])
+
+    const outcome = await runFirstRunDataLocationPrompt({
+      skip: false,
+      userDataDir,
+      dialog,
+      portableLaunch: {
+        isPackaged: true,
+        executableDir: programs,
+        tempDir: join(programs, 'not-the-temp-dir'),
+        env: {}
+      }
+    })
+
+    expect(outcome).toEqual({ kind: 'default-chosen' })
+    expect(dialog.messageBoxCalls).toHaveLength(1)
   })
 })

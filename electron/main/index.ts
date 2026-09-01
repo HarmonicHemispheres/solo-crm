@@ -74,7 +74,13 @@ app
     // need a database location to load). `skip` is never true here — only
     // tests and `npm run seed` pass that, explicitly, at their own call
     // sites. An existing install (a pointer file or a `solocrm.db` already
-    // under the default root) resolves this with no dialog shown at all.
+    // under the default root) resolves this with no dialog shown at all, and
+    // so does a portable launch (T-260831-06, ADR-013 Decision 6 — a portable
+    // copy's root is not a choice). Both of those answers are the prompt
+    // module's to give: this call site is deliberately unconditional, so the
+    // boot ordering below is one sequence rather than one per launch kind,
+    // and asking the portable question here would be the second predicate
+    // ADR-013 Decision 2 exists to rule out.
     const firstRun = await runFirstRunDataLocationPrompt({ skip: false })
     if (firstRun.kind === 'quit') {
       // No window was ever created, so `window-all-closed` never fires — an

@@ -32,6 +32,9 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
       ok: true as const,
       data: {
         path: '/stub/userData/solocrm.db',
+        // The default describes an ordinary installed copy; the Data view's
+        // own tests override this for the portable case.
+        portable: false,
         fileBytes: 32_768,
         walBytes: 0,
         pageSize: 4096,

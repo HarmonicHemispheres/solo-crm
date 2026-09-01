@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
 import type Database from 'better-sqlite3'
 import { getSchemaVersion } from './migrate'
+import { isPortableLaunch, observePortableLaunch, type PortableLaunchProbe } from './portable'
 
 /**
  * The live facts about `solocrm.db` the Data view shows (T-260828-40, plan
@@ -39,6 +40,25 @@ export interface DatabaseStats {
    * and `readonly-connection.ts`'s `scrubPaths` keeps.
    */
   readonly path: string
+  /**
+   * T-260831-06 / ADR-013 Decision 6: whether `path` above is a portable
+   * copy's data root — the folder holding the `.exe` the operator launched —
+   * rather than this machine's user-data folder.
+   *
+   * It rides here because `path` already does, and for the same reason: the
+   * Data view's whole subject is which file on which machine holds the data,
+   * and on a portable launch the honest answer to "where does this live" is
+   * not the same sentence. The renderer cannot work this out — it has no
+   * filesystem and no business acquiring one (AGENTS.md) — and a path alone
+   * does not say it: `D:\SoloCRM\solocrm.db` looks like an ordinary moved
+   * data root, and `data-root.ts` reaches the two by entirely different
+   * routes.
+   *
+   * A boolean, not a reason or a probe: this is the answer
+   * `isPortableLaunch` already gives, carried, never re-derived. Nothing
+   * about the launch beyond that verdict crosses the boundary.
+   */
+  readonly portable: boolean
   /** `solocrm.db` itself, in bytes. Excludes the `-wal` sidecar — that is `walBytes`. */
   readonly fileBytes: number
   /**
@@ -139,8 +159,17 @@ function listCountableTables(db: Database.Database): readonly string[] {
     .filter((name) => !virtualTables.some((virtualName) => name !== virtualName && name.startsWith(`${virtualName}_`)))
 }
 
+export interface DatabaseStatsOptions {
+  /**
+   * Overrides what this process reports about its own launch. Tests only,
+   * on exactly the terms `DataRootOptions.portableLaunch` sets: production
+   * calls this with no argument and gets `observePortableLaunch()`.
+   */
+  readonly portableLaunch?: PortableLaunchProbe
+}
+
 /** Reads every live fact about the open database. See this module's header on why nothing here is cached. */
-export function readDatabaseStats(db: Database.Database): DatabaseStats {
+export function readDatabaseStats(db: Database.Database, options: DatabaseStatsOptions = {}): DatabaseStats {
   const path = db.name
   const { version, lastMigrationAt } = getSchemaVersion(db)
 
@@ -153,6 +182,12 @@ export function readDatabaseStats(db: Database.Database): DatabaseStats {
 
   return {
     path,
+    // Read live, like everything else here, and through the one predicate
+    // (ADR-013 Decision 2) rather than by inspecting `path` — a portable
+    // root and a pointed-at data root are indistinguishable as strings, and
+    // a second answer to this question is exactly what that decision exists
+    // to make unnecessary.
+    portable: isPortableLaunch(options.portableLaunch ?? observePortableLaunch()),
     fileBytes: fileSize(path),
     walBytes: fileSize(`${path}-wal`),
     pageSize: pragmaNumber(db, 'page_size'),

@@ -89,6 +89,61 @@ describe('the Move Data Folder… menu item', () => {
     move?.click?.()
     expect(clicked).toHaveBeenCalledTimes(1)
   })
+
+  /**
+   * T-260831-06 / ADR-013 Decision 6: a portable copy keeps its data beside
+   * its own `.exe`, so there is nothing for this item to do. T-260831-03 made
+   * the attempt fail loudly (`PortableDataRootPointerError`); this is what
+   * stops an operator having to hit that wall to learn it.
+   */
+  it('is disabled, and says why in its own label, on a portable launch', () => {
+    const clicked = vi.fn()
+    const template = buildApplicationMenuTemplate(clicked, { portable: true })
+
+    const submenu = template.find((item) => item.label === 'Data')?.submenu as Array<{
+      label?: string
+      enabled?: boolean
+      click?: () => void
+    }>
+
+    // Still there, still first in the Data menu — an operator who knows the
+    // feature exists is told why it is unavailable rather than left hunting
+    // a menu that no longer admits it.
+    expect(submenu).toHaveLength(1)
+    const move = submenu[0]
+    expect(move?.enabled).toBe(false)
+
+    // A menu has no tooltip and no help text, so anything not in the label
+    // is not said at all. The label carries the reason *and* the real
+    // alternative — move the .exe.
+    expect(move?.label).toContain('Move Data Folder…')
+    expect(move?.label).toContain('Solo CRM.exe')
+
+    // No handler at all, rather than a no-op: the disabled flag is the
+    // enforcement, and a second one waiting behind it could only disagree.
+    expect(move?.click).toBeUndefined()
+    expect(clicked).not.toHaveBeenCalled()
+  })
+
+  it('is untouched when the launch is not portable', () => {
+    // The default and the explicit `false` are the same menu, and it is the
+    // same menu T-260828-19 shipped — the third acceptance criterion's
+    // "unchanged otherwise".
+    const labelsFor = (portable: boolean | undefined) => {
+      const template =
+        portable === undefined
+          ? buildApplicationMenuTemplate(vi.fn())
+          : buildApplicationMenuTemplate(vi.fn(), { portable })
+      const submenu = template.find((item) => item.label === 'Data')?.submenu as Array<{
+        label?: string
+        enabled?: boolean
+      }>
+      return submenu.map((item) => [item.label, item.enabled])
+    }
+
+    expect(labelsFor(undefined)).toEqual([['Move Data Folder…', undefined]])
+    expect(labelsFor(false)).toEqual([['Move Data Folder…', undefined]])
+  })
 })
 
 describe('promptAndMoveDataFolder', () => {
