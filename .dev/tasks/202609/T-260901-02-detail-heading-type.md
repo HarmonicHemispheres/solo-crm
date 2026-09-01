@@ -1,10 +1,10 @@
 ---
 id: T-260901-02
 title: Style the detail-page heading so the banner reads as a banner
-status: in-progress
+status: done
 category: ui
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -90,3 +90,31 @@ already scoped inside `.card-h` and `.sheet-h` and have no reported problem.
 - The mockup is the authority here and it already agrees with the fix — this
   is a porting gap being closed, not a design change. Do not take the
   opportunity to adjust the size to taste.
+
+## Outcome
+
+**Changed:** 5 files — `styles/base.css` gains the mockup's global `h1`
+rule (line 35, verbatim) with a header saying why it is global rather than
+duplicated into the two detail stylesheets; `ViewHeader.css` loses its
+`.vhead h1` copy of the same four values (pointer comment left in place);
+`styles/base.test.ts` gains three tests that read the *computed* style
+through jsdom rather than the file's text; `base.test.ts` moved from
+`tsconfig.node.json` to `tsconfig.integration.json`'s `files`, the only
+program with both the DOM lib and Node types, with the reason recorded in
+that file's `// files` note.
+
+**Review:** passed. Three mutants against `base.test.ts` alone: `font-size`
+27→28px (two tests red), `margin: 0` deleted (two red — computed margin
+falls to the UA's `0` vs the asserted `0px`, which is a thin but real
+signal), and the rule re-scoped to `.vhead h1` (the detail-header test
+red, the view-header test still green — exactly the split the bug was).
+The non-vacuity test (same markup, no author sheet → 32px) proves the
+computed-style path is live rather than jsdom returning declared values.
+`ViewHeader.css` has no second copy of the values. `/revenue` and
+`/offerings` (`ViewPlaceholder`) now take the same 27px heading — that is
+the rule reaching them as intended, not a regression.
+
+Not done here: the "checked in the running app against the mockup" and
+"`/companies` visually unchanged" items were not eyeballed in Electron by
+either the builder or the merge. The computed-style tests are the evidence
+that stands in for them.
