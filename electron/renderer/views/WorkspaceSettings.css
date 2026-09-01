@@ -1,6 +1,7 @@
 /*
- * `/workspace/settings` (T-260828-38). `.settings-grid`, `.setrow`,
- * `.switch`, `.steps`, `.stepb`, `.kbdx` are transcribed from
+ * `/workspace/settings` (T-260828-38; relaid out by T-260901-09).
+ *
+ * `.setrow`, `.switch`, `.steps`, `.stepb`, `.kbdx` are transcribed from
  * planning/solo-crm-mockup.html (lines ~248-251, ~430-444) — none of them had
  * a home yet (Toggle.tsx's own header: the mockup's `.switch` on/off control
  * "is used in exactly one view and stays there", i.e. this one, so it is
@@ -17,14 +18,106 @@
  * would race it for which stylesheet the bundler emits last. The mockup's
  * own resolution — a global `.inp` with a per-surface override — is what
  * this scopes to: only the padding this view's tighter rows want, scoped
- * under `.settings-grid` so it touches nothing outside this page.
+ * under `.settings-layout` so it touches nothing outside this page.
+ *
+ * `.settings-grid` is GONE (ADR-014). The mockup's auto-fit card grid put a
+ * given control in a different place at every window width; `.settings-layout`
+ * replaces it with a fixed-order section rail beside a single content column.
+ * Neither `.settings-rail` nor `.settings-railb` has a mockup source — the
+ * mockup has no secondary rail — so both are built from this file's own
+ * tokens rather than lifted.
  */
 
-.settings-grid {
+/* ── the two columns — ADR-014 §1 ─────────────────────────────────────────
+   `minmax(0, 1fr)` rather than `1fr` on the content column: a `1fr` track's
+   `auto` minimum is set by its contents, so one long unbreakable string (a
+   backup folder path in `.mono.trunc`) would push the track wider than the
+   page and give the body the horizontal scroll `ui-design.md` forbids. ── */
+
+.settings-layout {
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
+}
+
+/* The cap the grid's own 1fr columns used to give for free. A `.field` row
+   stretched across a maximised window is the failure a single column has to
+   prevent for itself. */
+.settings-body {
+  max-width: 720px;
+  min-width: 0;
+}
+
+.settings-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-railb {
+  /* A transparent border, not none: the selected state adds a visible one,
+     and a border appearing on selection would shift every label by a pixel. */
+  border: 1px solid transparent;
+  background: none;
+  border-radius: var(--radius-9);
+  padding: 7px 11px 7px 13px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mute);
+  position: relative;
+  transition: background var(--motion-hover), color var(--motion-hover);
+}
+
+.settings-railb:hover {
+  background: var(--surface-2);
+  color: var(--papyrus);
+}
+
+/* Selection is never colour alone (ADR-014 §1): the accent bar and the
+   heavier weight both survive a monochrome rendering, and `aria-current` on
+   the same button carries it to assistive technology. */
+.settings-railb.on {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--papyrus);
+  font-weight: 600;
+}
+
+.settings-railb.on::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--verdigris);
+}
+
+/* ── 900px — the app's own breakpoint (Rail.css, `--bp-tablet`), where the
+   app rail goes off-canvas. The section rail becomes a horizontal strip
+   above the content that WRAPS rather than scrolling sideways: six short
+   labels wrap to two rows at 700px, and the page body still never scrolls
+   horizontally. Same `<nav>`, same buttons, same `aria-current` — only the
+   direction changes, so keyboard operation is identical at every width. ── */
+
+@media (max-width: 900px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .settings-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .settings-body {
+    max-width: none;
+  }
 }
 
 /* ── inputs — mockup lines ~248-251. The global `.inp` (components/sheets/
@@ -32,8 +125,25 @@
    focus ring; this view's rows are tighter than a create sheet's, so it
    overrides only the padding, scoped so nothing outside this page sees it. ── */
 
-.settings-grid .inp {
+.settings-layout .inp {
   padding: 5px 9px;
+}
+
+/* A section that holds two groups renders two `.card-h`s in one card
+   (ADR-014 §2). `.card-h:not(:first-child)` already draws the rule above the
+   second one, so the row immediately before it must drop its own bottom
+   border or the two stack into a 2px line. */
+.settings-body .field:has(+ .card-h) {
+  border-bottom: 0;
+}
+
+/* An info popover in a `Card.Header` hangs off the header's trailing edge
+   (`.sp` is `margin-left: auto`), so the panel opens leftwards from the
+   trigger's right edge instead of rightwards from its left — a 320px panel
+   anchored `left: 0` there would overhang the card and, at 700px, the page. */
+.settings-body .card-h .pop {
+  left: auto;
+  right: 0;
 }
 
 /* ── on/off rows — mockup lines ~430-438 ── */
@@ -117,7 +227,7 @@
    previews need beside their state line.
 
    The preview boxes themselves are NOT declared here. `.mark` and `.wordmark`
-   come from Rail.css, on purpose: this card's whole job is to show what the
+   come from Rail.css, on purpose: this group's whole job is to show what the
    rail will draw, and one declaration is the only way the two cannot disagree
    about 25px and 104px. Rail is mounted on every route, so those rules are
    always present — the same argument this file's header already makes for
@@ -165,9 +275,12 @@
 }
 
 /* ── footer notes — the mockup's own inline style on the cadence card's
-   closing line (line 1288), given a class since this view repeats it on
-   three cards rather than one. Carries whatever a panel needs to say plainly
-   about behaviour that has not landed (this task's Scope/Risks). ── */
+   closing line (line 1318), given a class since more than one section ends in
+   one. It carries only what ADR-014 §4 calls a section's *state*: behaviour a
+   control implies that has not landed anywhere yet (the three honest
+   captions), or a constraint §6.11 requires the UI itself to state. Anything
+   that merely *explains* is in an `InfoPopover` on the section's header
+   instead — never here. ── */
 
 .settings-foot {
   padding: 10px 15px;

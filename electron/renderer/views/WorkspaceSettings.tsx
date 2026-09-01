@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card } from '../components/primitives/Card'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { Button } from '../components/primitives/Button'
+import { InfoPopover } from '../components/primitives/InfoPopover'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { SoloCrmMark, SoloCrmWordmark } from '../components/shell/BrandMarks'
@@ -36,25 +37,52 @@ import type { SettingEntry } from '../../shared/ipc-types'
 import './WorkspaceSettings.css'
 
 /**
- * `/workspace/settings` (T-260828-38) — the first of the two blank pages the
- * user hit in the installed build. Five cards, one per §6.11 bullet:
- * Identity, Default cadence, Integrations, Backup & appearance, Shortcuts —
- * plus Branding (T-260829-07), the one card here that does not read or write
- * `settings` at all: an image is not a setting value, it lives in its own
- * table behind its own channels (`electron/shared/branding.ts`) — and Guided
- * tour (T-260829-15), which writes no setting from this page either: it
- * reopens the first-run overlay through the layer manager and the overlay
- * owns its own `onboarding.tourSeen` write.
+ * `/workspace/settings` (T-260828-38, rebuilt by T-260901-09).
+ *
+ * **The layout is [ADR-014](.dev/decisions/ADR-014-settings-layout.md), not
+ * the mockup's card grid.** The mockup draws five cards in a
+ * `repeat(auto-fit, minmax(340px, 1fr))` grid; this page had grown to seven
+ * with two more plan items (P4-08, X-04) aimed at the same page, and an
+ * auto-fit grid puts a given control somewhere different at every window
+ * width. So: a **section rail** on the left, and **one section's card at a
+ * time** on the right — six sections, in the fixed order `SETTINGS_SECTIONS`
+ * declares. The mockup is annotated in place at `views.settings` so a reader
+ * finds the divergence where they would otherwise copy from; do not restore
+ * the grid.
+ *
+ * The cards, rows, switches and steppers *inside* a section are still the
+ * mockup's spec, unchanged — only the arrangement departs. Two of the seven
+ * old cards were merged into a neighbouring section (Branding into Identity,
+ * Guided tour into Help, each as a second `Card.Header` inside the one card)
+ * and one was split (Backup & appearance), for the reasons ADR-014 §2 gives.
  *
  * Every value shown reads and writes through T-260828-25's settings
- * repository (`settings:getAll` / `settings:set`) — there is no second
- * store. Two panels describe behaviour that has not landed anywhere in the
- * app yet, and say so in the interface rather than storing a value and
- * implying an effect (this task's Risks, and the run instructions this task
- * was built under): the cadence card's defaults do not move any company
- * until P2-02 exists, and the backup folder has no picker to open until a
- * main-process dialog channel exists — see the note beside each. Neither is
- * hidden; both are visible, working controls with an honest caption.
+ * repository (`settings:getAll` / `settings:set`) — there is no second store,
+ * and the rebuild added, removed and renamed no key. The selected section is
+ * deliberately **not** one: it is component state defaulting to the first
+ * section on every visit, not a `settings` row and not a route (ADR-014 §1 —
+ * persisting it would put the operator on last time's section, which is the
+ * "nothing is where it was" complaint in a new form).
+ *
+ * Two cards here read no setting at all and must not be folded into the
+ * snapshot: Branding goes through `branding:get`/`choose`/`clear` (an image
+ * is not a setting value — `electron/shared/branding.ts`), and Guided tour
+ * reopens the first-run overlay through the layer manager, which owns its own
+ * `onboarding.tourSeen` write.
+ *
+ * **Where prose lives** is ADR-014 §4, and it is a rule by kind rather than a
+ * judgement per paragraph, because "put the descriptions in popovers" reads
+ * naturally as "all of them" and doing that would silently reverse P2-09's
+ * honest-caption criterion. A section's *explanation* goes behind an
+ * `InfoPopover` in its `Card.Header` (Branding, Default cadence, Guided
+ * tour); a section's *state* stays in the flow as a `.settings-foot`
+ * caption — either behaviour a control implies that has not landed (the
+ * three honest captions: cadence has no consumer until P2-02, the backup
+ * folder has no dialog channel to open, `appearance.density` has no view
+ * applying it), or a constraint §6.11 requires the UI itself to state (the
+ * integrations pull-only line). The day P2-02, a folder-dialog channel or a
+ * density consumer lands, the matching caption is deleted in that same
+ * change — a stale limitation is as misleading as a hidden one.
  */
 
 // ---------------------------------------------------------------------------
@@ -94,6 +122,8 @@ function useSetSetting() {
   }
 }
 
+type SetSetting = <K extends SettingKey>(key: K, value: SettingValue<K>) => void
+
 // ---------------------------------------------------------------------------
 // The boolean on/off row — the mockup's `.switch` (Toggle.tsx's own header:
 // not that component, "used in exactly one view and stays there").
@@ -131,7 +161,10 @@ function SettingSwitch({
 }
 
 // ---------------------------------------------------------------------------
-// Identity — workspace name, operator, currency, fiscal year start.
+// Identity — workspace name, operator, currency, fiscal year start, then the
+// Branding group beneath its own header (ADR-014 §2: two image slots are the
+// workspace's identity as much as its name is, and each half is short on its
+// own).
 // ---------------------------------------------------------------------------
 
 /**
@@ -182,13 +215,7 @@ const MONTH_LABEL = [
   'December'
 ]
 
-function IdentityCard({
-  snapshot,
-  setSetting
-}: {
-  snapshot: SettingsSnapshot
-  setSetting: <K extends SettingKey>(key: K, value: SettingValue<K>) => void
-}) {
+function IdentitySection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; setSetting: SetSetting }) {
   return (
     <Card>
       <Card.Header title="Identity" />
@@ -238,6 +265,7 @@ function IdentityCard({
           </select>
         </span>
       </div>
+      <BrandingGroup />
     </Card>
   )
 }
@@ -272,7 +300,7 @@ const CONTENT_TYPE_LABEL: Record<BrandingContentType, string> = {
   'image/x-icon': 'ICO'
 }
 
-/** The accepted set as the caption says it, composed from the shared list so the sentence cannot drift from what main will take. */
+/** The accepted set as the popover says it, composed from the shared list so the sentence cannot drift from what main will take. */
 const ACCEPTED_FORMATS = BRANDING_CONTENT_TYPES.map((type) => CONTENT_TYPE_LABEL[type])
 const ACCEPTED_FORMAT_LIST = `${ACCEPTED_FORMATS.slice(0, -1).join(', ')} or ${ACCEPTED_FORMATS[ACCEPTED_FORMATS.length - 1]}`
 
@@ -358,7 +386,21 @@ function BrandingRow({
   )
 }
 
-function BrandingCard() {
+/**
+ * A header plus two rows rather than a `<Card>` of its own — ADR-014 §2 puts
+ * Branding inside the Identity section as a second `Card.Header`, which is
+ * the shape `Card.tsx`'s own header recommends over nested cards. The merge
+ * is visual only: this still reads `branding:get` and writes
+ * `branding:choose`/`branding:clear`, and is not folded into the settings
+ * snapshot.
+ *
+ * The card's old four-line footer is now this header's `InfoPopover`
+ * (ADR-014 §4): it explains a rule the control already enforces, since a
+ * refused pick renders its own reason beside the row that failed
+ * (`brandrow-error`, `role="alert"`), so the honest path survives without the
+ * paragraph standing in the flow.
+ */
+function BrandingGroup() {
   const queryClient = useQueryClient()
   // The key `Rail.tsx` reads on too — that sharing is why opening this page
   // issues no second `branding:get`.
@@ -393,8 +435,18 @@ function BrandingCard() {
   const snapshot = brandingQuery.data
 
   return (
-    <Card>
-      <Card.Header title="Branding" />
+    <>
+      <Card.Header
+        title="Branding"
+        actions={
+          <InfoPopover aria-label="About Branding">
+            {ACCEPTED_FORMAT_LIST}, up to {BRANDING_MAX_BYTES / 1024} KB per slot. SVG is not one of them: it is a
+            document format that can carry script, and these two images render inside the app&rsquo;s own chrome on
+            every view — so Solo CRM stores an image&rsquo;s pixels here, never a document. Choosing one says so
+            rather than failing quietly. The format is decided by the file&rsquo;s own bytes, not its extension.
+          </InfoPopover>
+        }
+      />
       {BRANDING_SLOTS.map((slot) => (
         <BrandingRow
           key={slot}
@@ -407,13 +459,7 @@ function BrandingCard() {
           onClear={() => clearImage.mutate(slot)}
         />
       ))}
-      <p className="meta settings-foot">
-        {ACCEPTED_FORMAT_LIST}, up to {BRANDING_MAX_BYTES / 1024} KB per slot. SVG is not one of them: it is a
-        document format that can carry script, and these two images render inside the app&rsquo;s own chrome on
-        every view — so Solo CRM stores an image&rsquo;s pixels here, never a document. Choosing one says so
-        rather than failing quietly. The format is decided by the file&rsquo;s own bytes, not its extension.
-      </p>
-    </Card>
+    </>
   )
 }
 
@@ -447,16 +493,24 @@ const CADENCE_STEPS = [7, 14, 30, 90] as const
 // `renderer/lib/decay.ts` (which resolves a null `cadence_days` against these
 // defaults) can import it without importing a view. It is imported above.
 
-function CadenceCard({
-  snapshot,
-  setSetting
-}: {
-  snapshot: SettingsSnapshot
-  setSetting: <K extends SettingKey>(key: K, value: SettingValue<K>) => void
-}) {
+function CadenceSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; setSetting: SetSetting }) {
   return (
     <Card>
-      <Card.Header title="Default cadence" actions={<span className="meta">days between touches</span>} />
+      <Card.Header
+        title="Default cadence"
+        actions={
+          <>
+            <span className="meta">days between touches</span>
+            {/* The mockup's own closing line, which explains intended
+                behaviour rather than stating a limitation — ADR-014 §4 sends
+                it here and keeps the honest caption below in the flow. When
+                P2-02 lands, the caption is deleted and this popover stays. */}
+            <InfoPopover aria-label="About Default cadence">
+              New companies inherit these. Any company can override its own.
+            </InfoPopover>
+          </>
+        }
+      />
       {COMPANY_KINDS.map((kind) => {
         const key = CADENCE_SETTING_KEY[kind]
         const value = snapshot[key]
@@ -481,11 +535,7 @@ function CadenceCard({
           </div>
         )
       })}
-      <p className="meta settings-foot">
-        Sets the stored default for new companies of this kind. Applying it — inheriting into new companies,
-        moving existing ones off their old default — is not built yet (P2-02); changing a value here has no effect
-        on any company until then.
-      </p>
+      <p className="meta settings-foot">Stored only — no company moves until P2-02 applies these defaults.</p>
     </Card>
   )
 }
@@ -513,15 +563,13 @@ const INTEGRATION_SETTING_KEY: Record<IntegrationSource, SettingKey> = {
   gmail: 'integrations.gmail.enabled'
 }
 
-function IntegrationsCard({
-  snapshot,
-  setSetting
-}: {
-  snapshot: SettingsSnapshot
-  setSetting: <K extends SettingKey>(key: K, value: SettingValue<K>) => void
-}) {
+function IntegrationsSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; setSetting: SetSetting }) {
   return (
     <Card>
+      {/* No `InfoPopover` here, deliberately (ADR-014 §4): the pull-only line
+          is a constraint §6.11 requires the *UI* to state, so it stays in the
+          flow, and there is nothing further to explain — a popover with
+          nothing to say is an icon button that lies about having content. */}
       <Card.Header title="Integrations" count="pull-only" />
       {INTEGRATION_SOURCES.map((source) => {
         const key = INTEGRATION_SETTING_KEY[source]
@@ -543,20 +591,17 @@ function IntegrationsCard({
 }
 
 // ---------------------------------------------------------------------------
-// Backup & appearance — one card, matching the mockup's own grouping.
+// Backup — its own section now (ADR-014 §2). The mockup grouped it with
+// Appearance because each was two rows and the grid wanted a card; they are
+// different subjects with different futures (Backup grows with X-04,
+// Appearance does not), and a rail entry named for two subjects is one an
+// operator has to guess at.
 // ---------------------------------------------------------------------------
 
-function BackupAppearanceCard({
-  snapshot,
-  setSetting
-}: {
-  snapshot: SettingsSnapshot
-  setSetting: <K extends SettingKey>(key: K, value: SettingValue<K>) => void
-}) {
-  const density = snapshot['appearance.density']
+function BackupSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; setSetting: SetSetting }) {
   return (
     <Card>
-      <Card.Header title="Backup & appearance" />
+      <Card.Header title="Backup" />
       <SettingSwitch
         label="Nightly JSON export"
         note="Keeps the last 30 snapshots"
@@ -570,15 +615,27 @@ function BackupAppearanceCard({
           variant="ghost"
           disabled
           aria-disabled="true"
-          title="Not built yet — the folder picker needs a main-process dialog channel (see this run's report)"
+          title="Not built yet — the folder picker needs a main-process dialog channel"
         >
           Choose folder
         </Button>
       </div>
       <p className="meta settings-foot">
-        Choosing a folder here isn't wired yet — it needs a main-process dialog channel that doesn't exist in this
-        build. The nightly export itself is a separate, later task (X-04).
+        The picker needs a main-process dialog channel that doesn&rsquo;t exist yet; the export is X-04.
       </p>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Appearance — interface motion and compact density.
+// ---------------------------------------------------------------------------
+
+function AppearanceSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; setSetting: SetSetting }) {
+  const density = snapshot['appearance.density']
+  return (
+    <Card>
+      <Card.Header title="Appearance" />
       <SettingSwitch
         label="Interface motion"
         note="Off also honours the system reduced-motion setting"
@@ -597,12 +654,27 @@ function BackupAppearanceCard({
 }
 
 // ---------------------------------------------------------------------------
-// Shortcuts — read-only, generated from useGlobalShortcuts.ts's own
-// `GLOBAL_SHORTCUTS` registry rather than hand-typed (this task's Scope), so
-// a combo added or removed there can never leave this list stale.
+// Help — Shortcuts (read-only, generated from useGlobalShortcuts.ts's own
+// `GLOBAL_SHORTCUTS` registry rather than hand-typed, so a combo added or
+// removed there can never leave this list stale) and the Guided tour, as two
+// groups under one section (ADR-014 §2).
+//
+// The tour is a second `Card.Header` beneath Shortcuts rather than a row
+// inside it: this page has always refused to put a button that *does*
+// something into a keyboard reference, and that reasoning still holds. The
+// section is named Help, not Shortcuts, so the operator who would come here
+// looking for the tour by name finds a rail entry that answers.
+//
+// "Take the tour" reopens the overlay without clearing `onboarding.tourSeen`
+// — the flag stays `true` and closing the tour again writes `true` again.
+// Dismissal is final on its own; this is the operator asking, which is the
+// only way back this feature has.
 // ---------------------------------------------------------------------------
 
-function ShortcutsCard() {
+function HelpSection() {
+  const { openLayer } = useLayerManager()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
   return (
     <Card>
       <Card.Header title="Shortcuts" />
@@ -620,31 +692,15 @@ function ShortcutsCard() {
         </span>
         <span className="v">Close whatever panel is open</span>
       </div>
-    </Card>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Guided tour — the way back into T-260829-15's first-run walkthrough after
-// it has been skipped or finished. A card of its own rather than a row in
-// Shortcuts: that card's own header says it is generated from
-// `GLOBAL_SHORTCUTS` and is read-only, and a button that *does* something is
-// not a keyboard reference. It is also the thing an operator would come here
-// looking for by name, which a list of key combinations does not answer.
-//
-// It reopens the overlay without clearing `onboarding.tourSeen` — the flag
-// stays `true` and closing the tour again writes `true` again. Dismissal is
-// final on its own; this is the operator asking, which is the only way back
-// this feature has.
-// ---------------------------------------------------------------------------
-
-function GuidedTourCard() {
-  const { openLayer } = useLayerManager()
-  const triggerRef = useRef<HTMLButtonElement>(null)
-
-  return (
-    <Card>
-      <Card.Header title="Guided tour" />
+      <Card.Header
+        title="Guided tour"
+        actions={
+          <InfoPopover aria-label="About Guided tour">
+            The walkthrough a new workspace opens with, and only ever opens with once. Taking it again changes
+            nothing — it reads out what each section is for and writes no record but its own &ldquo;seen&rdquo; flag.
+          </InfoPopover>
+        }
+      />
       <div className="field">
         <span className="k">Five screens</span>
         <span className="v">Today, Companies, People, Engagements, Workspace</span>
@@ -652,11 +708,63 @@ function GuidedTourCard() {
           Take the tour
         </Button>
       </div>
-      <p className="meta settings-foot">
-        The walkthrough a new workspace opens with, and only ever opens with once. Taking it again changes nothing — it
-        reads out what each section is for and writes no record but its own &ldquo;seen&rdquo; flag.
-      </p>
     </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// The section rail — ADR-014 §1. A `<nav>` of real buttons in a fixed order,
+// one selected at a time, `aria-current` on the selected one so the selection
+// is exposed to assistive technology by something other than colour. No
+// roving tabindex: Tab moves between the buttons in order, matching the app
+// rail's own `Link`s. Activating one swaps the content column and leaves
+// focus where it is, so the content region is the next Tab stop in DOM order.
+//
+// Below 900px — the app's own breakpoint, where the rail goes off-canvas
+// (Rail.css, `--bp-tablet`) — this becomes a wrapping horizontal strip above
+// the content, in CSS alone: same `<nav>`, same buttons, same `aria-current`,
+// so keyboard operation is identical at every width.
+// ---------------------------------------------------------------------------
+
+const SETTINGS_SECTIONS = ['identity', 'cadence', 'integrations', 'backup', 'appearance', 'help'] as const
+
+type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
+
+/** The rail's label for each section, and the accessible name of the content
+ * region while that section is selected. */
+const SECTION_LABEL: Record<SettingsSection, string> = {
+  identity: 'Identity',
+  cadence: 'Default cadence',
+  integrations: 'Integrations',
+  backup: 'Backup',
+  appearance: 'Appearance',
+  help: 'Help'
+}
+
+function SectionRail({
+  section,
+  onSelect
+}: {
+  section: SettingsSection
+  onSelect: (next: SettingsSection) => void
+}) {
+  return (
+    <nav className="settings-rail" aria-label="Settings sections">
+      {SETTINGS_SECTIONS.map((candidate) => {
+        const selected = candidate === section
+        return (
+          <button
+            key={candidate}
+            type="button"
+            className={selected ? 'settings-railb on' : 'settings-railb'}
+            aria-current={selected ? 'true' : undefined}
+            onClick={() => onSelect(candidate)}
+          >
+            {SECTION_LABEL[candidate]}
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 
@@ -672,6 +780,9 @@ function SettingsGlyph() {
 export function WorkspaceSettings() {
   const settingsQuery = useSettingsSnapshot()
   const setSetting = useSetSetting()
+  // Component state, not a setting key and not a route (ADR-014 §1): every
+  // visit opens on the first section.
+  const [section, setSection] = useState<SettingsSection>(SETTINGS_SECTIONS[0])
   useMotionAttribute(settingsQuery.data?.['appearance.motion'])
 
   const header = <ViewHeader icon={<SettingsGlyph />} accent="var(--verdigris)" title="Workspace" />
@@ -699,14 +810,19 @@ export function WorkspaceSettings() {
   return (
     <div>
       {header}
-      <div className="settings-grid">
-        <IdentityCard snapshot={snapshot} setSetting={setSetting} />
-        <BrandingCard />
-        <CadenceCard snapshot={snapshot} setSetting={setSetting} />
-        <IntegrationsCard snapshot={snapshot} setSetting={setSetting} />
-        <BackupAppearanceCard snapshot={snapshot} setSetting={setSetting} />
-        <ShortcutsCard />
-        <GuidedTourCard />
+      <div className="settings-layout">
+        <SectionRail section={section} onSelect={setSection} />
+        {/* One section's card, and nothing from the others mounted. The swap
+            is immediate with no transition, so `prefers-reduced-motion` has
+            nothing to remove and the section change survives it intact. */}
+        <section className="settings-body" aria-label={SECTION_LABEL[section]}>
+          {section === 'identity' && <IdentitySection snapshot={snapshot} setSetting={setSetting} />}
+          {section === 'cadence' && <CadenceSection snapshot={snapshot} setSetting={setSetting} />}
+          {section === 'integrations' && <IntegrationsSection snapshot={snapshot} setSetting={setSetting} />}
+          {section === 'backup' && <BackupSection snapshot={snapshot} setSetting={setSetting} />}
+          {section === 'appearance' && <AppearanceSection snapshot={snapshot} setSetting={setSetting} />}
+          {section === 'help' && <HelpSection />}
+        </section>
       </div>
     </div>
   )
