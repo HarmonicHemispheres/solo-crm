@@ -1,7 +1,7 @@
 ---
 id: T-260831-03
 title: Resolve the data root beside the executable when the build is portable
-status: open
+status: in-progress
 category: data
 plan_ref: X-09
 created: 2026-08-31

@@ -1,7 +1,7 @@
 ---
 id: T-260831-04
 title: Add the portable target to the release build, beside the installer
-status: open
+status: in-progress
 category: build
 plan_ref: X-09
 created: 2026-08-31
@@ -12,8 +12,9 @@ closed:
 
 `npm run dist` produces one artifact, `release/Solo CRM-Setup-<version>.exe`,
 because `build.win.target` is `["nsis"]`. The portable artifact an operator can
-drop on a USB stick does not exist yet, and T-260831-03's resolution logic has
-nothing to switch on until the build produces something marked portable.
+drop on a USB stick does not exist yet, so T-260831-03's resolution logic — which
+detects a portable launch by observing where it is running from — has nothing to
+detect and no way to be exercised outside a test.
 
 ## Scope
 
@@ -25,11 +26,17 @@ nothing to switch on until the build produces something marked portable.
   produce an `.exe`, so the two artifact names must not collide: the installer is
   `Solo CRM-Setup-<version>.exe` today, and the portable build needs a name that
   is distinct from it and still obviously the same product and version.
-- **Produce the portable marker T-260831-03 reads.** However ADR-013 fixed the
-  "is this build portable" signal, this task is what makes it true of the
-  packaged output — a build-time define, a file in `resources/`, a distinct
-  `appId`, whatever was chosen. The two halves have to agree; name the mechanism
-  in the outcome so the next reader does not have to diff two tasks to find it.
+- ~~Produce the portable marker T-260831-03 reads.~~ **Cut by
+  [ADR-013](../../decisions/ADR-013-portable-data-root.md) Decision 2, which
+  landed after this scope was written.** There is no build-time marker to
+  produce and none to keep in sync: electron-builder's per-target options are
+  `artifactName` and `publish` only (`app-builder-lib/out/core.d.ts:39`), and
+  both Windows artifacts are packed from one `electron-vite build` and one
+  `electron-builder --win` over the same `win-unpacked` payload, so a define,
+  a `resources/` file or an `appId` would mark the installer portable too. The
+  app instead observes that it is portable (packaged, and running out of a
+  directory inside `os.tmpdir()`), entirely within T-260831-03. **This task
+  produces no marker and must not invent one.**
 - Keep `files` excluding `out/main/seed.js` for the new target as it does for
   `nsis` — the dev seed must not ship in a portable build any more than in the
   installer.
@@ -49,7 +56,6 @@ packaging stays where it is.
 ## Touches
 
 - `package.json` — `build.win.target`, the new target's config block
-- `electron.vite.config.ts` — only if the portable marker is a build-time define
 - `README.md` — Cutting a release
 - `AGENTS.md` — the data-location gotcha
 - `CHANGELOG.md`
@@ -74,11 +80,8 @@ packaging stays where it is.
 
 ## Risks
 
-- **The marker is the joint, and joints drift.** If this task's marker and
-  T-260831-03's detection disagree, the portable build silently falls back to
-  whatever the non-portable path does — which is `userData`, which looks like a
-  working app storing data in the wrong place. Worth an assertion that fails the
-  build rather than trust.
+- ~~The marker is the joint, and joints drift.~~ Removed with the marker itself
+  by ADR-013 Decision 2 — which is most of why that decision was made.
 - **Build size and launch time.** The single-file target extracts the unpacked
   app — 410 MB, against a 116 MB installer — to `%TEMP%` on every launch and
   deletes it on exit. That is a user-visible cost, accepted deliberately when the
