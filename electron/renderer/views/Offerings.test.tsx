@@ -221,6 +221,15 @@ describe('Offerings', () => {
     expect(screen.getByText('Ops Template')).toBeTruthy()
     expect(screen.queryByText('Discovery Audit')).toBeNull()
 
+    // The archived list is narrowed by the same filter — Retired Sprint is
+    // archived under Audits, so it stays out of a Products view even with
+    // archived rows shown (added at merge review: the block list is narrowed
+    // by category on its own, so this is the only place the row predicate
+    // shows).
+    fireEvent.click(screen.getByRole('button', { name: /Archived/ }))
+    expect(screen.queryByText('Retired Sprint')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Archived/ }))
+
     fireEvent.click(screen.getByRole('button', { name: 'All categories' }))
     expect(screen.getByText('Discovery Audit')).toBeTruthy()
   })
