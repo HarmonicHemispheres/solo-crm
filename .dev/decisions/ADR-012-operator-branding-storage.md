@@ -58,6 +58,13 @@ disagree with the bytes, and clearing a slot is a `DELETE` rather than a write
 of a sentinel. Every column is `NOT NULL`, so a half-written row — bytes with
 no type, a type with no bytes — is not representable.
 
+> **Scope note (2026-09-01).** "Two rows at most, ever" is a claim about the
+> `branding` table, not about operator-supplied images in general.
+> [ADR-015](ADR-015-company-images.md) extends this decision to per-company
+> logos and banners in their own `company_images` table — one row per company
+> and slot — and changes the read path to match, because a per-company table
+> is read by a list and this one is not. Nothing here is superseded.
+
 `content_type` is stored rather than re-sniffed on read, which is the one place
 this table deliberately differs from `favicons`. It is safe to store precisely
 because it is never a caller's claim: `writeBrandingSlot` derives it from the
@@ -84,6 +91,11 @@ renders. **This number is revisable** — it is a compromise, not a measured
 threshold. A 512 KB PNG is a generously large wordmark and anything much bigger
 is almost always an unoptimised export; if a legitimate logo is ever refused,
 raising it is a one-line change in one file.
+
+This argument is about *two* reads at startup. It does not transfer to a table
+read sixty rows at a time; ADR-015 §3 and §4 say what bounds a per-company
+image instead, and its caps are declared separately rather than reusing
+`BRANDING_MAX_BYTES`.
 
 ### 2. `branding` joins ADR-002's natural-identity exemption class
 
@@ -146,7 +158,9 @@ that sniffs as PNG but is malformed still reaches Chromium's decoder as a
 accepts, bounded by the same three things: raster only, no SVG, a hard byte
 cap. There is no image decoder in main and this decision does not add one —
 resizing, re-encoding and dimension validation are all deliberately out of
-scope, and display size is a CSS concern the consuming task owns.
+scope, and display size is a CSS concern the consuming task owns. (ADR-015
+adds a decoder in main for `company_images` only, with its own guards; the
+branding path is unchanged and still decodes nothing.)
 
 **Forecloses branding history.** Writing overwrites; the previous logo is
 gone. Nothing asks for history, and `updated_at` answers the only question
