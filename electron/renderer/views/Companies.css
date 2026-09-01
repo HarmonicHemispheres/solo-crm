@@ -45,6 +45,25 @@
   background: currentColor;
 }
 
+/* A company's own logo, when it has one (T-260901-15): the 96 × 96 PNG
+   derivative `companyImages:thumbnails` returned, in place of the initials.
+   `contain` rather than `cover` because a mark is a mark — a wordmark that
+   is wider than it is tall letterboxes rather than being cropped through its
+   own letters. */
+.cmark-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* The `identityColor` tint exists to give the derived initials a background
+   they read against. Over a real logo it is a coloured film across someone
+   else's mark, so it goes — the border still holds the shape. */
+.cmark.has-logo::after {
+  content: none;
+}
+
 /* ── company card ── */
 .ccard {
   background: var(--surface);
@@ -105,6 +124,85 @@
   font-size: 10.5px;
   color: var(--faint);
   margin-left: auto;
+}
+
+/* ── the banner wash (T-260901-15) ──────────────────────────────────────
+ *
+ * A company's banner behind its card, not as a header strip: no reserved
+ * band, no hard edge, no change to the card's layout. Every rule below is
+ * gated on `.has-banner`, which the view only adds when a banner really
+ * exists — so a company without one renders the same markup and the same
+ * computed background it did before this file grew this section.
+ *
+ * The layer is a child rather than a background on `.ccard` itself because
+ * the card already paints `var(--surface)`, and the image has to sit
+ * *between* that and the card's content for the gradient to fade it out
+ * before the text. `isolation: isolate` makes the card its own stacking
+ * context and `z-index: -1` puts the layer at the bottom of it: above the
+ * card's own background, below every one of its children — including
+ * `:focus-visible`'s outline, which is painted by the button and cannot be
+ * swallowed by a layer that is behind it (this task's Risks).
+ */
+.ccard.has-banner {
+  position: relative;
+  isolation: isolate;
+}
+
+.ccard .ccard-wash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* `inherit` is the border-box radius; the layer is inset by the 1px
+     border, so it is trimmed by that much to sit inside the corner. */
+  border-radius: calc(var(--radius-13) - 1px);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  /* The card is one button. A layer that swallowed a click would make part
+     of it dead, so it takes no pointer events at all. */
+  pointer-events: none;
+}
+
+/*
+ * The gradient, and the whole legibility argument.
+ *
+ * Bottom-to-top coverage: the banner shows through at 16% at the card's very
+ * top edge, is down to 8% a quarter of the way in, and from 44% down the
+ * ground is **fully opaque `var(--surface)`** — the exact colour an
+ * un-bannered card paints. So the tags row, the decay meter and the cadence
+ * figure sit on the same surface they always did, whatever the banner is,
+ * and only the name and its metadata line sit over any bleed at all.
+ *
+ * 16% is not a taste figure, it is the contrast budget. Against the worst
+ * case — a fully white banner — 84% `--surface` coverage leaves `--papyrus`
+ * (the name) at 9.0:1 and `--mute` at 5.3:1; against a fully black one, 15.0
+ * and 8.9. `Companies.test.tsx` computes those four numbers from this rule's
+ * own stops rather than trusting this comment, so raising the bleed to where
+ * the text stops clearing 4.5:1 fails a test instead of shipping.
+ */
+.ccard.has-banner .ccard-wash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--surface) 84%, transparent) 0%,
+    color-mix(in srgb, var(--surface) 92%, transparent) 24%,
+    var(--surface) 44%,
+    var(--surface) 100%
+  );
+}
+
+/*
+ * The one text colour the wash changes. `.meta` is `--faint` (base.css),
+ * which measures 3.0:1 on a bare card and would fall to 1.9:1 under a white
+ * banner's 16%. `--mute` clears 4.5:1 in both extremes, so the metadata line
+ * under a banner steps up to it — the rest of the card's text is on opaque
+ * surface and keeps the colour it always had.
+ */
+.ccard.has-banner .top .meta {
+  color: var(--mute);
 }
 
 .ccard-new {

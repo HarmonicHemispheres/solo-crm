@@ -24,6 +24,7 @@
     "electron/renderer/styles/tokens.test.ts",
     "electron/renderer/components/sheets/fields.test.ts",
     "electron/renderer/components/shell/Rail.test.ts",
+    "electron/renderer/views/Companies.css.test.ts",
     "scripts/**/*.ts"
   ]
 }

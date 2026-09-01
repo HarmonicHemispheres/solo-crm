@@ -14,6 +14,7 @@ import { useLayerManager, type LayerManagerContextValue } from '../components/sh
 import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import type { Company, CompanyKind } from '../../shared/companies'
+import type { CompanyImageThumbnails } from '../../shared/company-images'
 import type { Engagement } from '../../shared/engagements'
 import type { SettingEntry } from '../../shared/ipc-types'
 import type { ViewPresentationMode } from '../../shared/settings'
@@ -60,16 +61,34 @@ function initials(name: string): string {
     .toUpperCase()
 }
 
-function CompanyMark({ name, size }: { name: string; size: number }) {
+/**
+ * The mark, now image-aware (T-260901-15). `logo` is the **derivative**
+ * `companyImages:thumbnails` returned for this company — a 96 × 96 PNG data
+ * URL, never an original — or `null`/`undefined` for the ordinary case, which
+ * is every company until someone uploads one.
+ *
+ * It takes the URL as a prop and issues no read of its own. ADR-015 §3 is
+ * explicit about why: "a mark with its own `useQuery` is a per-card fetch
+ * wearing a component's clothes", and it is what this view's channel-count
+ * test exists to catch. Still a local function rather than a shared
+ * component — T-260901-14 owns CompanyDetail's copy and this task's Touches
+ * list is this file, its stylesheet and its test.
+ *
+ * With no logo the returned element is byte-identical to what it was before
+ * this task: the same `cmark` class, the same single `<span>` of initials.
+ */
+function CompanyMark({ name, size, logo }: { name: string; size: number; logo?: string | null }) {
   const color = identityColor(name)
   const style: CSSProperties = { width: size, height: size, fontSize: Math.round(size * 0.37), color }
   return (
     // Decorative: the full name always sits right beside this mark (the
     // card's .nm, the table row's .nm), so its initials would otherwise
     // leak into the card/row's computed accessible name ahead of the name
-    // itself — hidden rather than announced redundantly.
-    <span className="cmark" style={style} aria-hidden="true">
-      <span>{initials(name)}</span>
+    // itself — hidden rather than announced redundantly. The logo is
+    // decorative for the same reason, and carries `alt=""` on top of the
+    // wrapper's `aria-hidden` so it is never announced as an unnamed image.
+    <span className={logo ? 'cmark has-logo' : 'cmark'} style={style} aria-hidden="true">
+      {logo ? <img className="cmark-img" src={logo} alt="" /> : <span>{initials(name)}</span>}
     </span>
   )
 }
@@ -148,6 +167,18 @@ interface CompanyRow {
   endClients: number
 }
 
+/**
+ * One company's present slots, as `companyImages:thumbnails` keys them — the
+ * value type of ADR-015's map, named once so a card, a row and a mark all
+ * spell the same thing. `undefined` for a company with no images at all,
+ * which is how the map answers: present slots only, absent companies simply
+ * missing rather than carrying two `null`s.
+ */
+type CompanyImages = CompanyImageThumbnails[string] | undefined
+
+/** An empty map, referentially stable, so a pending or failed thumbnails read does not re-render every card with a fresh `{}`. */
+const NO_IMAGES: CompanyImageThumbnails = {}
+
 type SortColumn = 'name' | 'kind' | 'engagements' | 'cadence' | 'lastTouch'
 type SortDirection = 'asc' | 'desc'
 interface SortState {
@@ -200,6 +231,25 @@ export function Companies() {
   const modeQuery = useQuery({
     queryKey: queryKeys.settings.detail(MODE_SETTING_KEY),
     queryFn: ipcQueryFn('settings:get', { key: MODE_SETTING_KEY })
+  })
+  /**
+   * ADR-015's list read, and the only one this view makes for images: **one**
+   * call carrying every company's stored 96 × 96 / 480 × 270 derivative, never
+   * an original and never one call per card. Reading the originals here would
+   * be 83.9 MB of base64 for a 60-company grid; this is about 1.5 MB, and the
+   * difference is invisible on the seeded database, which has no images at
+   * all. `Companies.test.tsx` counts the calls for exactly that reason.
+   *
+   * Deliberately **not** part of `isLoading` or `loadError` below. A missing
+   * image is not a missing company: absence is already the rendered default
+   * (the derived mark and the flat surface), so the grid paints on
+   * `companies:list` and the wash arrives when it arrives. Gating on it would
+   * hold every card behind a decoration, and failing on it would replace a
+   * perfectly good list with an error panel because a thumbnail did not load.
+   */
+  const thumbnailsQuery = useQuery({
+    queryKey: queryKeys.companyImages.thumbnails(),
+    queryFn: ipcQueryFn('companyImages:thumbnails')
   })
 
   // The cache is written before the round trip so the toggle feels instant
@@ -270,6 +320,7 @@ export function Companies() {
 
   const isLoading = companiesQuery.isPending || engagementsQuery.isPending || modeQuery.isPending
   const loadError = companiesQuery.error ?? engagementsQuery.error ?? modeQuery.error
+  const images = thumbnailsQuery.data ?? NO_IMAGES
 
   const header = (
     <ViewHeader
@@ -339,9 +390,20 @@ export function Companies() {
     <div>
       {header}
       {mode === 'list' ? (
-        <CompaniesTable rows={sortedRows} sort={sort} onSort={handleSort} onOpen={(id) => navigate(`/company/${id}`)} />
+        <CompaniesTable
+          rows={sortedRows}
+          images={images}
+          sort={sort}
+          onSort={handleSort}
+          onOpen={(id) => navigate(`/company/${id}`)}
+        />
       ) : (
-        <CompaniesGrid rows={sortedRows} onOpen={(id) => navigate(`/company/${id}`)} onCreate={openSheet} />
+        <CompaniesGrid
+          rows={sortedRows}
+          images={images}
+          onOpen={(id) => navigate(`/company/${id}`)}
+          onCreate={openSheet}
+        />
       )}
     </div>
   )
@@ -390,10 +452,13 @@ function CompaniesGlyph() {
 
 function CompaniesGrid({
   rows,
+  images,
   onOpen,
   onCreate
 }: {
   rows: readonly CompanyRow[]
+  /** The whole map from the view's single `companyImages:thumbnails` read; each card indexes it by the id it already holds. */
+  images: CompanyImageThumbnails
   onOpen: (id: string) => void
   /** `openSheet` itself, typed off the context value so this card's create
    * call cannot drift from the signature every other create button in the
@@ -403,7 +468,7 @@ function CompaniesGrid({
   return (
     <div className="grid autofill">
       {rows.map((row) => (
-        <CompanyCard key={row.company.id} row={row} onOpen={onOpen} />
+        <CompanyCard key={row.company.id} row={row} images={images[row.company.id]} onOpen={onOpen} />
       ))}
       {/* "Add company" — see the EmptyState action's comment on why this
           reads differently from the ViewHeader's own "New company" button
@@ -420,13 +485,47 @@ function CompaniesGrid({
   )
 }
 
-function CompanyCard({ row, onOpen }: { row: CompanyRow; onOpen: (id: string) => void }) {
+function CompanyCard({
+  row,
+  images,
+  onOpen
+}: {
+  row: CompanyRow
+  images: CompanyImages
+  onOpen: (id: string) => void
+}) {
   const { company, activeEngagements, endClients } = row
   const pct = decayPct(company)
+  const banner = images?.banner?.dataUrl ?? null
   return (
-    <button type="button" className="ccard" onClick={() => onOpen(company.id)}>
+    // `.has-banner` is what carries every rule the wash needs — the stacking
+    // context, the layer's own positioning, and the metadata line's step up
+    // to `--mute` for contrast against it. A company with no banner gets the
+    // bare `ccard` class and no extra child, so its card is byte-identical to
+    // what this view rendered before T-260901-15: no placeholder, no empty
+    // band, no changed computed background.
+    <button
+      type="button"
+      className={banner ? 'ccard has-banner' : 'ccard'}
+      onClick={() => onOpen(company.id)}
+    >
+      {banner && (
+        // A sibling layer, not a background on the button itself: `.ccard`
+        // already paints `var(--surface)`, and the wash has to sit *between*
+        // that and the card's content so the gradient can fade it out before
+        // the text. `z-index: -1` in the card's own stacking context is what
+        // puts it there (Companies.css). It is `aria-hidden` and
+        // `pointer-events: none`, so it neither renames the button nor
+        // intercepts the click — the card is still one button with one
+        // accessible name.
+        <span
+          className="ccard-wash"
+          aria-hidden="true"
+          style={{ backgroundImage: `url("${banner}")` }}
+        />
+      )}
       <div className="top">
-        <CompanyMark name={company.name} size={38} />
+        <CompanyMark name={company.name} size={38} logo={images?.logo?.dataUrl} />
         <div className="grow">
           <div className="nm trunc">{company.name}</div>
           <div className="meta">{company.website ?? '—'}</div>
@@ -471,11 +570,14 @@ function ariaSortFor(sort: SortState | null, column: SortColumn): 'ascending' | 
 
 function CompaniesTable({
   rows,
+  images,
   sort,
   onSort,
   onOpen
 }: {
   rows: readonly CompanyRow[]
+  /** The same map the grid reads, from the same single call — the table presentation is the second reader ADR-015 names, not a second read. */
+  images: CompanyImageThumbnails
   sort: SortState | null
   onSort: (column: SortColumn) => void
   onOpen: (id: string) => void
@@ -505,7 +607,7 @@ function CompaniesTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <CompanyTableRow key={row.company.id} row={row} onOpen={onOpen} />
+            <CompanyTableRow key={row.company.id} row={row} images={images[row.company.id]} onOpen={onOpen} />
           ))}
         </tbody>
       </table>
@@ -513,7 +615,15 @@ function CompaniesTable({
   )
 }
 
-function CompanyTableRow({ row, onOpen }: { row: CompanyRow; onOpen: (id: string) => void }) {
+function CompanyTableRow({
+  row,
+  images,
+  onOpen
+}: {
+  row: CompanyRow
+  images: CompanyImages
+  onOpen: (id: string) => void
+}) {
   const { company, activeEngagements, endClients } = row
   const pct = decayPct(company)
   const activate = () => onOpen(company.id)
@@ -531,7 +641,9 @@ function CompanyTableRow({ row, onOpen }: { row: CompanyRow; onOpen: (id: string
     <tr tabIndex={0} aria-label={`Open ${company.name}`} onClick={activate} onKeyDown={handleKeyDown}>
       <td>
         <div className="id-cell">
-          <CompanyMark name={company.name} size={26} />
+          {/* The logo, and only the logo: a table row is not a canvas, so the
+              banner is deliberately absent here (this task's Scope). */}
+          <CompanyMark name={company.name} size={26} logo={images?.logo?.dataUrl} />
           <div className="grow">
             <div className="trunc nm">{company.name}</div>
             <div className="meta">
