@@ -41,6 +41,12 @@ written there, never into the working tree.
   duplicated name row and reads its version live — T-260829-06, annotated in
   place in the mockup — because that block is the default an operator overrides
   with their own branding, and a default cannot be one particular consultancy's.
+  A third exception: the mockup's **settings view** is an auto-fit card grid.
+  The shipped view is a section rail showing one section's card at a time —
+  [ADR-014](.dev/decisions/ADR-014-settings-layout.md), annotated in place at
+  `views.settings` — because the grid reflows by window width and the page
+  outgrew the region ceiling; the cards' contents are still the spec, and Data
+  stays its own view.
 - [planning/solo-crm-requirements.md](planning/solo-crm-requirements.md) — scope,
   data model, integrations, non-functional requirements.
 - [CONVENTIONS.md](CONVENTIONS.md) — date, timestamp and money representations.

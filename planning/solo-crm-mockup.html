@@ -1274,6 +1274,25 @@ function ganttView(){
 
 
 /* ── workspace: settings ── */
+/* DIVERGENCE (ADR-014, T-260901-03): the shipped settings view does not use
+   the auto-fit card grid drawn in views.settings below, deliberately. Five
+   cards here became seven in the app (Branding, Guided tour) with more due
+   (P4-08, X-04), and an auto-fit grid puts a control somewhere different at
+   every window width. The app draws a section rail on the left — Identity,
+   Default cadence, Integrations, Backup, Appearance, Help — and shows ONE
+   section's card at a time on the right; at 900px the rail becomes a
+   wrapping strip above the content. Branding joins Identity, "Backup &
+   appearance" splits in two, Shortcuts and Guided tour merge into Help, and
+   Data stays its own view. Every card, row, switch and stepper below is
+   still the spec for what a section CONTAINS; only the arrangement differs.
+   Prose: the integrations card's pull-only line stays in the flow as written
+   here (§6.11 says the UI must state it); the cadence card's "New companies
+   inherit these" line moves behind an info popover on the card header, and
+   the flow carries instead an honest caption that no company moves until
+   P2-02 lands. Anything a control has stored but nothing yet applies says so
+   in the flow; anything that merely explains goes behind the popover. See
+   .dev/decisions/ADR-014-settings-layout.md. Do not "fix" the app back to
+   this grid. */
 let settings={backup:true,pullStripe:true,pullCal:true,pullMail:false,motion:true,dense:false};
 function tog(k){settings[k]=!settings[k];go(cur,curArg);}
 const sw=(k,label,note)=>`<div class="setrow"><div style="flex:1;min-width:0">
