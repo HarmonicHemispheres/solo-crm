@@ -149,6 +149,71 @@ export const affiliations = sqliteTable(
   (t) => [index('idx_affiliations_person_id').on(t.personId), index('idx_affiliations_company_id').on(t.companyId)]
 )
 
+// T-260901-08, migration 0007. One company's operator-supplied logo and
+// banner, one row per filled slot (ADR-015).
+//
+// **Not** the natural-identity exemption. `(company_id, slot)` is not an
+// outside-world identity the way a settings key or a branding slot is:
+// `company_id` is a UUID this app minted, and a composite of our own foreign
+// key and a discriminator is exactly what ADR-002 refused to call an identity
+// when it gave `taggings` a UUID plus a unique index on its natural triple.
+// Same reasoning, same shape — the pair is genuinely unique (a company has one
+// logo), so it is enforced as an index rather than as the key, and the table
+// carries `created_at`/`updated_at` like every other non-exempt table.
+//
+// **Column order is load-bearing.** SQLite stores a row's columns in declared
+// order and spills a large row into a chain of overflow pages; reading a
+// column means walking every page before it. `bytes` — the original, up to
+// 1 MB — is declared LAST so the companies grid's read of `thumb_bytes` walks
+// the handful of pages a thumbnail occupies and never touches the up-to-256
+// pages the original does. drizzle-kit emits DDL in declaration order, so this
+// order is the one that ships.
+//
+// `content_type` is derived from the bytes' own magic numbers
+// (`sniffImageContentType`) and `thumb_content_type` is asserted from the slot,
+// never from a caller's claim about either. Every column is NOT NULL, so a row
+// with an original and no derivative — or the reverse — cannot exist. Clearing
+// a slot is a DELETE: the absence is the default, and the derived
+// `hue()`/`initials()` mark is what renders in its place.
+//
+// The foreign key is this schema's first `ON DELETE cascade`, where every
+// other one is `no action`. An image is an attachment in ADR-011's sense — a
+// property of the company, meaningless without it, referenced by nothing — and
+// unlike `links`/`taggings`/`external_refs` it has exactly one parent, so the
+// engine can express the cascade and a trigger would be a second mechanism for
+// a case the first one handles. `deleteCompany`'s `refuseIfReferenced` list
+// deliberately does not gain this table.
+export const companyImages = sqliteTable(
+  'company_images',
+  {
+    id: text('id').primaryKey().notNull(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => companies.id, { onDelete: 'cascade' }),
+    // 'logo' | 'banner' — COMPANY_IMAGE_SLOTS. No CHECK, for `branding`'s
+    // reason: the list that matters is in `electron/shared/company-images.ts`
+    // and enforced by the repository, and a duplicate in SQL would be a second
+    // place to update and the one a schema diff cannot read.
+    slot: text('slot').notNull(),
+    // Of `bytes`: image/png | image/jpeg.
+    contentType: text('content_type').notNull(),
+    // Of `bytes`, so a caller that only wants a size need not load the blob.
+    byteLength: integer('byte_length').notNull(),
+    // Of `bytes`, in pixels — free at write time from the decoder's getSize().
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    // image/png for a logo, image/jpeg for a banner — a function of the slot.
+    thumbContentType: text('thumb_content_type').notNull(),
+    thumbByteLength: integer('thumb_byte_length').notNull(),
+    thumbBytes: blob('thumb_bytes', { mode: 'buffer' }).notNull(),
+    // LAST, on purpose — see this table's note above.
+    bytes: blob('bytes', { mode: 'buffer' }).notNull()
+  },
+  (t) => [unique('company_images_company_slot_unique').on(t.companyId, t.slot)]
+)
+
 // ---------------------------------------------------------------------------
 // Offerings: services and products
 // ---------------------------------------------------------------------------

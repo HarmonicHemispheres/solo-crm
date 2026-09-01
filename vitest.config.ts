@@ -78,7 +78,14 @@ export const RUNTIME_BOOT_NODE_FILES = [
   // case. Solo it is 1.95s for 24 tests; under six concurrent runs one test
   // reached 31.9s against a 30000ms budget. Moving it costs about two seconds
   // of serial time and removes the last contention failure.
-  'electron/main/db/connection.test.ts'
+  'electron/main/db/connection.test.ts',
+  // T-260901-08: spawns a real, throwaway Electron so the *actual*
+  // `nativeImage` deriver runs — every other test of the company-images path
+  // injects a fake, because `electron` under plain Node resolves to a string
+  // path rather than the API. Belongs here by the same rule as its
+  // neighbours: it is a real runtime boot, and it compiles a module graph
+  // before it starts one.
+  'electron/main/images/derive.electron.test.ts'
 ]
 
 export const RUNTIME_BOOT_RENDERER_FILES = [

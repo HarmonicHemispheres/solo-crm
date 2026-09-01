@@ -4,6 +4,7 @@ import migration0003Sql from './0003_search_content_table.sql?raw'
 import migration0004Sql from './0004_fk_indexes_polymorphic_cascade.sql?raw'
 import migration0005Sql from './0005_branding.sql?raw'
 import migration0006Sql from './0006_offerings_rename.sql?raw'
+import migration0007Sql from './0007_company_images.sql?raw'
 
 /**
  * The ordered, explicit manifest of every migration `migrate.ts` knows how
@@ -62,5 +63,12 @@ export const MIGRATIONS: readonly MigrationDefinition[] = [
   // ... RENAME`, not drizzle-kit output: drizzle-kit reads a rename as a drop
   // and a create, which would discard every row. `schema.test.ts` asserts the
   // regenerated delta against this file all the same.
-  { version: 6, name: '0006_offerings_rename', sql: migration0006Sql }
+  { version: 6, name: '0006_offerings_rename', sql: migration0006Sql },
+  // T-260901-08: the `company_images` table — one company's operator-supplied
+  // logo and banner, each stored beside a downscaled derivative that is the
+  // only rendition a list ever reads (ADR-015). Declared in `schema.ts`, so
+  // `schema.test.ts`'s regeneration check sees the table and its unique index
+  // in the delta and asserts they match this file rather than treating them as
+  // drift. Its foreign key is the schema's first `ON DELETE cascade`.
+  { version: 7, name: '0007_company_images', sql: migration0007Sql }
 ]
