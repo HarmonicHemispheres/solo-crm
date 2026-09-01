@@ -1,12 +1,23 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Sheet } from '../primitives/Sheet'
 import { Button } from '../primitives/Button'
 import { Field, ChipField } from './Field'
 import { useCompaniesList } from './queries'
 import { useSheetMutation } from './useSheetMutation'
-import { callCrm, unwrapMutationResult } from '../../lib/ipc'
-import { decimalStringToCents, formatDateOnly } from '../../../shared/format'
-import { BILLING_MODELS, ENGAGEMENT_STATUSES, type BillingModel, type CreateEngagementInput, type EngagementStatus } from '../../../shared/engagements'
+import { callCrm, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
+import { queryKeys } from '../../lib/query-keys'
+import type { SheetFormTarget } from '../shell/layer-manager-context'
+import { centsToDecimalString, decimalStringToCents, formatDateOnly } from '../../../shared/format'
+import {
+  BILLING_MODELS,
+  ENGAGEMENT_STATUSES,
+  type BillingModel,
+  type CreateEngagementInput,
+  type Engagement,
+  type EngagementStatus,
+  type UpdateEngagementInput
+} from '../../../shared/engagements'
 
 const BILLING_MODEL_LABELS: Record<BillingModel, string> = {
   retainer: 'Retainer',
@@ -50,8 +61,20 @@ function parseCents(raw: string, field: string): number | null {
   }
 }
 
+/** The inverse of `parseHours` — a stored column back into what its input shows. `null` is an empty field, never a `"0"` the user did not type. */
+function hoursToInput(value: number | null): string {
+  return value == null ? '' : String(value)
+}
+
+/** The inverse of `parseCents`. Round-trips exactly (`16500` -> `"165.00"` -> `16500`), which is what lets the edit diff below tell an untouched amount from an edited one. */
+function centsToInput(value: number | null): string {
+  return value == null ? '' : centsToDecimalString(value)
+}
+
 export interface EngagementSheetProps {
   onClose: () => void
+  /** New engagement, or one that already exists — see `SheetFormTarget`. */
+  target: SheetFormTarget
 }
 
 /**
@@ -75,49 +98,175 @@ const FIELD_LABELS = {
 } as const
 
 /**
- * `.sheet` content for `FORMS.engagement` — the one form with a schema
- * decision in it (this task's Why): "Billed to" (`billingCompanyId`) and
- * "Work is for" (`clientCompanyId`) are two separate selects, never
- * coalesced into one "Company" field, because §5 makes them independent
- * columns. "Work is for" mirrors "Billed to" until a caller edits it
- * directly (`clientTouched`), then holds its own value even if "Billed to"
- * changes afterwards — `FORMS.engagement`'s own `syncClient()`, reproduced
- * below as a render-time adjustment (React's documented pattern for
- * "adjusting state when a value changes": compare against a `useState`-held
- * previous value and call `setState` conditionally during render, which
- * `react-hooks/set-state-in-effect` treats differently from the same call
- * inside a `useEffect` body) rather than a DOM `dataset.touched`.
+ * The billing-model discriminant travelling with exactly the columns that
+ * model owns, and nothing else — the renderer-side mirror of
+ * `electron/shared/engagements.ts`'s discriminated union. Built once by
+ * `readModelPart` below and spread into both the create payload and the
+ * update patch, so neither can carry another model's column and neither can
+ * carry a column without the model that explains it.
+ */
+type ModelPart =
+  | { readonly billingModel: 'retainer'; readonly hoursIncluded: number | null }
+  | { readonly billingModel: 'fixed'; readonly contractValueCents: number | null }
+  | {
+      readonly billingModel: 'tm'
+      readonly hourlyRateCents: number | null
+      readonly estimatedHours: number | null
+      readonly notToExceedCents: number | null
+    }
+  | { readonly billingModel: 'equity' }
+  | { readonly billingModel: 'none' }
+
+/** Every common column this form owns, as an update patch — `agreedRateCents` is not among them, by design (see this file's header). */
+interface CommonPatch {
+  name?: string
+  billingCompanyId?: string | null
+  clientCompanyId?: string | null
+  status?: EngagementStatus
+  startedOn?: string
+  endsOn?: string | null
+}
+
+/** Does the selected model's own column set differ from what is stored? A model switch is handled separately — this asks only about the columns. */
+function modelColumnsDiffer(part: ModelPart, engagement: Engagement): boolean {
+  switch (part.billingModel) {
+    case 'retainer':
+      return part.hoursIncluded !== engagement.hoursIncluded
+    case 'fixed':
+      return part.contractValueCents !== engagement.contractValueCents
+    case 'tm':
+      return (
+        part.hourlyRateCents !== engagement.hourlyRateCents ||
+        part.estimatedHours !== engagement.estimatedHours ||
+        part.notToExceedCents !== engagement.notToExceedCents
+      )
+    default:
+      // equity and none own no columns of their own — nothing to compare.
+      return false
+  }
+}
+
+/** What `handleSubmit` hands the mutation: which channel, and the payload that channel takes. Two shapes, never one with a maybe-id. */
+type EngagementSubmission =
+  | { readonly mode: 'create'; readonly input: CreateEngagementInput }
+  | { readonly mode: 'edit'; readonly id: string; readonly patch: UpdateEngagementInput }
+
+/**
+ * `.sheet` content for `FORMS.engagement`, in both of its modes
+ * (T-260901-10): a blank create form, or the same form bound to an
+ * engagement that already exists. Which one is decided by `target`, not by
+ * whether an optional id happened to be passed — see `SheetFormTarget`.
+ *
+ * The split below is the seam. `EngagementSheet` resolves the target;
+ * `EngagementEditSheet` loads the record (`engagements:get`) and renders
+ * nothing but a placeholder until it has one; `EngagementForm` is the form
+ * itself and never sees a mode it has to wait for — it takes the record, or
+ * `null`, and seeds every field from it in a `useState` initialiser. That
+ * ordering is what keeps the edit path off `react-hooks/set-state-in-effect`
+ * (and off React's own advice): the form is *mounted* with the record
+ * rather than mounted empty and filled in by an effect afterwards. A field
+ * added later (the offering picker, T-260901-13; the milestone editor,
+ * P3-09) is added to `EngagementForm` alone, seeded the same way.
+ *
+ * The one form-level decision worth restating (this task's Why): "Billed to"
+ * (`billingCompanyId`) and "Work is for" (`clientCompanyId`) are two
+ * separate selects, never coalesced into one "Company" field, because §5
+ * makes them independent columns. "Work is for" mirrors "Billed to" until a
+ * caller edits it directly (`clientTouched`), then holds its own value even
+ * if "Billed to" changes afterwards — `FORMS.engagement`'s own
+ * `syncClient()`, reproduced below as a render-time adjustment (React's
+ * documented pattern for "adjusting state when a value changes": compare
+ * against a `useState`-held previous value and call `setState` conditionally
+ * during render, which `react-hooks/set-state-in-effect` treats differently
+ * from the same call inside a `useEffect` body) rather than a DOM
+ * `dataset.touched`.
  *
  * `billingModel` swaps in only the columns that model actually has
  * (`electron/shared/engagements.ts`'s discriminated union) — retainer's
  * `hoursIncluded`, fixed's `contractValueCents`, T&M's `hourlyRateCents` /
  * `estimatedHours` / `notToExceedCents`; equity and none carry no
- * model-specific column. `agreedRateCents` is out of this form's scope
- * entirely (this task's scope lists no "rate" field for any model) and is
- * simply never sent — the repository defaults an absent key to `NULL` on
- * create, the same as every other omitted optional column.
+ * model-specific column.
  *
- * `LayerManager` mounts this only while the `sheet` layer is open, same as
- * `CompanySheet` — see that component's comment for why that (not an `open`
- * prop plus a reset effect) is what gives every open a blank form.
+ * **`agreedRateCents` is never presented and never sent, in either mode.**
+ * `electron/shared/engagements.ts`'s header states why: it is a snapshot
+ * taken at signature, writable on create and deliberately dropped by
+ * `updateEngagement` even when the update schema accepts the key. A form
+ * that echoed the whole record back would send it, the repository would
+ * silently discard it, and a control that appears to change it would have
+ * been a lie that looked like it worked. So this form owns a named set of
+ * columns and sends only from that set — which is also why the update path
+ * below builds a diff rather than posting the record it loaded.
  */
-export function EngagementSheet({ onClose }: EngagementSheetProps) {
+export function EngagementSheet({ onClose, target }: EngagementSheetProps) {
+  if (target.mode === 'edit') {
+    return <EngagementEditSheet id={target.id} onClose={onClose} />
+  }
+  return <EngagementForm engagement={null} onClose={onClose} />
+}
+
+/** The sheet shell shown while the record for an edit is still loading, missing, or unreadable — same chrome, no fields to mislead with. */
+function PlaceholderSheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      closeOnEscape={false}
+      title="Edit engagement"
+      titleMeta="UPDATE engagements"
+      aria-label="Edit engagement"
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      }
+    >
+      <p className="meta">{children}</p>
+    </Sheet>
+  )
+}
+
+/**
+ * Loads the engagement an edit was opened on, then mounts the form with it.
+ * The form is not rendered at all until the record is in hand — see
+ * `EngagementSheet`'s comment for why that ordering, rather than an empty
+ * form plus a populate effect, is the whole point of the split.
+ */
+function EngagementEditSheet({ id, onClose }: { id: string; onClose: () => void }) {
+  const query = useQuery({ queryKey: queryKeys.engagements.detail(id), queryFn: ipcQueryFn('engagements:get', { id }) })
+
+  if (query.isPending) return <PlaceholderSheet onClose={onClose}>Loading this engagement…</PlaceholderSheet>
+  if (query.error) return <PlaceholderSheet onClose={onClose}>{query.error.message}</PlaceholderSheet>
+  // `engagements:get` answers `null` for an id nothing owns — a row deleted
+  // between the list render and the click. Saying so beats an empty form.
+  if (!query.data) return <PlaceholderSheet onClose={onClose}>This engagement no longer exists.</PlaceholderSheet>
+
+  return <EngagementForm engagement={query.data} onClose={onClose} />
+}
+
+function EngagementForm({ engagement, onClose }: { engagement: Engagement | null; onClose: () => void }) {
   const formId = useId()
   const companies = useCompaniesList()
+  const isEdit = engagement !== null
 
-  const [name, setName] = useState('')
-  const [billingCompanyId, setBillingCompanyId] = useState('')
-  const [clientCompanyId, setClientCompanyId] = useState('')
-  const [clientTouched, setClientTouched] = useState(false)
-  const [billingModel, setBillingModel] = useState<BillingModel>('retainer')
-  const [status, setStatus] = useState<EngagementStatus>('active')
-  const [startedOn, setStartedOn] = useState(() => formatDateOnly(new Date()))
-  const [endsOn, setEndsOn] = useState('')
-  const [hoursIncluded, setHoursIncluded] = useState('')
-  const [contractValue, setContractValue] = useState('')
-  const [hourlyRate, setHourlyRate] = useState('')
-  const [estimatedHours, setEstimatedHours] = useState('')
-  const [notToExceed, setNotToExceed] = useState('')
+  const [name, setName] = useState(engagement?.name ?? '')
+  const [billingCompanyId, setBillingCompanyId] = useState(engagement?.billingCompanyId ?? '')
+  const [clientCompanyId, setClientCompanyId] = useState(engagement?.clientCompanyId ?? '')
+  // On an existing engagement "Work is for" already holds a stored value of
+  // its own, so the mirror starts switched off: changing "Billed to" on a
+  // record must never silently overwrite a client company someone chose.
+  const [clientTouched, setClientTouched] = useState(isEdit)
+  // A stored `null` billing model shows as `none` — the value the create
+  // schema uses for "no billing model" — rather than defaulting an existing
+  // record into `retainer`, which would be a claim about it that nobody made.
+  const [billingModel, setBillingModel] = useState<BillingModel>(engagement ? (engagement.billingModel ?? 'none') : 'retainer')
+  const [status, setStatus] = useState<EngagementStatus>(engagement?.status ?? 'active')
+  const [startedOn, setStartedOn] = useState(() => engagement?.startedOn ?? formatDateOnly(new Date()))
+  const [endsOn, setEndsOn] = useState(engagement?.endsOn ?? '')
+  const [hoursIncluded, setHoursIncluded] = useState(() => hoursToInput(engagement?.hoursIncluded ?? null))
+  const [contractValue, setContractValue] = useState(() => centsToInput(engagement?.contractValueCents ?? null))
+  const [hourlyRate, setHourlyRate] = useState(() => centsToInput(engagement?.hourlyRateCents ?? null))
+  const [estimatedHours, setEstimatedHours] = useState(() => hoursToInput(engagement?.estimatedHours ?? null))
+  const [notToExceed, setNotToExceed] = useState(() => centsToInput(engagement?.notToExceedCents ?? null))
 
   // "Work is for" mirrors "Billed to" until edited directly — adjusted
   // during render, not in an effect: `prevBillingCompanyId` is this
@@ -132,11 +281,33 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
 
   const { mutation, error, setError, setRawError, errorFor } = useSheetMutation(
     'engagements',
-    (input: CreateEngagementInput) => callCrm('engagements:create', input).then(unwrapMutationResult),
+    (submission: EngagementSubmission) =>
+      submission.mode === 'edit'
+        ? callCrm('engagements:update', { id: submission.id, patch: submission.patch }).then(unwrapMutationResult)
+        : callCrm('engagements:create', submission.input).then(unwrapMutationResult),
     onClose,
     'Could not save this engagement.',
     FIELD_LABELS
   )
+
+  /** The selected model's own columns, parsed from this form's inputs. Throws `<payload key>: <detail>`, which `handleSubmit` places against the named field. */
+  const readModelPart = (): ModelPart => {
+    switch (billingModel) {
+      case 'retainer':
+        return { billingModel, hoursIncluded: parseHours(hoursIncluded, 'hoursIncluded') }
+      case 'fixed':
+        return { billingModel, contractValueCents: parseCents(contractValue, 'contractValueCents') }
+      case 'tm':
+        return {
+          billingModel,
+          hourlyRateCents: parseCents(hourlyRate, 'hourlyRateCents'),
+          estimatedHours: parseHours(estimatedHours, 'estimatedHours'),
+          notToExceedCents: parseCents(notToExceed, 'notToExceedCents')
+        }
+      default:
+        return { billingModel }
+    }
+  }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -152,34 +323,53 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
       return
     }
 
-    const common = {
-      name: trimmedName,
-      billingCompanyId: billingCompanyId || null,
-      clientCompanyId: clientCompanyId || null,
-      status,
-      startedOn,
-      endsOn: endsOn || null
-    }
+    const billingCompany = billingCompanyId || null
+    const clientCompany = clientCompanyId || null
+    const ends = endsOn || null
 
     try {
-      let payload: CreateEngagementInput
-      if (billingModel === 'retainer') {
-        payload = { ...common, billingModel: 'retainer', hoursIncluded: parseHours(hoursIncluded, 'hoursIncluded') }
-      } else if (billingModel === 'fixed') {
-        payload = { ...common, billingModel: 'fixed', contractValueCents: parseCents(contractValue, 'contractValueCents') }
-      } else if (billingModel === 'tm') {
-        payload = {
-          ...common,
-          billingModel: 'tm',
-          hourlyRateCents: parseCents(hourlyRate, 'hourlyRateCents'),
-          estimatedHours: parseHours(estimatedHours, 'estimatedHours'),
-          notToExceedCents: parseCents(notToExceed, 'notToExceedCents')
-        }
-      } else {
-        payload = { ...common, billingModel }
-      }
+      const modelPart = readModelPart()
       setError(null)
-      mutation.mutate(payload)
+
+      if (engagement) {
+        // Only what actually changed, and only from the columns this form
+        // owns — never the whole record. See this file's header on
+        // `agreedRateCents`: the update schema would accept it and the
+        // repository would drop it without a word, so the fix is to not
+        // build a payload that could contain it.
+        const patch: CommonPatch = {}
+        if (trimmedName !== engagement.name) patch.name = trimmedName
+        if (billingCompany !== engagement.billingCompanyId) patch.billingCompanyId = billingCompany
+        if (clientCompany !== engagement.clientCompanyId) patch.clientCompanyId = clientCompany
+        if (status !== engagement.status) patch.status = status
+        if (startedOn !== engagement.startedOn) patch.startedOn = startedOn
+        if (ends !== engagement.endsOn) patch.endsOn = ends
+
+        // A stored `null` model and a selected `none` say the same thing, so
+        // that pairing is not a change — otherwise every save on a
+        // model-less engagement would write a value nobody chose.
+        const modelChanged = modelPart.billingModel !== (engagement.billingModel ?? 'none')
+        // The model discriminant travels whenever any of its columns do:
+        // `updateEngagementInputSchema`'s common-patch branch is `.strict()`
+        // and holds no model-specific key, so `{ hoursIncluded: 12 }` on its
+        // own matches no branch at all. Sending them together also gets the
+        // repository's reset behaviour right — on a real switch it NULLs the
+        // outgoing model's columns rather than leaving them stale.
+        const full: UpdateEngagementInput =
+          modelChanged || modelColumnsDiffer(modelPart, engagement) ? { ...patch, ...modelPart } : patch
+        mutation.mutate({ mode: 'edit', id: engagement.id, patch: full })
+        return
+      }
+
+      const common = {
+        name: trimmedName,
+        billingCompanyId: billingCompany,
+        clientCompanyId: clientCompany,
+        status,
+        startedOn,
+        endsOn: ends
+      }
+      mutation.mutate({ mode: 'create', input: { ...common, ...modelPart } })
     } catch (err) {
       // `parseCents`/`parseHours` throw `<payload key>: <detail>`, the same
       // shape a repository ValidationError arrives in, so both are placed
@@ -188,14 +378,16 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
     }
   }
 
+  const title = isEdit ? 'Edit engagement' : 'New engagement'
+
   return (
     <Sheet
       open
       onClose={onClose}
       closeOnEscape={false}
-      title="New engagement"
-      titleMeta="INSERT INTO engagements"
-      aria-label="New engagement"
+      title={title}
+      titleMeta={isEdit ? 'UPDATE engagements' : 'INSERT INTO engagements'}
+      aria-label={title}
       footerNote="saved locally"
       footer={
         <>
@@ -203,7 +395,7 @@ export function EngagementSheet({ onClose }: EngagementSheetProps) {
             Cancel
           </Button>
           <Button type="submit" form={formId} variant="primary" disabled={mutation.isPending}>
-            Create
+            {isEdit ? 'Save changes' : 'Create'}
           </Button>
         </>
       }

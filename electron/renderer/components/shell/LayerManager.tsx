@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { LayerManagerContext, type LayerKind, type LayerManagerContextValue, type SheetKind } from './layer-manager-context'
+import { LayerManagerContext, type LayerKind, type LayerManagerContextValue, type SheetKind, type SheetTarget } from './layer-manager-context'
 import { CommandPalette } from './CommandPalette'
 import { CompanySheet } from '../sheets/CompanySheet'
 import { PersonSheet } from '../sheets/PersonSheet'
@@ -56,11 +56,12 @@ const CLOSES_MENU_AND_POPOVER: ReadonlySet<LayerKind> = new Set(['palette', 'she
  */
 export function LayerManager({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<readonly LayerKind[]>([])
-  // Which real form (T-260828-27) the generic 'sheet' layer is holding.
-  // Null only before the first `openSheet` — every caller passes a kind
-  // (T-260829-08 made it required), so there is no longer a state in which
-  // the layer is open holding nothing.
-  const [sheetKind, setSheetKind] = useState<SheetKind | null>(null)
+  // Which real form (T-260828-27) the generic 'sheet' layer is holding, and
+  // what it is holding it *on* (T-260901-10: a new record, or one that
+  // already exists). Null only before the first `openSheet`/`editSheet` —
+  // every caller passes a kind (T-260829-08 made it required), so there is
+  // no longer a state in which the layer is open holding nothing.
+  const [sheetTarget, setSheetTarget] = useState<SheetTarget | null>(null)
   const triggers = useRef<Partial<Record<LayerKind, HTMLElement | null>>>({})
 
   // A ref mirror of `stack` so the document-level listeners below (each
@@ -103,8 +104,8 @@ export function LayerManager({ children }: { children: ReactNode }) {
     trigger?.focus()
   }, [])
 
-  const openSheet = useCallback(
-    (kind: SheetKind, trigger?: HTMLElement | null) => {
+  const openSheetTarget = useCallback(
+    (target: SheetTarget, trigger?: HTMLElement | null) => {
       // Matches `openLayer`'s own idempotency contract (see its comment: "a
       // held or repeated ⌘K [doing] nothing the first press didn't already
       // do") — extended here to the *content* a second call would pick,
@@ -114,12 +115,25 @@ export function LayerManager({ children }: { children: ReactNode }) {
       // click can reopen the menu over an open sheet) would silently swap
       // which real form is mounted (code review, T-260828-27), discarding
       // every field the user had already typed into the one that was open.
+      // T-260901-10 widens that from the kind to the whole target: an edit
+      // sheet opened over a half-filled create form would discard it just
+      // as thoroughly.
       if (!stackRef.current.includes('sheet')) {
-        setSheetKind(kind)
+        setSheetTarget(target)
       }
       openLayer('sheet', trigger)
     },
     [openLayer]
+  )
+
+  const openSheet = useCallback(
+    (kind: SheetKind, trigger?: HTMLElement | null) => openSheetTarget({ kind, mode: 'create' }, trigger),
+    [openSheetTarget]
+  )
+
+  const editSheet = useCallback(
+    (kind: SheetKind, id: string, trigger?: HTMLElement | null) => openSheetTarget({ kind, mode: 'edit', id }, trigger),
+    [openSheetTarget]
   )
 
   const isOpen = useCallback((kind: LayerKind) => stack.includes(kind), [stack])
@@ -165,8 +179,8 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<LayerManagerContextValue>(
-    () => ({ isOpen, isTopmost, openLayer, closeLayer, openSheet }),
-    [isOpen, isTopmost, openLayer, closeLayer, openSheet]
+    () => ({ isOpen, isTopmost, openLayer, closeLayer, openSheet, editSheet }),
+    [isOpen, isTopmost, openLayer, closeLayer, openSheet, editSheet]
   )
 
   // DOM order is paint order here (see the component comment): a closed
@@ -203,19 +217,40 @@ export function LayerManager({ children }: { children: ReactNode }) {
       // Unmounting on close is also behaviourally identical to what `Sheet`
       // already does when `open` flips false (`if (!open) return null`, no
       // exit transition to preserve).
+      //
+      // The keyed wrapper below extends that same guarantee to the *record*
+      // (T-260901-10). Unmounting on close covers the ordinary path, but it
+      // is not the only way the target can change: anything that closes and
+      // reopens the layer inside one batch, or a future caller that swaps
+      // the target while the layer is open, would otherwise leave the form
+      // mounted with engagement A's field state showing under engagement
+      // B's title. A key derived from the target makes a different record
+      // a different element, so React remounts it and the `useState`
+      // initialisers re-read from the new record — the same "fresh mount,
+      // never a reset effect" rule this comment already states, applied to
+      // the case that gets missed.
+      //
+      // Each `case` passes only what that form takes: `EngagementSheet`
+      // reads the target (create vs. edit), the other three are create-only
+      // today and gain the prop when they gain the mode (T-260901-14 for
+      // company), without this switch changing shape again.
       node: (() => {
-        if (!sheetKind || !isOpen('sheet')) return null
+        if (!sheetTarget || !isOpen('sheet')) return null
         const sheetOnClose = () => closeLayer('sheet')
-        switch (sheetKind) {
-          case 'company':
-            return <CompanySheet onClose={sheetOnClose} />
-          case 'person':
-            return <PersonSheet onClose={sheetOnClose} />
-          case 'engagement':
-            return <EngagementSheet onClose={sheetOnClose} />
-          case 'todo':
-            return <TodoSheet onClose={sheetOnClose} />
-        }
+        const targetKey = `${sheetTarget.kind}:${sheetTarget.mode === 'edit' ? sheetTarget.id : 'new'}`
+        const form = (() => {
+          switch (sheetTarget.kind) {
+            case 'company':
+              return <CompanySheet onClose={sheetOnClose} />
+            case 'person':
+              return <PersonSheet onClose={sheetOnClose} />
+            case 'engagement':
+              return <EngagementSheet onClose={sheetOnClose} target={sheetTarget} />
+            case 'todo':
+              return <TodoSheet onClose={sheetOnClose} />
+          }
+        })()
+        return <Fragment key={targetKey}>{form}</Fragment>
       })()
     },
     {
