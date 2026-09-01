@@ -30,7 +30,8 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "portable"
       ],
       "icon": "icon.ico"
     },
@@ -46,6 +47,9 @@
       "uninstallerIcon": "icon.ico",
       "installerSidebar": "installerSidebar.bmp",
       "uninstallerSidebar": "installerSidebar.bmp"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
     }
   },
   "devDependencies": {
