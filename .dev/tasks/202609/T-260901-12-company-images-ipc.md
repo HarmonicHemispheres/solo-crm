@@ -1,7 +1,7 @@
 ---
 id: T-260901-12
 title: Expose a company's images over IPC, on the picker that never returns a path
-status: open
+status: in-progress
 category: ipc
 created: 2026-09-01
 closed:

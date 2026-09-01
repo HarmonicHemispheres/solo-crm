@@ -1,7 +1,7 @@
 ---
 id: T-260901-13
 title: Sell an engagement from an offering, snapshotting the rate once
-status: open
+status: in-progress
 category: ui
 plan_ref: P3-03
 created: 2026-09-01

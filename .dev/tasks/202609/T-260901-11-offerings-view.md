@@ -1,7 +1,7 @@
 ---
 id: T-260901-11
 title: Build the Offerings view
-status: open
+status: in-progress
 category: ui
 plan_ref: P3-07
 created: 2026-09-01
