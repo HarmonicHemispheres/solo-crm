@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPANY_IMAGE_MAX_BYTES } from '../../shared/company-images'
 import type { CompanyImageSlot } from '../../shared/company-images'
 import { createCompany } from '../db/repositories/companies'
@@ -192,6 +192,19 @@ describe('chooseCompanyImage — a cancelled picker is a success that changed no
     const choice = await chooseCompanyImage(db, company.id, 'logo', deps(dialog))
 
     expect(choice).toEqual({ outcome: 'cancelled' })
+    expect(rowCount(db)).toBe(0)
+  })
+
+  it('honours canceled: true even when a path rides along — the flag decides, and the file is never stat’d', async () => {
+    const db = openTmpDb()
+    const company = createCompany(db, { name: 'Rinvii' })
+    const stat = vi.fn(async () => ({ size: 1 }))
+    const dialog = fakeDialog({ canceled: true, filePaths: [fixtureFile('leftover.png', REAL_PNG)] })
+
+    const choice = await chooseCompanyImage(db, company.id, 'logo', { ...deps(dialog), stat })
+
+    expect(choice).toEqual({ outcome: 'cancelled' })
+    expect(stat).not.toHaveBeenCalled()
     expect(rowCount(db)).toBe(0)
   })
 
