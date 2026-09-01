@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { app, dialog as electronDialog } from 'electron'
 import { databasePathIn } from '../db/connection'
 import { DATA_ROOT_POINTER_FILENAME, writeDataRootPointer } from '../db/data-root'
+import { isPortableLaunch, observePortableLaunch, type PortableLaunchProbe } from '../db/portable'
 import {
   findBlockingSyncFolderMatch,
   SYNC_FOLDER_GUARD_OVERRIDE_ENV,
@@ -97,11 +98,36 @@ export interface FirstRunDataLocationOptions {
    * when `skip` is true, so `npm run seed` never needs to supply one.
    */
   dialog?: FirstRunDialog
+  /**
+   * Overrides what this process reports about its own launch. Tests only,
+   * on exactly the terms `DataRootOptions.portableLaunch` already sets:
+   * production leaves it unset and gets `observePortableLaunch()`, which is
+   * the one place the app reads Electron and the environment for this.
+   * Widening it into a production escape hatch would be a way to name a
+   * data root from outside — the mechanism ADR-006 refused.
+   */
+  portableLaunch?: PortableLaunchProbe
 }
 
 export type FirstRunOutcome =
   /** `skip: true` was passed — nothing was checked or shown. */
   | { readonly kind: 'skipped' }
+  /**
+   * T-260831-06: this is a portable launch, so there was no question to ask
+   * and nothing was shown. ADR-013 Decision 6 settles that a portable copy
+   * keeps its data beside its own `.exe`, ignores `data-location.json` and
+   * never writes one — so every branch below is either misleading or a dead
+   * end here. "Use the default" would name a `%APPDATA%` path on the *host*
+   * that the data will not go to, and "Choose a folder…" ends at
+   * `writeDataRootPointer`, which raises `PortableDataRootPointerError`
+   * rather than repointing the host's installed copy.
+   *
+   * Distinct from `skipped` deliberately: `skipped` means a caller opted
+   * out, this means the app answered the question itself. Nothing here
+   * resolves the root — `resolveDataRoot()` does that, through the same
+   * probe, when `openDatabase()` runs a moment later.
+   */
+  | { readonly kind: 'portable' }
   /**
    * A pointer file or a `solocrm.db` already exists under the default root
    * — this is an existing install, not a first run, so nothing was shown.
@@ -313,10 +339,31 @@ async function runChoiceLoop(
  * database. An existing install (either file present) returns immediately
  * with no dialog shown at all — see `FirstRunOutcome`'s `existing-install`
  * case for why that check comes first and unconditionally.
+ *
+ * A portable launch also returns immediately, before either of those checks
+ * — see the `portable` case. That is the only behaviour T-260831-06 changed
+ * here; every non-portable path below is byte-for-byte T-260828-18's.
  */
 export async function runFirstRunDataLocationPrompt(options: FirstRunDataLocationOptions): Promise<FirstRunOutcome> {
   if (options.skip) {
     return { kind: 'skipped' }
+  }
+
+  // T-260831-06 / ADR-013 Decision 6. Second only to the explicit opt-out,
+  // and — like the portable branch at the top of `resolveDataRoot()` —
+  // before `app.getPath('userData')` is so much as read: on a portable
+  // launch that folder is the *host's*, shared with any Solo CRM installed
+  // here, and both the pointer file and the `solocrm.db` this flow looks for
+  // there belong to that other copy. Answering "have you been set up
+  // before?" from another install's files is the wrong question asked of the
+  // wrong machine.
+  //
+  // The predicate is `isPortableLaunch(observePortableLaunch())` and nothing
+  // else — the same call `resolveDataRoot()` makes, so this screen and the
+  // resolver can never reach opposite verdicts about one launch.
+  const probe = options.portableLaunch ?? observePortableLaunch()
+  if (isPortableLaunch(probe)) {
+    return { kind: 'portable' }
   }
 
   const userDataDir = options.userDataDir ?? app.getPath('userData')

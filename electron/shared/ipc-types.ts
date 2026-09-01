@@ -91,6 +91,15 @@ const schemaVersionResponseSchema = z.object({
 // subject is which file on this machine holds the data, and a path nobody
 // can copy is not a file anybody owns.
 //
+// `portable` (T-260831-06) rides alongside it for the same reason and adds
+// no new exposure — it is one boolean, and the path it qualifies already
+// crossed. It is here rather than on a channel of its own because the scope
+// that added it says not to open an IPC channel where an existing payload
+// already carries what the renderer needs, and this is the payload that
+// names the data location. The renderer must not re-derive it: it has no
+// filesystem (AGENTS.md), and ADR-013 Decision 2 allows exactly one
+// portability predicate, which lives in `electron/main/db/portable.ts`.
+//
 // `schemaVersion`/`lastMigrationAt` are the same two values `db:schemaVersion`
 // answers with, from the same `getSchemaVersion` reader — that channel is
 // still the one to call when those are all you want; this one exists so the
@@ -102,6 +111,13 @@ const tableRowCountSchema = z.object({ name: z.string(), rowCount: z.number().in
 const databaseStatsResponseSchema = z
   .object({
     path: z.string(),
+    /**
+     * T-260831-06 / ADR-013 Decision 6: `path` above is a portable copy's
+     * data root — beside the launched `.exe` — rather than this machine's
+     * user-data folder. See `DatabaseStats.portable` for why the verdict
+     * crosses instead of the view inferring it from the path.
+     */
+    portable: z.boolean(),
     fileBytes: z.number().int().nonnegative(),
     /** The `-wal` sidecar, separately: a just-written row lives there until a checkpoint moves it. */
     walBytes: z.number().int().nonnegative(),

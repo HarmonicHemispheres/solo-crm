@@ -14,6 +14,7 @@ afterEach(() => {
 
 const STATS: DatabaseStatsResponse = {
   path: 'C:\\Users\\op\\AppData\\Roaming\\SoloCRM\\solocrm.db',
+  portable: false,
   fileBytes: 1_468_006,
   walBytes: 131_072,
   pageSize: 4096,
@@ -107,6 +108,35 @@ describe('WorkspaceData — the file facts (X-01)', () => {
   it('states that a sync-folder location is refused (AGENTS.md, T-260828-06)', async () => {
     renderData()
     expect(await screen.findByText(/Google Drive, Dropbox or iCloud is\s+refused/)).toBeTruthy()
+  })
+
+  /**
+   * T-260831-06 / ADR-013 Decision 6. The path on its own does not say this:
+   * `D:\SoloCRM\solocrm.db` reads exactly like an ordinary moved data root,
+   * and the difference decides whether the data travels with the stick. The
+   * verdict comes over `db:stats` from main's single predicate — this view
+   * never works it out, and has no filesystem to work it out with.
+   */
+  it('names the portable root as portable, and says the folder cannot be moved from inside the app', async () => {
+    renderData({}, { ...STATS, portable: true, path: 'E:\\SoloCRM\\solocrm.db' })
+
+    expect(await screen.findByText('E:\\SoloCRM\\solocrm.db')).toBeTruthy()
+    expect(screen.getByText('portable')).toBeTruthy()
+    expect(screen.getByText(/sits beside the Solo CRM\.exe you launched and travels with it/)).toBeTruthy()
+    expect(screen.getByText(/move the \.exe instead/)).toBeTruthy()
+
+    // The sync-folder refusal is not a property of installed launches — a
+    // portable root resolves through the same `resolveDatabasePath()` seam
+    // and the same guard, so the sentence stays.
+    expect(screen.getByText(/Google Drive, Dropbox or iCloud is\s+refused/)).toBeTruthy()
+  })
+
+  it('says the ordinary thing, and shows no portable tag, on an installed copy', async () => {
+    renderData()
+
+    expect(await screen.findByText(/The database lives in this app.s own user-data folder/)).toBeTruthy()
+    expect(screen.queryByText('portable')).toBeNull()
+    expect(screen.queryByText(/travels with it/)).toBeNull()
   })
 
   it('copies the database path to the clipboard', async () => {

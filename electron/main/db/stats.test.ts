@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -129,5 +129,44 @@ describe('readDatabaseStats', () => {
     expect(stats.lastBackupAt).toBeNull()
     expect(stats.lastIntegrityCheckAt).toBeNull()
     expect(stats.lastIntegrityCheckOk).toBeNull()
+  })
+
+  /**
+   * T-260831-06 / ADR-013. The Data view names where the data lives, and on
+   * a portable copy that sentence is a different one. The verdict is carried
+   * from here rather than inferred in the renderer, which has no filesystem
+   * (AGENTS.md) and could not tell a portable root from a moved one by
+   * looking at the path.
+   */
+  it('reports whether this is a portable launch, from the one predicate', () => {
+    const db = openTempDatabase()
+    const tempDir = mkdtempSync(join(tmpdir(), 'solo-crm-stats-temp-'))
+    tmpDirs.push(tempDir)
+    const extractionDir = join(tempDir, 'app')
+    mkdirSync(extractionDir)
+    const stick = mkdtempSync(join(tmpdir(), 'solo-crm-stats-stick-'))
+    tmpDirs.push(stick)
+
+    // A packaged build running out of the extraction directory under
+    // `%TEMP%` — `isPortableLaunch`'s definition, and the only one this
+    // codebase has.
+    expect(
+      readDatabaseStats(db, {
+        portableLaunch: {
+          isPackaged: true,
+          executableDir: extractionDir,
+          tempDir,
+          env: { PORTABLE_EXECUTABLE_DIR: stick }
+        }
+      }).portable
+    ).toBe(true)
+
+    // An ordinary install, and the default this suite's other cases get.
+    expect(
+      readDatabaseStats(db, {
+        portableLaunch: { isPackaged: true, executableDir: stick, tempDir, env: {} }
+      }).portable
+    ).toBe(false)
+    expect(readDatabaseStats(db).portable).toBe(false)
   })
 })

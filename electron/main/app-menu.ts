@@ -1,6 +1,7 @@
 import { Menu, dialog as electronDialog, type MenuItemConstructorOptions } from 'electron'
 import { resolveDataRoot } from './db/data-root'
 import { moveDataRoot, type MoveDataRootResult } from './db/move-data-root'
+import { isPortableLaunch, observePortableLaunch } from './db/portable'
 
 /**
  * T-260828-19's entry point. The task's Scope allows a menu item where
@@ -177,13 +178,54 @@ export async function promptAndMoveDataFolder(
   return result
 }
 
+export interface ApplicationMenuOptions {
+  /**
+   * T-260831-06. Whether this process is a portable launch, as
+   * `isPortableLaunch(observePortableLaunch())` answers it — never a second
+   * check of its own (ADR-013 Decision 2). Taken as data for the same reason
+   * `PortableLaunchProbe` is: it makes the portable menu assertable without
+   * a packaged build.
+   */
+  readonly portable?: boolean
+}
+
+/**
+ * Greyed out rather than removed, and the reason is in the label rather than
+ * behind the click.
+ *
+ * Removing the item would leave an operator who knows Solo CRM has this
+ * feature hunting a menu that no longer admits it exists; leaving it enabled
+ * walks them through two dialogs into `PortableDataRootPointerError`, which
+ * is where T-260831-03 left it — safe, and still a wall (this task's Why).
+ * A disabled item whose own label says why is the one shape that answers the
+ * question at the moment it is asked: a menu has no tooltip, no help text
+ * and no disclosure, so anything not in the label is not said at all.
+ *
+ * ADR-013 Decision 6 is the whole content of the sentence — a portable copy
+ * keeps its data beside its `.exe`, and the way to move it is to move the
+ * `.exe`. That is a real answer, not a refusal, so the label gives it.
+ */
+const MOVE_DATA_FOLDER_LABEL = 'Move Data Folder…'
+const MOVE_DATA_FOLDER_PORTABLE_LABEL = 'Move Data Folder… — portable copies keep data beside Solo CRM.exe'
+
 /**
  * The application menu: Electron's standard roles, plus the one item this
  * task adds. Built as a template (rather than installed directly) so a test
  * can assert the item exists, is labelled, and is wired to the flow above
  * without an Electron process to hang a real menu on.
+ *
+ * On a portable launch the `Data` submenu keeps its shape and its position —
+ * the item is disabled and relabelled, not dropped. `click` is left off
+ * entirely there rather than pointed at a no-op: a disabled item Electron
+ * will not fire is the enforcement, and a handler nothing can reach is a
+ * second, silent one waiting to disagree with it.
  */
-export function buildApplicationMenuTemplate(onMoveDataFolder: () => void): MenuItemConstructorOptions[] {
+export function buildApplicationMenuTemplate(
+  onMoveDataFolder: () => void,
+  options: ApplicationMenuOptions = {}
+): MenuItemConstructorOptions[] {
+  const portable = options.portable === true
+
   return [
     { role: 'fileMenu' },
     { role: 'editMenu' },
@@ -191,10 +233,15 @@ export function buildApplicationMenuTemplate(onMoveDataFolder: () => void): Menu
     {
       label: 'Data',
       submenu: [
-        {
-          label: 'Move Data Folder…',
-          click: onMoveDataFolder
-        }
+        portable
+          ? {
+              label: MOVE_DATA_FOLDER_PORTABLE_LABEL,
+              enabled: false
+            }
+          : {
+              label: MOVE_DATA_FOLDER_LABEL,
+              click: onMoveDataFolder
+            }
       ]
     },
     { role: 'windowMenu' }
@@ -206,6 +253,12 @@ export function buildApplicationMenuTemplate(onMoveDataFolder: () => void): Menu
  * open — the flow reads the current data root to show it, and the move
  * closes and reopens the connection, neither of which is meaningful before
  * `openDatabase()`.
+ *
+ * This is the only place the portable question is asked on this file's
+ * behalf, and it asks it the one way the codebase has:
+ * `isPortableLaunch(observePortableLaunch())`. The menu is built once at
+ * boot because the answer cannot change within a process — it is a fact
+ * about where this executable is running from.
  */
 export function installApplicationMenu(): void {
   Menu.setApplicationMenu(
@@ -217,7 +270,7 @@ export function installApplicationMenu(): void {
           // construction. Reported rather than swallowed silently.
           console.error('[main] the data-folder move flow failed:', error)
         })
-      })
+      }, { portable: isPortableLaunch(observePortableLaunch()) })
     )
   )
 }
