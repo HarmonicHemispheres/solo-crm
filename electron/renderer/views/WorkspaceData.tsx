@@ -436,7 +436,9 @@ function ConsoleCard({ statement, onStatementChange, textareaRef }: ConsoleCardP
             onChange={(event) => setSnippetName(event.target.value)}
             placeholder="Name this statement"
           />
-          <Button onClick={handleSave}>Save snippet</Button>
+          <Button variant="ghost" onClick={handleSave}>
+            Save snippet
+          </Button>
         </div>
         {saveError != null && <p className="meta data-save-error">{saveError}</p>}
       </div>
@@ -500,7 +502,7 @@ export function WorkspaceData() {
       title="Data"
       description="Every figure here is read from the database file when this page loads — nothing is cached from startup. Refresh re-reads it."
       actions={
-        <Button onClick={() => void statsQuery.refetch()} disabled={statsQuery.isFetching}>
+        <Button variant="ghost" onClick={() => void statsQuery.refetch()} disabled={statsQuery.isFetching}>
           {statsQuery.isFetching ? 'Reading…' : 'Refresh'}
         </Button>
       }
