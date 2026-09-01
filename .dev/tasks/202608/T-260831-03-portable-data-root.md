@@ -1,11 +1,11 @@
 ---
 id: T-260831-03
 title: Resolve the data root beside the executable when the build is portable
-status: in-progress
+status: done
 category: data
 plan_ref: X-09
 created: 2026-08-31
-closed:
+closed: 2026-08-31
 ---
 
 ## Why
@@ -113,3 +113,49 @@ in here.
 - Comes near three AGENTS.md gotchas: the sync-folder rule, the
   `resolveDatabasePath()` single-seam rule, and the renderer-never-touches-the-
   filesystem rule (nothing here may leak a path resolution into the renderer).
+
+---
+
+## Outcome
+
+**Changed:**
+
+- `electron/main/db/portable.ts` (new) — `observePortableLaunch()`,
+  `isPortableLaunch()`, `portableDataRoot()` with ADR-013 Decision 4's four
+  refusals, and `isSameOrInside()` built on `sync-folder-guard.ts`'s
+  normalise-and-compare-segments approach rather than a second, subtly
+  different one.
+- `electron/main/db/portable.test.ts` (new) — 29 tests.
+- `electron/main/db/data-root.ts` — the portable branch returns *before* the
+  pointer file is read; `writeDataRootPointer()` refuses in portable mode.
+- `electron/main/db/connection.ts` — one launch observation threaded through.
+- `electron/main/db/sync-folder-guard.ts` — a portable-specific sentence added
+  additively to the refusal message.
+- `electron/main/db/move-data-root.ts` — a pre-flight portable refusal, before
+  anything is closed or copied.
+
+**Review:** passed. Three claims verified rather than taken on the builder's
+word. `data-root.test.ts` is byte-identical to `main` (`git diff` empty), which
+is the proof the installed build's resolution is untouched. `app.setPath`
+appears nowhere outside pre-existing test harnesses and one prohibiting comment.
+And a mutation the builder had not tried — replacing the segment-wise
+containment check with a naive `startsWith`, the exact bug ADR-013 warns
+produces a *missed* refusal — fails 2 tests on the look-alike sibling directory
+case. No blocking findings.
+
+Worth recording: the builder found that `connection.test.ts`'s single-owner walk
+matches comment text, not just code, so a docstring quoting better-sqlite3's
+constructor made the new module read as an offender. Real finding, caught by an
+existing test, fixed by rewording. It applies to any new file under `electron/`.
+
+Also: the `os.tmpdir()` refusal turns out to be an independent backstop for the
+extraction-directory one — removing the latter still refuses, as
+`temporary-directory`. The data-loss case has two refusals, not one, and the
+tests distinguish them so the specific message stays pinned.
+
+**Deferred:** the portable-mode UI, to
+[T-260831-06](T-260831-06-portable-mode-ui.md). The first-run location chooser
+still runs on a portable launch and offers a `%APPDATA%` path the data will not
+go to, and `Data ▸ Move Data Folder…` is still shown. Both now fail safely
+rather than corrupting anything, but both are a bad first launch and T-260831-06
+must land before T-260831-05's QA pass.
