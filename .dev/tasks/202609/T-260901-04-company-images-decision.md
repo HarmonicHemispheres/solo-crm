@@ -1,7 +1,7 @@
 ---
 id: T-260901-04
 title: Decide where a company's logo and banner live, and how a grid of them is read
-status: open
+status: in-progress
 category: docs
 created: 2026-09-01
 closed:

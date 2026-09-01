@@ -1,7 +1,7 @@
 ---
 id: T-260901-01
 title: Give the Data view's two colourless buttons a variant, and make a third impossible
-status: open
+status: in-progress
 category: ui
 created: 2026-09-01
 closed:

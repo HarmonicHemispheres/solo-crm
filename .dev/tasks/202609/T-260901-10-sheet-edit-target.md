@@ -1,7 +1,7 @@
 ---
 id: T-260901-10
 title: Open a sheet on a record that already exists, and give an engagement its edit affordance
-status: open
+status: in-progress
 category: ui
 created: 2026-09-01
 closed:

@@ -1,7 +1,7 @@
 ---
 id: T-260901-06
 title: Extract ViewHeader's info popover into a primitive anything can use
-status: open
+status: in-progress
 category: ui
 created: 2026-09-01
 closed:

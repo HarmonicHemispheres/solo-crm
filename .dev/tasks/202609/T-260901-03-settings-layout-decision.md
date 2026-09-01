@@ -1,7 +1,7 @@
 ---
 id: T-260901-03
 title: Decide how Workspace Settings is organised, now that the mockup's card grid has stopped scaling
-status: open
+status: in-progress
 category: docs
 created: 2026-09-01
 closed:

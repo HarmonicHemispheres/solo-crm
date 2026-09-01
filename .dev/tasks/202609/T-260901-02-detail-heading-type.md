@@ -1,7 +1,7 @@
 ---
 id: T-260901-02
 title: Style the detail-page heading so the banner reads as a banner
-status: open
+status: in-progress
 category: ui
 created: 2026-09-01
 closed:

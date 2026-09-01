@@ -1,7 +1,7 @@
 ---
 id: T-260901-05
 title: Build the offerings repositories — categories, offerings, versions
-status: open
+status: in-progress
 category: data
 plan_ref: P3-01
 created: 2026-09-01
