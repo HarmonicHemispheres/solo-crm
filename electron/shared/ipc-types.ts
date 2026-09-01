@@ -11,6 +11,7 @@ import { faviconRequestSchema, faviconResultSchema } from './favicons'
 import {
   createEngagementInputSchema,
   engagementSchema,
+  engagementWithOfferingSchema,
   listEngagementsFilterSchema,
   milestoneSchema,
   updateEngagementInputSchema
@@ -480,8 +481,11 @@ export const CHANNEL_CONTRACTS = {
 
   // -- engagements + milestones -------------------------------------------
 
-  'engagements:list': { request: listEngagementsFilterSchema.optional(), response: z.array(engagementSchema).readonly() },
-  'engagements:get': { request: idRequestSchema, response: engagementSchema.nullable() },
+  // Both reads answer with the offering the engagement was sold as joined on
+  // (T-260901-13) — a name, never a price. The mutation channels below keep
+  // the bare `engagementSchema`: they report the row they just wrote.
+  'engagements:list': { request: listEngagementsFilterSchema.optional(), response: z.array(engagementWithOfferingSchema).readonly() },
+  'engagements:get': { request: idRequestSchema, response: engagementWithOfferingSchema.nullable() },
   'engagements:milestones': {
     request: z.object({ engagementId: z.string().min(1) }).strict(),
     response: z.array(milestoneSchema).readonly()

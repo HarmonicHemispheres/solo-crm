@@ -19,7 +19,7 @@ import { createCompany, deleteCompany, getCompany, listCompanies, updateCompany 
 import {
   createEngagement,
   deleteEngagement,
-  getEngagement,
+  getEngagementWithOffering,
   listEngagements,
   listMilestones,
   updateEngagement
@@ -323,7 +323,7 @@ export const registry = {
   }),
   'engagements:get': defineChannel({
     ...CHANNEL_CONTRACTS['engagements:get'],
-    handler: ({ id }) => getEngagement(getDatabase(), id)
+    handler: ({ id }) => getEngagementWithOffering(getDatabase(), id)
   }),
   'engagements:milestones': defineChannel({
     ...CHANNEL_CONTRACTS['engagements:milestones'],

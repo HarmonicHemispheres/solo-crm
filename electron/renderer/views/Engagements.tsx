@@ -14,7 +14,14 @@ import { engagementAnchorId } from '../nav'
 import { ipcQueryFn } from '../lib/ipc'
 import { queryKeys } from '../lib/query-keys'
 import { centsToDecimalString, parseDateOnly } from '../../shared/format'
-import { ENGAGEMENT_STATUSES, type BillingModel, type Engagement, type EngagementStatus, type Milestone } from '../../shared/engagements'
+import {
+  ENGAGEMENT_STATUSES,
+  type BillingModel,
+  type Engagement,
+  type EngagementStatus,
+  type EngagementWithOffering,
+  type Milestone
+} from '../../shared/engagements'
 import type { Company } from '../../shared/companies'
 import './Engagements.css'
 
@@ -96,6 +103,17 @@ function ViaIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="var(--lapis)" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true" width={11} height={11}>
       <path d="M7 7h6a4 4 0 014 4v6M17 17l-3-3M17 17l3-3" />
+    </svg>
+  )
+}
+
+/** The "sold as" marker — a price-tag glyph, the catalogue's own shape. A
+ * local copy for the same reason `ViaIcon` above is one. */
+function SoldAsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="var(--lapis)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" width={11} height={11}>
+      <path d="M11.5 3.5H20v8.5l-8.7 8.7a1.6 1.6 0 0 1-2.3 0l-6.2-6.2a1.6 1.6 0 0 1 0-2.3Z" />
+      <path d="M16.5 7.5h.01" />
     </svg>
   )
 }
@@ -236,7 +254,7 @@ function EngagementCardRow({
   milestones,
   onEdit
 }: {
-  engagement: Engagement
+  engagement: EngagementWithOffering
   companiesById: Map<string, Company>
   milestones: readonly Milestone[]
   onEdit: EditEngagement
@@ -272,6 +290,19 @@ function EngagementCardRow({
           for <CompanyNameLink id={engagement.clientCompanyId} companiesById={companiesById} />
         </div>
       )}
+      {/* What this was sold as — the offering behind `offeringVersionId`,
+          joined on by `engagements:list` (T-260901-13). A label in the same
+          shape as the `for <company>` line above, not a sentence
+          (ui-design.md), and deliberately no rate: the engagement's own
+          `agreedRateCents` is the only source for that (P3-03), and a price
+          read off the catalogue here would be the live-price join the
+          acceptance forbids. Sold from nothing renders nothing. */}
+      {engagement.offeringName != null && (
+        <div className="sold-as">
+          <SoldAsIcon />
+          sold as {engagement.offeringName}
+        </div>
+      )}
       <div className="meta" style={{ marginTop: 5 }}>
         {formatRange(engagement.startedOn, engagement.endsOn)}
       </div>
@@ -282,7 +313,7 @@ function EngagementCardRow({
 
 interface StatusGroup {
   status: EngagementStatus
-  rows: readonly Engagement[]
+  rows: readonly EngagementWithOffering[]
 }
 
 function StatusCard({
@@ -321,7 +352,7 @@ export function Engagements() {
   const engagementsQuery = useQuery({ queryKey: queryKeys.engagements.list(), queryFn: ipcQueryFn('engagements:list') })
   const companiesQuery = useQuery({ queryKey: queryKeys.companies.list(), queryFn: ipcQueryFn('companies:list') })
 
-  const engagements: readonly Engagement[] = engagementsQuery.data ?? []
+  const engagements: readonly EngagementWithOffering[] = engagementsQuery.data ?? []
   const companies: readonly Company[] = companiesQuery.data ?? []
   const companiesById = new Map(companies.map((company) => [company.id, company] as const))
 

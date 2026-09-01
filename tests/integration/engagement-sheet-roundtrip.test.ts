@@ -8,7 +8,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClientProvider } from '@tanstack/react-query'
 import { closeDatabase, getDatabase, openDatabase } from '../../electron/main/db/connection'
 import { createCompany, listCompanies } from '../../electron/main/db/repositories/companies'
-import { createEngagement, getEngagement } from '../../electron/main/db/repositories/engagements'
+import { createEngagement, getEngagementWithOffering } from '../../electron/main/db/repositories/engagements'
+import { createOffering, listOfferings } from '../../electron/main/db/repositories/offerings'
 import { RepositoryError } from '../../electron/main/db/repositories/errors'
 import { callCrm } from '../../electron/renderer/lib/ipc'
 import { createQueryClient } from '../../electron/renderer/lib/query-client'
@@ -94,8 +95,9 @@ function bridgeToDatabase() {
   const db = getDatabase()
   window.crm = stubCrm({
     'companies:list': vi.fn(async () => ({ ok: true as const, data: listCompanies(db) })),
+    'offerings:list': vi.fn(async (filter?: Parameters<typeof listOfferings>[1]) => ({ ok: true as const, data: listOfferings(db, filter) })),
     'engagements:create': vi.fn(async (input: unknown) => asMutationResult(() => createEngagement(db, input))),
-    'engagements:get': vi.fn(async ({ id }: { id: string }) => ({ ok: true as const, data: getEngagement(db, id) }))
+    'engagements:get': vi.fn(async ({ id }: { id: string }) => ({ ok: true as const, data: getEngagementWithOffering(db, id) }))
   })
 }
 
@@ -190,6 +192,60 @@ describe('EngagementSheet against a real migrated database', () => {
     expect(row.contract_value_cents).toBe(2_850_050)
     expect(row.hours_included).toBeNull()
     expect(row.ends_on).toBeNull()
+  })
+
+  it('copies the chosen offering’s rate into agreed_rate_cents and stores its current version id', async () => {
+    const db = openTemporaryDatabase()
+    // The acceptance list's figure: an offering priced at $3,500. `versions`
+    // is written in the same transaction as the offering, so this is the
+    // version the picker will resolve to.
+    const offering = createOffering(db, { name: 'Advisory retainer', rateCents: 350_000, billingModel: 'retainer', unit: 'mo' })
+    bridgeToDatabase()
+    const { onClose } = renderSheet()
+
+    const soldAs = await screen.findByLabelText('Sold as')
+    await waitFor(() => expect(soldAs.textContent).toContain('Advisory retainer'))
+    // The price is on the option, because picking it is what copies the price.
+    expect(soldAs.textContent).toContain('$3500.00/mo')
+    fireEvent.change(soldAs, { target: { value: offering.id } })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Q4 advisory' } })
+    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+
+    const row = db.prepare('SELECT id, offering_version_id, agreed_rate_cents FROM engagements').get() as Record<string, unknown>
+    expect(row.agreed_rate_cents).toBe(350_000)
+    expect(row.offering_version_id).toBe(offering.versions[0].id)
+
+    // The catalogue moves; the signed engagement does not. This is the whole
+    // of P3-03 — a copy, not a link — checked on the raw column after the
+    // price it was copied from has changed.
+    db.prepare('UPDATE offering_versions SET rate_cents = ? WHERE id = ?').run(500_000, offering.versions[0].id)
+    const after = db.prepare('SELECT agreed_rate_cents FROM engagements').get() as { agreed_rate_cents: number | null }
+    expect(after.agreed_rate_cents).toBe(350_000)
+
+    // And the read a card labels itself from names the offering, not a price.
+    const readBack = await callCrm('engagements:get', { id: row.id as string })
+    expect(readBack).toMatchObject({ offeringId: offering.id, offeringName: 'Advisory retainer' })
+  })
+
+  it('stores NULL for both the offering and the rate when nothing was sold from', async () => {
+    const db = openTemporaryDatabase()
+    createOffering(db, { name: 'Advisory retainer', rateCents: 350_000 })
+    bridgeToDatabase()
+    const { onClose } = renderSheet()
+
+    // The picker is available and deliberately left at "— none —".
+    const soldAs = await screen.findByLabelText('Sold as')
+    await waitFor(() => expect(soldAs.textContent).toContain('Advisory retainer'))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsold work' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    const row = db.prepare('SELECT offering_version_id, agreed_rate_cents FROM engagements').get() as Record<string, unknown>
+    expect(row.offering_version_id).toBeNull()
+    expect(row.agreed_rate_cents).toBeNull()
   })
 
   it('writes no row at all when the repository refuses the insert, and keeps the sheet open saying so', async () => {

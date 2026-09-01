@@ -5,7 +5,8 @@ import { createQueryClient } from '../../lib/query-client'
 import { stubCrm } from '../../lib/test-support/stub-crm'
 import { EngagementSheet } from './EngagementSheet'
 import type { SheetFormTarget } from '../shell/layer-manager-context'
-import type { Engagement } from '../../../shared/engagements'
+import type { EngagementWithOffering } from '../../../shared/engagements'
+import type { OfferingListItem } from '../../../shared/offerings'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -13,13 +14,15 @@ afterEach(() => {
 })
 
 /** A full `engagementSchema`-shaped row — `window.crm` is typed, so a mocked `engagements:create` response has to satisfy it even though these tests only assert on what was *sent*. */
-const STUB_ENGAGEMENT_ROW: Engagement = {
+const STUB_ENGAGEMENT_ROW: EngagementWithOffering = {
   id: 'new-eng',
   name: 'stub',
   billingCompanyId: null,
   clientCompanyId: null,
   offeringVersionId: null,
   agreedRateCents: null,
+  offeringId: null,
+  offeringName: null,
   billingModel: null,
   status: null,
   startedOn: '2026-08-28',
@@ -70,10 +73,71 @@ const STUB_COMPANIES = [
   }
 ]
 
+const TS = '2026-08-28T00:00:00.000Z'
+
+/**
+ * The price list the "Sold as" picker reads (T-260901-13). The advisory
+ * retainer is deliberately on its **second** version: an engagement created
+ * from it must store `ver-advisory-2`, not the offering id and not the first
+ * version, and the $3,500 the acceptance names is that version's rate.
+ */
+function makeOffering(overrides: Partial<OfferingListItem> & { id: string; name: string }): OfferingListItem {
+  return {
+    type: 'service',
+    categoryId: null,
+    billingModel: 'retainer',
+    unit: 'mo',
+    blurb: null,
+    active: true,
+    createdAt: TS,
+    updatedAt: TS,
+    currentVersion: null,
+    ...overrides
+  }
+}
+
+const ADVISORY_OFFERING = makeOffering({
+  id: 'off-advisory',
+  name: 'Advisory retainer',
+  currentVersion: {
+    id: 'ver-advisory-2',
+    offeringId: 'off-advisory',
+    version: 2,
+    rateCents: 350_000,
+    effectiveFrom: null,
+    effectiveTo: null,
+    createdAt: TS,
+    updatedAt: TS
+  }
+})
+
+const RESCUE_OFFERING = makeOffering({
+  id: 'off-rescue',
+  name: 'Delivery rescue',
+  billingModel: 'fixed',
+  unit: 'from',
+  currentVersion: {
+    id: 'ver-rescue-1',
+    offeringId: 'off-rescue',
+    version: 1,
+    rateCents: 1_200_000,
+    effectiveFrom: null,
+    effectiveTo: null,
+    createdAt: TS,
+    updatedAt: TS
+  }
+})
+
+const STUB_OFFERINGS = [ADVISORY_OFFERING, RESCUE_OFFERING]
+
 const CREATE: SheetFormTarget = { mode: 'create' }
 
 function renderSheet(onClose = vi.fn(), overrides: Parameters<typeof stubCrm>[0] = {}, target: SheetFormTarget = CREATE) {
-  window.crm = stubCrm({ 'companies:list': vi.fn(async () => ({ ok: true as const, data: STUB_COMPANIES })), ...overrides })
+  window.crm = stubCrm({
+    'companies:list': vi.fn(async () => ({ ok: true as const, data: STUB_COMPANIES })),
+    'offerings:list': vi.fn(async () => ({ ok: true as const, data: STUB_OFFERINGS })),
+    ...overrides
+  })
   render(
     <QueryClientProvider client={createQueryClient()}>
       <EngagementSheet onClose={onClose} target={target} />
@@ -87,7 +151,7 @@ function renderSheet(onClose = vi.fn(), overrides: Parameters<typeof stubCrm>[0]
  * with it. Waits for the form itself, not the placeholder — every edit test
  * below is about what the loaded record put in the fields.
  */
-async function renderEditSheet(engagement: Engagement, overrides: Parameters<typeof stubCrm>[0] = {}, onClose = vi.fn()) {
+async function renderEditSheet(engagement: EngagementWithOffering, overrides: Parameters<typeof stubCrm>[0] = {}, onClose = vi.fn()) {
   renderSheet(
     onClose,
     { 'engagements:get': vi.fn(async () => ({ ok: true as const, data: engagement })), ...overrides },
@@ -97,7 +161,7 @@ async function renderEditSheet(engagement: Engagement, overrides: Parameters<typ
   return { onClose }
 }
 
-function makeEngagement(overrides: Partial<Engagement> & { id: string; name: string }): Engagement {
+function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: string; name: string }): EngagementWithOffering {
   return { ...STUB_ENGAGEMENT_ROW, ...overrides }
 }
 
@@ -143,6 +207,13 @@ function stubUpdate() {
     void payload
     return { ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT_ROW } }
   })
+}
+
+/** The "Sold as" select, once `offerings:list` has answered — the same wait `companySelects` makes for the company options. */
+async function offeringSelect() {
+  const sold = screen.getByLabelText('Sold as') as HTMLSelectElement
+  await waitFor(() => expect(within(sold).getByText(/Advisory retainer/)).toBeTruthy())
+  return sold
 }
 
 async function companySelects() {
@@ -353,6 +424,57 @@ describe('EngagementSheet', () => {
     expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBeNull()
   })
 
+  it('sells from an offering by storing that offering\'s current version and a copy of its rate', async () => {
+    const create = vi.fn(async (input: unknown) => {
+      void input
+      return { ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT_ROW } }
+    })
+    renderSheet(vi.fn(), { 'engagements:create': create })
+
+    const sold = await offeringSelect()
+    fireEvent.change(sold, { target: { value: 'off-advisory' } })
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Q4 advisory' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    const payload = create.mock.calls[0][0] as Record<string, unknown>
+    // The *version* id, not the offering id — and the second version, which
+    // is the one the price list currently quotes.
+    expect(payload.offeringVersionId).toBe('ver-advisory-2')
+    expect(payload.offeringVersionId).not.toBe('off-advisory')
+    // $3,500, copied at submit. This is the only place in the form that ever
+    // sends `agreedRateCents`.
+    expect(payload.agreedRateCents).toBe(350_000)
+  })
+
+  it('shows the price it is about to copy on the option, so the snapshot is visible when it is taken', async () => {
+    renderSheet()
+    const sold = await offeringSelect()
+
+    expect(within(sold).getByText('Advisory retainer — $3500.00/mo')).toBeTruthy()
+    // `unit: 'from'` reads as a starting price, not a per-unit one.
+    expect(within(sold).getByText('Delivery rescue — from $12000.00')).toBeTruthy()
+  })
+
+  it('selling from no offering stores NULL and sends no rate at all', async () => {
+    const create = vi.fn(async (input: unknown) => {
+      void input
+      return { ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT_ROW } }
+    })
+    renderSheet(vi.fn(), { 'engagements:create': create })
+
+    // The picker is left at "— none —", the default.
+    await offeringSelect()
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsold work' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    const payload = create.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.offeringVersionId).toBeNull()
+    // Not `null` — absent. There is no snapshot to take, so no key is sent.
+    expect(payload).not.toHaveProperty('agreedRateCents')
+  })
+
   it('a create target still opens a blank form headed "New engagement"', async () => {
     renderSheet()
     expect(screen.getByRole('dialog', { name: 'New engagement' })).toBeTruthy()
@@ -505,6 +627,111 @@ describe('EngagementSheet — edit mode (T-260901-10)', () => {
     expect(screen.getByRole('button', { name: 'None', pressed: true })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(patchFrom(update)).toEqual({})
+  })
+
+  it('names what an engagement was sold as, without a price, and saving an untouched one writes nothing', async () => {
+    const update = stubUpdate()
+    await renderEditSheet(
+      makeEngagement({
+        id: 'eng-sold',
+        name: 'Sold advisory',
+        status: 'active',
+        offeringVersionId: 'ver-advisory-2',
+        offeringId: 'off-advisory',
+        offeringName: 'Advisory retainer',
+        agreedRateCents: 350_000
+      }),
+      { 'engagements:update': update }
+    )
+
+    const sold = await offeringSelect()
+    expect(sold.value).toBe('off-advisory')
+    // The option is the bare name. A price here would read as "pick another
+    // and the rate follows" — which `updateEngagement` will not do.
+    expect(within(sold).getByText('Advisory retainer')).toBeTruthy()
+    expect(within(sold).queryByText(/3500/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(patchFrom(update)).toEqual({})
+  })
+
+  it('re-points a signed engagement at another offering without re-rating it', async () => {
+    const update = stubUpdate()
+    await renderEditSheet(
+      makeEngagement({
+        id: 'eng-sold',
+        name: 'Sold advisory',
+        status: 'active',
+        offeringVersionId: 'ver-advisory-2',
+        offeringId: 'off-advisory',
+        offeringName: 'Advisory retainer',
+        agreedRateCents: 350_000
+      }),
+      { 'engagements:update': update }
+    )
+
+    const sold = await offeringSelect()
+    fireEvent.change(sold, { target: { value: 'off-rescue' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    // The version moves; the agreed rate does not travel at all. The rescue
+    // offering is quoted at $12,000 and none of that reaches the patch —
+    // `updateEngagement` would have dropped it silently, so the form never
+    // builds it.
+    expect(patchFrom(update)).toEqual({ offeringVersionId: 'ver-rescue-1' })
+    expect(patchFrom(update)).not.toHaveProperty('agreedRateCents')
+  })
+
+  it('clears the offering to NULL when the picker is put back to none', async () => {
+    const update = stubUpdate()
+    await renderEditSheet(
+      makeEngagement({
+        id: 'eng-sold',
+        name: 'Sold advisory',
+        status: 'active',
+        offeringVersionId: 'ver-advisory-2',
+        offeringId: 'off-advisory',
+        offeringName: 'Advisory retainer'
+      }),
+      { 'engagements:update': update }
+    )
+
+    fireEvent.change(await offeringSelect(), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(patchFrom(update)).toEqual({ offeringVersionId: null })
+  })
+
+  it('keeps naming an offering the current price list cannot show, and does not unsell it on save', async () => {
+    const update = stubUpdate()
+    // Sold from a version that has since been superseded, off an offering
+    // that has since been archived — so `offerings:list({ active: true })`
+    // carries neither. The record's own join is what names it.
+    await renderEditSheet(
+      makeEngagement({
+        id: 'eng-legacy',
+        name: 'Legacy engagement',
+        status: 'active',
+        offeringVersionId: 'ver-retired-1',
+        offeringId: 'off-retired',
+        offeringName: 'Retired retainer',
+        agreedRateCents: 250_000
+      }),
+      { 'engagements:update': update }
+    )
+
+    const sold = await offeringSelect()
+    expect(within(sold).getByText('Retired retainer')).toBeTruthy()
+    expect(sold.value).toBe('off-retired')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    // Not `{ offeringVersionId: null }` — an untouched picker must not
+    // silently unsell the engagement.
     expect(patchFrom(update)).toEqual({})
   })
 

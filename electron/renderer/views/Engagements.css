@@ -71,7 +71,14 @@
   }
 }
 
-.via {
+/* `.sold-as` shares `.via`'s shape rather than inventing a second one: both
+   are a small glyph plus a few mono uppercase words qualifying the row above
+   them (`for <company>`, `sold as <offering>`), and the mockup draws that
+   treatment once. It stays a separate class name because the two say
+   different things and a later restyle of one must not silently restyle the
+   other. */
+.via,
+.sold-as {
   display: flex;
   align-items: center;
   gap: 7px;

@@ -37,7 +37,7 @@ export type EngagementStatus = (typeof ENGAGEMENT_STATUSES)[number]
 export const BILLING_MODELS = ['retainer', 'fixed', 'tm', 'equity', 'none'] as const
 export type BillingModel = (typeof BILLING_MODELS)[number]
 
-/** An `engagements` row, camelCased, as read back from the database — `engagements:list`'s, `engagements:get`'s and every mutation channel's response shape (ADR-007 rule 5). */
+/** An `engagements` row, camelCased, as read back from the database — every mutation channel's response shape, and the base the two reads extend (ADR-007 rule 5). */
 export const engagementSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -66,6 +66,35 @@ export const engagementSchema = z.object({
   updatedAt: timestampSchema
 })
 export type Engagement = z.infer<typeof engagementSchema>
+
+/**
+ * An engagement with the offering it was **sold as** resolved through
+ * `offeringVersionId` — `engagements:list`'s and `engagements:get`'s response
+ * shape (T-260901-13), following `offeringListItemSchema`'s precedent of
+ * extending the row schema rather than inventing a parallel interface.
+ *
+ * Both keys are `null` when `offeringVersionId` is `null` (selling from no
+ * offering stays legal and is not an error — one seeded engagement has none),
+ * and the resolution runs `offering_version_id -> offering_versions.offering_id
+ * -> offerings`, which means it names the version the engagement was
+ * **actually signed against**, not whatever version is current now. That
+ * distinction is the whole of P3-03: the rate lives in the engagement's own
+ * `agreedRateCents` column and is never re-derived from the catalogue, so
+ * nothing here carries a price. Adding one to this shape would reintroduce the
+ * live-price join P3-03's acceptance forbids.
+ *
+ * Deliberately not folded into `engagementSchema` itself: the mutation
+ * channels answer with the row they just wrote, and a joined column on that
+ * shape would make every create/update response claim to know something it
+ * read from another table.
+ */
+export const engagementWithOfferingSchema = engagementSchema.extend({
+  /** `offerings.id` for the version this engagement was sold from. */
+  offeringId: z.string().nullable(),
+  /** `offerings.name` for that same offering — what the card says it was sold as. */
+  offeringName: z.string().nullable()
+})
+export type EngagementWithOffering = z.infer<typeof engagementWithOfferingSchema>
 
 /** A `milestones` row, camelCased, as read back from the database. Editing stays P3-09 — this repository only reads. `engagements:milestones`'s response shape (ADR-007 rule 5). */
 export const milestoneSchema = z.object({

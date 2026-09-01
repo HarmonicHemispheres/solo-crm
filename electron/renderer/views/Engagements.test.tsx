@@ -8,7 +8,7 @@ import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import { engagementAnchorId } from '../nav'
 import type { Company } from '../../shared/companies'
-import type { Engagement, Milestone } from '../../shared/engagements'
+import type { EngagementWithOffering, Milestone } from '../../shared/engagements'
 
 /**
  * Under ADR-005 this is the only view of engagement state (this task's
@@ -41,12 +41,14 @@ function makeCompany(overrides: Partial<Company> & { id: string; name: string })
   }
 }
 
-function makeEngagement(overrides: Partial<Engagement> & { id: string; name: string }): Engagement {
+function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: string; name: string }): EngagementWithOffering {
   return {
     billingCompanyId: null,
     clientCompanyId: null,
     offeringVersionId: null,
     agreedRateCents: null,
+    offeringId: null,
+    offeringName: null,
     billingModel: null,
     status: null,
     startedOn: '2026-01-01',
@@ -182,7 +184,7 @@ function renderEngagements({
   milestonesByEngagementId = { 'eng-fixed': fixedMilestones },
   queryClient = createQueryClient()
 }: {
-  engagements?: readonly Engagement[]
+  engagements?: readonly EngagementWithOffering[]
   companies?: readonly Company[]
   milestonesByEngagementId?: Record<string, readonly Milestone[]>
   queryClient?: QueryClient
@@ -238,6 +240,37 @@ describe('Engagements', () => {
     expect(within(cardFor('Advisory retainer')).getByText('0 of 20 hrs this month')).toBeTruthy()
     expect(await within(cardFor('Fixed-scope build')).findByText('1 of 3 milestones')).toBeTruthy()
     expect(within(cardFor('Platform advisory')).getByText('0 of ~30 hrs')).toBeTruthy()
+  })
+
+  it('says what an engagement was sold as, and says nothing where it was sold from nothing', async () => {
+    renderEngagements({
+      engagements: [
+        makeEngagement({
+          id: 'eng-sold',
+          name: 'Sold advisory',
+          status: 'active',
+          billingCompanyId: 'co-acme',
+          clientCompanyId: 'co-acme',
+          billingModel: 'retainer',
+          offeringVersionId: 'ver-advisory-2',
+          offeringId: 'off-advisory',
+          offeringName: 'Advisory retainer',
+          agreedRateCents: 350_000
+        }),
+        retainerEngagement
+      ]
+    })
+    await screen.findByText('Sold advisory')
+
+    const sold = cardFor('Sold advisory')
+    expect(sold.querySelector('.sold-as')?.textContent).toContain('sold as Advisory retainer')
+    // No price on the card. `agreedRateCents` is 350000 on this fixture and
+    // the offering is quoted somewhere else entirely; neither belongs here
+    // (P3-03 — the card labels the sale, it does not report a rate).
+    expect(sold.textContent).not.toMatch(/3500|\$/)
+
+    // Sold from nothing renders no label at all, not an empty one.
+    expect(cardFor('Advisory retainer').querySelector('.sold-as')).toBeNull()
   })
 
   it('renders no progress shape at all for equity or none — the shape reserved for a model it does not apply to', async () => {

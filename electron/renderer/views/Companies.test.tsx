@@ -8,7 +8,7 @@ import { createQueryClient } from '../lib/query-client'
 import { invalidate } from '../lib/query-keys'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { Company } from '../../shared/companies'
-import type { Engagement } from '../../shared/engagements'
+import type { EngagementWithOffering } from '../../shared/engagements'
 import type { SettingEntry } from '../../shared/ipc-types'
 
 afterEach(() => {
@@ -40,13 +40,15 @@ function makeCompany(overrides: Partial<Company> & { id: string; name: string })
   }
 }
 
-function makeEngagement(overrides: Partial<Engagement> & { id: string }): Engagement {
+function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: string }): EngagementWithOffering {
   return {
     name: 'Engagement',
     billingCompanyId: null,
     clientCompanyId: null,
     offeringVersionId: null,
     agreedRateCents: null,
+    offeringId: null,
+    offeringName: null,
     billingModel: null,
     status: null,
     startedOn: '2026-01-01',
@@ -98,7 +100,7 @@ function renderCompanies({
   crmOverrides = {}
 }: {
   companies?: readonly Company[]
-  engagements?: readonly Engagement[]
+  engagements?: readonly EngagementWithOffering[]
   mode?: 'card' | 'list'
   queryClient?: QueryClient
   crmOverrides?: Parameters<typeof stubCrm>[0]

@@ -9,7 +9,7 @@ import { stubCrm } from '../lib/test-support/stub-crm'
 import type { Activity as ActivityRow, ActivityFilters } from '../../shared/activity'
 import type { Company } from '../../shared/companies'
 import type { Person } from '../../shared/people'
-import type { Engagement } from '../../shared/engagements'
+import type { EngagementWithOffering } from '../../shared/engagements'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -62,13 +62,15 @@ function makePerson(overrides: Partial<Person> & { id: string; name: string }): 
   }
 }
 
-function makeEngagement(overrides: Partial<Engagement> & { id: string }): Engagement {
+function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: string }): EngagementWithOffering {
   return {
     name: 'Engagement',
     billingCompanyId: null,
     clientCompanyId: null,
     offeringVersionId: null,
     agreedRateCents: null,
+    offeringId: null,
+    offeringName: null,
     billingModel: null,
     status: null,
     startedOn: '2026-01-01',
@@ -128,7 +130,7 @@ function renderActivity({
   activity?: readonly ActivityRow[]
   companies?: readonly Company[]
   people?: readonly Person[]
-  engagements?: readonly Engagement[]
+  engagements?: readonly EngagementWithOffering[]
   initialEntries?: string[]
 } = {}) {
   const activityList = vi.fn(async (filters?: ActivityFilters) => ({
