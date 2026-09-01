@@ -94,6 +94,13 @@ always lives at the fixed location `app.getPath('userData')/data-location.json`
    launch.
 6. **No environment-variable override.** Unlike the sync-folder guard, the
    data root does not get a documented escape hatch — see Alternatives.
+   **Extended, not overturned, by
+   [ADR-013](ADR-013-portable-data-root.md)** for the one case this ADR did
+   not consider: a portable build, where the launcher itself supplies the
+   folder the artifact was launched from and the running process cannot
+   observe it any other way. That remains build-supplied fact rather than
+   user-supplied preference, and ADR-013 states the four-part test that keeps
+   it from becoming the override this item refuses.
 
 `settings` (ADR-002) is amended by one boundary rule this ADR states rather
 than restates: **the database's own location may never be a value read from
@@ -154,6 +161,12 @@ provides without an env var. Adding one would only add a second, less
 discoverable way to set the same value T-260828-18 will expose properly, and
 T-260828-05's Risks section already refused widening `userDataDir` into a
 production escape hatch on the same reasoning.
+[ADR-013](ADR-013-portable-data-root.md) later reads one environment variable
+for the data root — `PORTABLE_EXECUTABLE_DIR`, in a portable build — and the
+distinction it draws is the one this paragraph rests on: that variable is
+written by our own NSIS launcher, lives for a single launch, and can name
+nothing but the folder the artifact was launched from, so it carries a fact
+rather than a preference. A user-supplied `SOLOCRM_DATA_ROOT` stays refused.
 
 **A pointer file whose own path is configurable (e.g. found via a registry
 key, or searched for across common drive letters).** Lost because it
