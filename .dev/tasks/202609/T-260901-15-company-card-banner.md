@@ -1,10 +1,10 @@
 ---
 id: T-260901-15
 title: Carry a company's banner onto its card, behind a gradient
-status: in-progress
+status: done
 category: ui
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -89,3 +89,52 @@ legible and keeps the image doing identification rather than decoration.
 - Colour carries meaning in this app — "section, company, billing model,
   status — never decoration". A banner is decoration by nature; it must not
   end up competing with the cadence meter or the kind tag for the eye.
+
+## Outcome
+
+Merged into `main` from branch `T-260901-15` (builder `924686a`, nothing
+changed at merge). Seven files — the three the scope named, a new
+`Companies.css.test.ts`, and one-line carve-outs in `tsconfig.web.json`,
+`tsconfig.node.json` and `eslint.config.js` for it.
+
+**The read.** One `companyImages:thumbnails` call per view mount (ADR-015),
+held outside `isLoading`/`loadError` so the grid paints on `companies:list`
+and a missing or failed thumbnail never holds or replaces the list. The
+same map feeds the card and the table row; the test asserts exactly one
+call for 30 rows and still one after switching presentation. The measured
+cost at 60 companies the ADR asked for could not be taken — the seeded
+database has no images and the builder's tree had no write path — so the
+outcome records the property the number depends on (the call count) and
+the ADR's own estimate (~1.5 MB of derivatives against ~84 MB of originals).
+
+**The card.** `.ccard.has-banner` adds a `.ccard-wash` sibling at
+`z-index: -1` in the button's own stacking context, `aria-hidden` and
+`pointer-events: none`, so the card stays one button with one accessible
+name. A company with no banner renders the bare `ccard` and no extra child
+— byte-identical to before. `CompanyMark` is image-aware locally and takes
+the URL as a prop, no read of its own; the table row gets the logo in its
+26px mark and no banner.
+
+**Legibility as a number, not a hope.** The wash is capped at 16% at the
+top edge and gone by 44% of the card's height; the lower half sits on
+opaque `--surface`. At that cap `--papyrus` measures 9.0:1 over a white
+banner and 15.0:1 over black; `--faint` (the metadata line's colour today,
+already only 3.0:1 on a bare card) would fall to 1.9:1, so
+`.ccard.has-banner .top .meta` steps up to `--mute` (5.3:1 / 8.9:1) — the
+one visual change to an existing element, and only under a banner.
+`Companies.css.test.ts` reads the gradient's own stops and does the WCAG
+arithmetic, following `tokens.test.ts`/`base.test.ts`/`Rail.test.ts`'s
+pattern, because Vitest runs `css: false` and an imported stylesheet is an
+empty module in jsdom. The wash is subtle by construction; whether 16% is
+enough to *read* as the company's banner is a taste call for the running
+app.
+
+**Review.** Six mutants — every card claiming a banner, the wash reading
+the logo slot, the card and the row each never showing a logo, the
+thumbnails read ignored, and `--mute` reverted to `--faint` under a
+banner — all died; the builder's own gradient-stop mutant (84% → 60%
+coverage) had already turned the contrast test red. At merge: three tsc
+projects, `eslint .`, the Companies tests and the catch-all project.
+
+**Not eyeballed** in the running app; the 1px fixtures the tests use say
+nothing about how a real banner looks at 16%.

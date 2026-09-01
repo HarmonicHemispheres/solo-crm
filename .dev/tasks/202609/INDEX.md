@@ -14,7 +14,6 @@ the two 📄 docs tasks and the settings ADR are for.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260901-15](T-260901-15-company-card-banner.md) | Carry a company's banner onto its card, behind a gradient | 🎨 ui | |
 | ○ open | [T-260901-16](T-260901-16-popover-layer-retarget.md) | Retarget the popover layer when a second InfoPopover opens over the first | 🎨 ui | |
 
 ## Closed this month
@@ -35,6 +34,7 @@ the two 📄 docs tasks and the settings ADR are for.
 | ● done | [T-260901-11](T-260901-11-offerings-view.md) | Build the Offerings view | 🎨 ui | P3-07 | R-260901-01 |
 | ● done | [T-260901-13](T-260901-13-engagement-offering.md) | Sell an engagement from an offering, snapshotting the rate once | 🎨 ui | P3-03 | R-260901-01 |
 | ● done | [T-260901-14](T-260901-14-company-header-images-edit.md) | Give company detail its logo, its banner and a visible way in to editing | 🎨 ui | | R-260901-01 |
+| ● done | [T-260901-15](T-260901-15-company-card-banner.md) | Carry a company's banner onto its card, behind a gradient | 🎨 ui | | R-260901-01 |
 
 ## Order
 
