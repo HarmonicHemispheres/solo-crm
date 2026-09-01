@@ -5,6 +5,7 @@ import { CompanySheet } from '../sheets/CompanySheet'
 import { PersonSheet } from '../sheets/PersonSheet'
 import { EngagementSheet } from '../sheets/EngagementSheet'
 import { TodoSheet } from '../sheets/TodoSheet'
+import { OfferingSheet } from '../sheets/OfferingSheet'
 import { QuickLog } from './QuickLog'
 import './LayerManager.css'
 
@@ -198,8 +199,9 @@ export function LayerManager({ children }: { children: ReactNode }) {
     },
     {
       kind: 'sheet',
-      // T-260828-27's four real forms, and nothing else: `SheetKind` is a
-      // closed union of four and `openSheet` requires one, so this switch is
+      // T-260828-27's real forms, and nothing else: `SheetKind` is a closed
+      // union (four originally, five since T-260901-11's `offering`) and
+      // `openSheet` requires one, so this switch is
       // exhaustive and a sheet holding no form is unrepresentable. The
       // placeholder shell that used to be this switch's `default` — a
       // disabled Create button over a line of prose deferring the form to
@@ -230,10 +232,10 @@ export function LayerManager({ children }: { children: ReactNode }) {
       // never a reset effect" rule this comment already states, applied to
       // the case that gets missed.
       //
-      // Each `case` passes only what that form takes: `EngagementSheet`
-      // reads the target (create vs. edit), the other three are create-only
-      // today and gain the prop when they gain the mode (T-260901-14 for
-      // company), without this switch changing shape again.
+      // Each `case` passes only what that form takes: `EngagementSheet` and
+      // `OfferingSheet` read the target (create vs. edit), the other three
+      // are create-only today and gain the prop when they gain the mode
+      // (T-260901-14 for company), without this switch changing shape again.
       node: (() => {
         if (!sheetTarget || !isOpen('sheet')) return null
         const sheetOnClose = () => closeLayer('sheet')
@@ -248,6 +250,8 @@ export function LayerManager({ children }: { children: ReactNode }) {
               return <EngagementSheet onClose={sheetOnClose} target={sheetTarget} />
             case 'todo':
               return <TodoSheet onClose={sheetOnClose} />
+            case 'offering':
+              return <OfferingSheet onClose={sheetOnClose} target={sheetTarget} />
           }
         })()
         return <Fragment key={targetKey}>{form}</Fragment>
