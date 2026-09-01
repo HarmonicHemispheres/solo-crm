@@ -10,6 +10,7 @@ import {
   resolveDatabasePath
 } from './connection'
 import { resolveDataRoot, writeDataRootPointer, type DataRootOptions } from './data-root'
+import { isPortableLaunch, observePortableLaunch } from './portable'
 import { closeReadOnlyDatabase } from './readonly-connection'
 import { findBlockingSyncFolderMatch } from './sync-folder-guard'
 
@@ -52,6 +53,11 @@ import { findBlockingSyncFolderMatch } from './sync-folder-guard'
 const SIDECAR_SUFFIXES = ['-wal', '-shm'] as const
 
 export type MoveDataRootRefusalCode =
+  /**
+   * This is a portable copy, which has no relocatable data root to move
+   * (ADR-013 Decision 6).
+   */
+  | 'portable'
   /** The target is not an absolute path. */
   | 'not-absolute'
   /** The target does not exist, or exists and is not a directory. */
@@ -237,8 +243,31 @@ function refuseTarget(target: string, currentRoot: string): MoveDataRootRefusal 
  * on that; the entry point is main-process only.
  */
 export function moveDataRoot(target: string, options: MoveDataRootOptions = {}): MoveDataRootResult {
+  const probe = options.portableLaunch ?? observePortableLaunch()
   const userDataDir = options.userDataDir ?? app.getPath('userData')
-  const currentRoot = resolveDataRoot({ userDataDir })
+  const currentRoot = resolveDataRoot({ userDataDir, portableLaunch: probe })
+
+  // ADR-013 Decision 6: a portable copy has no relocatable root, and the
+  // refusal belongs *here* — before the connection is closed and before a
+  // byte is copied — rather than as the `pointer-failed` this would otherwise
+  // become several gigabytes later, when `writeDataRootPointer` refuses on
+  // its own account. The mechanism a move relies on is the pointer file, and
+  // in portable mode that file is not read and is never written: it lives in
+  // the host machine's `%APPDATA%`, shared with any installed Solo CRM, so a
+  // successful move here would have relocated the *installed* copy's data on
+  // its next launch rather than this one's.
+  if (isPortableLaunch(probe)) {
+    return {
+      kind: 'refused',
+      code: 'portable',
+      message:
+        `This is the portable Solo CRM, which always keeps its data in the same folder as its .exe — ` +
+        `"${currentRoot}". There is no other location to move it to, and recording one would change where ` +
+        `a Solo CRM installed on this machine keeps its data, not this copy. To move a portable Solo CRM's ` +
+        `data, quit the app and move the .exe and its solocrm.db files together.`,
+      dataRoot: currentRoot
+    }
+  }
 
   const refusal = refuseTarget(target, currentRoot)
   if (refusal) return refusal
