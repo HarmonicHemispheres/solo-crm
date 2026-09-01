@@ -67,11 +67,17 @@ export default tseslint.config(
     // only form of that check that would have caught `.inp { outline: none }`
     // suppressing the app's focus ring. It is carved out of
     // tsconfig.web.json and into tsconfig.node.json alongside the two above.
+    // views/Companies.css.test.ts (T-260901-15) is the fourth of the same
+    // species and joins them: it reads Companies.css and tokens.css off disk
+    // to do the WCAG arithmetic on the banner wash's own gradient stops —
+    // the only form of that check that can exist, since Vitest runs with
+    // `css: false` and an imported stylesheet is an empty module in jsdom.
     ignores: [
       'electron/renderer/styles/tokens.test.ts',
       'electron/renderer/styles/base.test.ts',
       'electron/renderer/components/sheets/fields.test.ts',
-      'electron/renderer/components/shell/Rail.test.ts'
+      'electron/renderer/components/shell/Rail.test.ts',
+      'electron/renderer/views/Companies.css.test.ts'
     ],
     languageOptions: {
       globals: globals.browser
