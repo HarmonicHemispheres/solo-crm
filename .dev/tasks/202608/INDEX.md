@@ -8,7 +8,7 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
-| ○ open | [T-260831-06](T-260831-06-portable-mode-ui.md) | Stop offering a data location the portable build cannot honour | 🎨 ui | X-09 |
+| ◐ in-progress | [T-260831-06](T-260831-06-portable-mode-ui.md) | Stop offering a data location the portable build cannot honour | 🎨 ui | X-09 |
 | ○ open | [T-260831-05](T-260831-05-portable-qa.md) | Drive the portable build by hand — the folder it writes to, and the folders it must refuse | 📦 build | X-09 |
 
 The update path is driven and recorded (R-260829-03): the maintenance page

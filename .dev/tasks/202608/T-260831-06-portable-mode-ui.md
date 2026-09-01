@@ -1,7 +1,7 @@
 ---
 id: T-260831-06
 title: Stop offering a data location the portable build cannot honour
-status: open
+status: in-progress
 category: ui
 plan_ref: X-09
 created: 2026-08-31
