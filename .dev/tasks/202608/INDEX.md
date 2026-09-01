@@ -8,11 +8,21 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
+| ○ open | [T-260831-01](T-260831-01-portable-data-root-decision.md) | Decide how a portable build names its data root, and record it | 📄 docs | X-09 |
+| ○ open | [T-260831-02](T-260831-02-guard-every-release-artifact.md) | Guard every artifact the release build writes, not only the NSIS one | 📦 build | X-09 |
+| ○ open | [T-260831-03](T-260831-03-portable-data-root.md) | Resolve the data root beside the executable when the build is portable | 🗄 data | X-09 |
+| ○ open | [T-260831-04](T-260831-04-portable-target.md) | Add the portable target to the release build, beside the installer | 📦 build | X-09 |
+| ○ open | [T-260831-05](T-260831-05-portable-qa.md) | Drive the portable build by hand — the folder it writes to, and the folders it must refuse | 📦 build | X-09 |
 
 The update path is driven and recorded (R-260829-03): the maintenance page
 reads **Update**, not Repair, and the database is byte-identical either side of
 it. What is left needs an uninstall — the Remove path, and the clean-machine
 run that cannot happen while an install exists.
+
+T-260831-01…05 are the portable build. They run in that order: the ADR settles
+the mechanism, and T-260831-03 cannot start until it does. T-260831-02 is
+independent of the rest and can land at any time — it closes a gap in
+T-260829-02's overwrite guard that exists today, before any second target does.
 
 ## Closed this month
 
