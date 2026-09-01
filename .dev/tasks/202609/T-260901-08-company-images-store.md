@@ -1,7 +1,7 @@
 ---
 id: T-260901-08
 title: Store a company's logo and banner as bytes, per company
-status: open
+status: in-progress
 category: data
 created: 2026-09-01
 closed:

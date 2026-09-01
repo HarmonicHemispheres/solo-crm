@@ -1,7 +1,7 @@
 ---
 id: T-260901-07
 title: Expose the offerings repositories over IPC
-status: open
+status: in-progress
 category: ipc
 created: 2026-09-01
 closed:

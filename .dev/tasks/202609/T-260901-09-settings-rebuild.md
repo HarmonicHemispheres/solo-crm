@@ -1,7 +1,7 @@
 ---
 id: T-260901-09
 title: Rebuild Workspace Settings as a section rail over one vertical page
-status: open
+status: in-progress
 category: ui
 created: 2026-09-01
 closed:

@@ -14,9 +14,9 @@ the two 📄 docs tasks and the settings ADR are for.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260901-07](T-260901-07-offerings-ipc.md) | Expose the offerings repositories over IPC | 🔌 ipc | |
-| ○ open | [T-260901-08](T-260901-08-company-images-store.md) | Store a company's logo and banner as bytes, per company | 🗄 data | |
-| ○ open | [T-260901-09](T-260901-09-settings-rebuild.md) | Rebuild Workspace Settings as a section rail over one vertical page | 🎨 ui | |
+| ◐ in-progress | [T-260901-07](T-260901-07-offerings-ipc.md) | Expose the offerings repositories over IPC | 🔌 ipc | |
+| ◐ in-progress | [T-260901-08](T-260901-08-company-images-store.md) | Store a company's logo and banner as bytes, per company | 🗄 data | |
+| ◐ in-progress | [T-260901-09](T-260901-09-settings-rebuild.md) | Rebuild Workspace Settings as a section rail over one vertical page | 🎨 ui | |
 | ○ open | [T-260901-11](T-260901-11-offerings-view.md) | Build the Offerings view | 🎨 ui | P3-07 |
 | ○ open | [T-260901-12](T-260901-12-company-images-ipc.md) | Expose a company's images over IPC, on the picker that never returns a path | 🔌 ipc | |
 | ○ open | [T-260901-13](T-260901-13-engagement-offering.md) | Sell an engagement from an offering, snapshotting the rate once | 🎨 ui | P3-03 |
