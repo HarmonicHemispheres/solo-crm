@@ -1,10 +1,10 @@
 ---
 id: T-260901-12
 title: Expose a company's images over IPC, on the picker that never returns a path
-status: in-progress
+status: done
 category: ipc
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -117,3 +117,62 @@ This task adds a second caller. The failure mode is not that it does not work
 - The list read returns many images at once. Whatever ADR-015 chose, the
   channel must not become the one place the decision is quietly widened
   because it was convenient to return everything.
+
+## Outcome
+
+Merged into `main` from branch `T-260901-12` (builder `bf3dee2`, one test
+added at merge in `63d7710`). Eleven files.
+
+- **The picker was generalised by extraction, not moved.** The guards —
+  focused-window refusal, the single-flight `WeakSet` (one set, shared by
+  both callers, so a branding picker and a company picker over the same
+  window cannot stack), stat-then-read bounded by the target's cap, the
+  hand-written path-free refusals and `imageDataUrl` — now live once in
+  `electron/main/images/picker.ts` as `pickImage(target: PickTarget, deps)`,
+  resolving to `{ outcome: 'cancelled' } | { outcome: 'picked'; bytes }` and
+  never a path. `electron/main/branding/picker.ts` is a thin adapter keeping
+  every export it had, so `branding/index.ts` and `branding/picker.test.ts`
+  are byte-for-byte unchanged and still pass. What differs per caller is the
+  `PickTarget` — title, offered extensions, `maxBytes`, `limitLabel` — and
+  the guards are not on that interface, so a caller cannot opt out of one.
+- `electron/shared/company-images.ts` gained the wire: per-slot
+  `companyImageSlotStateSchema` (`present` with `dataUrl`, `byteLength`
+  refined against the slot's own cap, `width`/`height`, `updatedAt`; or
+  `absent`), `companyImagesSnapshotSchema` (both slots, total by
+  construction), the two `.strict()` request schemas, `companyImageChoiceSchema`
+  (cancel is a success branch, as `brandingChoiceSchema`) and
+  `companyImageThumbnailsSchema` — the id-keyed map ADR-015 §4 specifies,
+  derivatives only, no `byteLength`.
+- Four channels in `registry.ts`: `companyImages:thumbnails` (request
+  `z.undefined()`; folds the repository's flat list into the map),
+  `companyImages:get`, `companyImages:choose` and `companyImages:clear`.
+  Unknown company on `choose`/`clear` surfaces the repository's own
+  `NotFoundError` with no row written; `get` on an unknown id answers
+  absent/absent — a plain read with nothing to leak. `preload/index.ts` and
+  `window.d.ts` needed no edit: both are generic over `CHANNEL_CONTRACTS`.
+- `queryKeys.companyImages.{all,thumbnails,detail}` and
+  `invalidate.companyImages`; one stub per channel in `stub-crm.ts`.
+- The company picker offers `png/jpg/jpeg` only — the dialog must not offer
+  what the store refuses.
+
+Acceptance: every box ticked except `npm run verify` (ran as the underlying
+tools on the scratchpad Node 22.22.0 — run summary) and **`security-review`,
+which is pending** — it runs in its own session, over these four channels
+together with T-260901-07's ten. The acceptance grep finds three hits, all
+pre-existing prose in `branding.ts`, `favicons.ts` and
+`favicon-boundary.test.ts` naming the APIs in order to forbid them; none is
+code and none is this task's.
+
+**Review.** Seven mutants. Six died as written: single-flight removed,
+cap ignored, stat-failure message carrying the path (caught by the
+`path-leak.ts` walker), thumbnails collapsing both slots onto `logo`, the
+logo picker given the banner's cap, and `clear` doing nothing (registry
+test). One survived — `canceled: true` with a path still in `filePaths`
+was read anyway — because every cancel fixture answered an empty
+`filePaths`. Electron does answer empty on cancel, so the mutant is close to
+equivalent in production, but the flag is the contract and the guard is the
+kind that goes missing in a copy; a test now asserts the flag decides and
+`stat` is never called (`63d7710`).
+
+**Not eyeballed:** no view reads these channels yet (T-260901-14, 15). The
+native dialog has not been opened in the running app.
