@@ -94,4 +94,13 @@ Things that are silently wrong rather than loudly broken:
   whatever table now owns the new number, surfacing as search results naming
   the wrong record rather than as a failure anywhere near the change. See
   [ADR-008](.dev/decisions/ADR-008-search-index-shape.md).
+- **A list read never carries an image original.** Images reach the renderer
+  only as base64 `data:` URLs over IPC (the CSP forbids `blob:` and custom
+  protocols), so a channel that puts originals on a list pays a third more
+  than the stored size for every row at once — about 84 MB of string to paint
+  a 60-company grid, and nothing on the seeded database, which has no images,
+  will ever show it. The grid reads the stored 96 × 96 / 480 × 270 derivatives
+  through one `companyImages:thumbnails` call; only a detail page reads an
+  original, one company at a time. See
+  [ADR-015](.dev/decisions/ADR-015-company-images.md).
 - No telemetry, no analytics, no network call the user did not configure.

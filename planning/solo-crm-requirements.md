@@ -306,6 +306,7 @@ search_fts  -- FTS5 external-content table over companies.name, people.name,
 
 ### 6.2 Companies
 - Grid of company cards with identity colour, cadence ring, kind, active engagement count and end-client count.
+- **Company images** *(added 2026-09-01 — a scope addition decided in [ADR-015](../.dev/decisions/ADR-015-company-images.md); neither the original requirements nor the mockup asked for it).* A company may carry two operator-supplied images: a **logo** and a **banner**. Company detail shows both — the logo in place of the initials mark, the banner behind the header. A grid card shows both — the logo in its mark, the banner as a wash under the card's gradient. Absence is the default: a company with no image keeps its identity colour and initials, and clearing an image restores them. PNG and JPEG only, chosen through the native file picker; 512 KB cap for a logo, 1 MB for a banner. Both are stored in the database, each beside a downscaled derivative that is what the grid reads — a list never transfers originals, whatever the company count.
 - **Company detail** must show, on one page: engagements billed to this company; engagements delivered here but billed elsewhere; end clients (where this company is the billing party); todos with the next step called out; activity timeline; contacts; details; links.
 - End clients (`bills_directly = false`) carry their own contacts, budget, cadence clock and activity log, and must never appear in a revenue rollup as a payer.
 
