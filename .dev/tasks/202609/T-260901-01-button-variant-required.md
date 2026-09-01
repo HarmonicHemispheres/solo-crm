@@ -1,10 +1,10 @@
 ---
 id: T-260901-01
 title: Give the Data view's two colourless buttons a variant, and make a third impossible
-status: in-progress
+status: done
 category: ui
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -82,3 +82,35 @@ and `Chip`, which have their own colour rules and neither reported symptom.
 - `Tour.tsx`, `PersonDetail.tsx` and `WorkspaceSettings.tsx` each pass
   `variant` on a continuation line. They are already correct; do not "fix"
   them.
+
+## Outcome
+
+**Changed:** 4 files — `Button.tsx` (`variant` required, the
+`variant ? … : undefined` branch deleted, header rewritten), `Button.css`
+(header now says `.btn` alone is geometry, not a style), `Button.test.tsx`,
+and the two call sites in `WorkspaceData.tsx`, both `variant="ghost"`.
+
+**Review:** passed. Builder's mutation check — deleting `variant="ghost"` from
+Refresh — fails `tsc -p tsconfig.web.json` with `TS2741 … missing in type …
+but required in type 'ButtonProps'`, naming the call site, which is the
+acceptance criterion verbatim. The three continuation-line usages
+(`Tour.tsx`, `PersonDetail.tsx`, `WorkspaceSettings.tsx`) were correctly
+left alone. The bare-`.btn` test became a type-level contract: a
+`// @ts-expect-error` on a `ButtonProps` literal with no `variant`, so the
+unused-directive error fails typecheck the day the prop goes optional
+again. The scope's "no `@ts-expect-error` anywhere" was aimed at papering
+over a missed call site; this use is the opposite — it is what asserts the
+contract — and is accepted as such.
+
+Not done here: the acceptance item that the two buttons render
+`--surface-2`/`--papyrus` *in the running app*. Neither the builder nor the
+merge launched Electron. The CSS is the mockup's `.btn-ghost` unchanged and
+the class string is asserted, so the remaining risk is nil, but the box is
+honestly unticked.
+
+Builder's environment note, kept because the next run will hit it: under the
+scratchpad Node 22.22.0's npm (10.9.4) `npm run <script>` exits 1 with no
+output on this machine for every script; the binaries invoked directly
+(`node_modules/.bin/tsc`, `node_modules/.bin/eslint`) give real exit codes.
+Also `tsc --composite` caches to `tsconfig.*.tsbuildinfo`, and a typecheck
+straight after an edit can report off the stale cache.

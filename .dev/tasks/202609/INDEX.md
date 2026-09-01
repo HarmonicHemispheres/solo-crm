@@ -14,7 +14,6 @@ the two 📄 docs tasks and the settings ADR are for.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260901-01](T-260901-01-button-variant-required.md) | Give the Data view's two colourless buttons a variant, and make a third impossible | 🎨 ui | |
 | ◐ in-progress | [T-260901-02](T-260901-02-detail-heading-type.md) | Style the detail-page heading so the banner reads as a banner | 🎨 ui | |
 | ◐ in-progress | [T-260901-03](T-260901-03-settings-layout-decision.md) | Decide how Workspace Settings is organised, now that the mockup's card grid has stopped scaling | 📄 docs | |
 | ◐ in-progress | [T-260901-04](T-260901-04-company-images-decision.md) | Decide where a company's logo and banner live, and how a grid of them is read | 📄 docs | |
@@ -29,6 +28,12 @@ the two 📄 docs tasks and the settings ADR are for.
 | ○ open | [T-260901-13](T-260901-13-engagement-offering.md) | Sell an engagement from an offering, snapshotting the rate once | 🎨 ui | P3-03 |
 | ○ open | [T-260901-14](T-260901-14-company-header-images-edit.md) | Give company detail its logo, its banner and a visible way in to editing | 🎨 ui | |
 | ○ open | [T-260901-15](T-260901-15-company-card-banner.md) | Carry a company's banner onto its card, behind a gradient | 🎨 ui | |
+
+## Closed this month
+
+| | ID | Title | Cat | Plan | Run |
+|---|---|---|---|---|---|
+| ● done | [T-260901-01](T-260901-01-button-variant-required.md) | Give the Data view's two colourless buttons a variant, and make a third impossible | 🎨 ui | | R-260901-01 |
 
 ## Order
 
