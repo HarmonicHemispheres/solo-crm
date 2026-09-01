@@ -712,6 +712,9 @@ describe('offerings channels — end to end against a real database', () => {
     expect(registry['offerings:update'].request.safeParse({ id: 'o1', patch: { name: 'x' } }).success).toBe(true)
     expect(registry['offerings:update'].request.safeParse({ id: 'o1', patch: { rateCents: 999 } }).success).toBe(false)
     expect(registry['offerings:update'].request.safeParse({ id: 'o1', patch: { active: true } }).success).toBe(false)
+    // The wrapper is strict too, not only the patch inside it (merge review:
+    // dropping the outer `.strict()` survived every line above).
+    expect(registry['offerings:update'].request.safeParse({ id: 'o1', patch: { name: 'x' }, rateCents: 999 }).success).toBe(false)
 
     expect(registry['offerings:archive'].request.safeParse({ id: 'o1' }).success).toBe(true)
     expect(registry['offerings:archive'].request.safeParse({ id: 'o1', hard: true }).success).toBe(false)
