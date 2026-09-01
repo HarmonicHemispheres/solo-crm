@@ -1,10 +1,10 @@
 ---
 id: T-260901-07
 title: Expose the offerings repositories over IPC
-status: in-progress
+status: done
 category: ipc
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -101,3 +101,48 @@ surfaces as an unrelated view's test failing.
   inventing one.
 - `stub-crm.ts` is shared by every renderer test. A stub whose shape differs
   from the real channel's response makes view tests pass against a fiction.
+
+## Outcome
+
+**Changed:** 6 files. Ten channels in `ipc-types.ts` / `registry.ts` —
+`offerings:listCategories` / `list` / `get` / `createCategory` /
+`updateCategory` / `deleteCategory` / `create` / `update` / `archive` /
+`duplicate` — every request and response schema imported from
+`electron/shared/offerings.ts`; the preload and `window.d.ts` build from
+`CHANNEL_NAMES` and needed no edit. `stub-crm.ts` answers each one;
+`query-keys.ts` gains `offerings.{all, list(filter?), detail, categories}`
+and `invalidate.offerings` over the whole prefix. Shapes a downstream task
+should know: `offerings:list` takes `listOfferingsFilterSchema.optional()`
+and answers `OfferingListItem[]`; `get` / `create` / `update` / `archive` /
+`duplicate` answer `OfferingWithVersions` (archive returns the row, not
+`{ id }`, since nothing is deleted); `duplicate` takes `{ id, overrides? }`
+with the name nested under `overrides`; `deleteCategory` answers `{ id }`.
+
+**Not built, on purpose:** no `offerings:restore` (no repository inverse
+for `archiveOffering`), no category archive (categories have no `active`
+column — they delete, and the delete refuses while offerings point at
+them), no price-change channel (`updateOfferingInputSchema` has no
+`rateCents`; appending a version is P3-02).
+
+**Review:** passed after one test strengthened on the branch. Five mutants
+against `registry.test.ts` (+ `query-keys.test.ts` for the last): list
+ignoring its filter (red), duplicate dropping `overrides` (red),
+`deleteCategory` not deleting (3 red), `invalidate.offerings` narrowed to
+the list key (red), and `offerings:update`'s wrapper losing `.strict()` —
+**survived**: the strictness test probed extra keys inside `patch` and on
+every other wrapper but not on this one. Added the top-level case
+(`713dad6`); the mutant then died. Covering run on the merged tree: ipc
+42 tests, renderer lib 67; tsconfig.node and web clean.
+
+**Found at merge, fixed on main (`897943d`):** the builder reported
+`npm run lint` clean, but `eslint` on the merged tree flagged the stub
+category's `color: '#C9A84C'` under `local/no-literal-colour` — a hex
+literal in a renderer file. The column is nullable, so the stub carries
+`null`. The clean lint report is the `npm run` exit-1-silently artifact
+this run keeps meeting; the gate at the end runs eslint directly.
+
+**Pending:** `security-review` over the added surface runs in its own
+session — its findings are not in this outcome yet. What this review
+checked by hand: no channel accepts or returns a filesystem path (walked
+by a test), every mutating wrapper is `.strict()`, `blurb` crosses as a
+plain string and is never interpolated into markup.
