@@ -14,7 +14,6 @@ the two 📄 docs tasks and the settings ADR are for.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260901-04](T-260901-04-company-images-decision.md) | Decide where a company's logo and banner live, and how a grid of them is read | 📄 docs | |
 | ◐ in-progress | [T-260901-05](T-260901-05-offerings-repository.md) | Build the offerings repositories — categories, offerings, versions | 🗄 data | P3-01 |
 | ◐ in-progress | [T-260901-06](T-260901-06-info-popover-primitive.md) | Extract ViewHeader's info popover into a primitive anything can use | 🎨 ui | |
 | ○ open | [T-260901-07](T-260901-07-offerings-ipc.md) | Expose the offerings repositories over IPC | 🔌 ipc | |
@@ -34,6 +33,7 @@ the two 📄 docs tasks and the settings ADR are for.
 | ● done | [T-260901-01](T-260901-01-button-variant-required.md) | Give the Data view's two colourless buttons a variant, and make a third impossible | 🎨 ui | | R-260901-01 |
 | ● done | [T-260901-02](T-260901-02-detail-heading-type.md) | Style the detail-page heading so the banner reads as a banner | 🎨 ui | | R-260901-01 |
 | ● done | [T-260901-03](T-260901-03-settings-layout-decision.md) | Decide how Workspace Settings is organised, now that the mockup's card grid has stopped scaling | 📄 docs | | R-260901-01 |
+| ● done | [T-260901-04](T-260901-04-company-images-decision.md) | Decide where a company's logo and banner live, and how a grid of them is read | 📄 docs | | R-260901-01 |
 
 ## Order
 

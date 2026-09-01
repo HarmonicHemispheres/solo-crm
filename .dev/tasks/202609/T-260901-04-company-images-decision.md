@@ -1,10 +1,10 @@
 ---
 id: T-260901-04
 title: Decide where a company's logo and banner live, and how a grid of them is read
-status: in-progress
+status: done
 category: docs
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -115,3 +115,45 @@ until this lands. Out too: reopening ADR-012 for the rail's own two slots.
   choice (1) that has to be acknowledged, not discovered by X-04.
 - This is a requirements change, not a bug fix. The ADR should say so plainly
   rather than presenting the feature as though it had always been in scope.
+
+## Outcome
+
+**Changed:** 4 files — `.dev/decisions/ADR-015-company-images.md` (new,
+accepted); three pointers in ADR-012 (scope note under "two rows at most,
+ever", the cap argument bounded to startup reads, the "no decoder in main"
+sentence qualified); a §6.2 bullet in `planning/solo-crm-requirements.md`
+marked as a dated scope addition; an AGENTS.md gotcha — "a list read never
+carries an image original" — before "No telemetry".
+
+**Decided, for T-08/12/14/15:** `company_images` with UUID PK,
+`UNIQUE(company_id, slot)`, `created_at`/`updated_at`, real FK
+`ON DELETE CASCADE` (the schema's first — `deleteCompany`'s
+`refuseIfReferenced` must NOT gain this table), and `bytes` declared LAST
+so a thumbnail read never walks the original's overflow pages. Every write
+stores a derivative generated in main via `nativeImage` (logo fits 96×96
+PNG, banner fits 480×270 JPEG q75, never upscaled) in a `derive.ts` module
+injected into the repository. Channels: `companyImages:thumbnails` (one
+call; map by company id, present slots only, derivatives) for the grid and
+`companyImages:get(companyId)` originals for detail; `companies:list`
+unchanged. Caps 512 KB logo / 1 MB banner declared once in
+`electron/shared/company-images.ts` as a record keyed by slot. PNG+JPEG
+only, `satisfies readonly FaviconContentType[]`; byte cap → sniff → header
+pixel count (refuse >16,777,216 px) → decode, all before the derivative.
+Repository throws `NotFoundError` for an unknown company. 60-company
+figures: naive 83.9 MB, chosen ≈1.5 MB typical / 9.0 MB ceiling; detail
+≤2.0 MB.
+
+**Review:** passed. The claims the ADR makes about the codebase were
+checked: CSP `img-src 'self' data:` in `security.ts`; Electron 44.0.0;
+`PRAGMA foreign_keys = ON` per connection in `connection.ts` and toggled
+off around migrations in `migrate.ts`; no existing `ON DELETE CASCADE`
+foreign key in `0001`–`0006`; `refuseIfReferenced` lives in
+`db/repositories/companies.ts`. ADR-015 is the next free number. The
+measured derivative sizes and the GIF/BMP `isEmpty()` result are the
+builder's own measurements against that Electron and were not re-run at
+merge.
+
+**Not done here:** §5 of the requirements (the data model listing) still
+does not show `company_images` — only §6.2 was amended, as scoped. The
+export-size consequence (~127 MB worst case per nightly export) is stated
+for X-04 to decide on; no task is filed.
