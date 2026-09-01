@@ -771,7 +771,10 @@ P4-03 being real.
 - [ ] **X-09 · Packaging** — 📦 build · M · after P0-01 · *phase 1 tail*
   Ubuntu (deb / AppImage) and macOS (dmg). Icons from `assets/solocrm-mark.svg`.
   - [ ] It is installed and in the dock on both machines
-  - [ ] The packaged app finds its database in `userData`, not next to the binary
+  - [ ] The **installed** app finds its database in `userData`, not next to the
+        binary. The portable build is the deliberate exception and does the
+        opposite — its data root is the folder the launched `.exe` sits in, per
+        [ADR-013](../.dev/decisions/ADR-013-portable-data-root.md)
   - **Do this at the end of Phase 1, not at the end of the project.** §12's
     abandonment risk is not theoretical, and a tool that has to be run from a
     terminal does not get opened between calls.
