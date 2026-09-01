@@ -100,7 +100,8 @@ describe('InfoPopover', () => {
         isTopmost: () => true,
         openLayer,
         closeLayer,
-        openSheet: vi.fn()
+        openSheet: vi.fn(),
+        editSheet: vi.fn()
       }
       render(
         <LayerManagerContext.Provider value={value}>
@@ -122,7 +123,8 @@ describe('InfoPopover', () => {
         isTopmost: () => true,
         openLayer: vi.fn(),
         closeLayer,
-        openSheet: vi.fn()
+        openSheet: vi.fn(),
+        editSheet: vi.fn()
       }
       render(
         <LayerManagerContext.Provider value={value}>
@@ -145,7 +147,8 @@ describe('InfoPopover', () => {
         isTopmost: () => false,
         openLayer: vi.fn(),
         closeLayer: vi.fn(),
-        openSheet: vi.fn()
+        openSheet: vi.fn(),
+        editSheet: vi.fn()
       }
       render(
         <LayerManagerContext.Provider value={value}>
