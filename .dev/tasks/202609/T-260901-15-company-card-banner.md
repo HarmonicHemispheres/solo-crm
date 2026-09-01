@@ -1,7 +1,7 @@
 ---
 id: T-260901-15
 title: Carry a company's banner onto its card, behind a gradient
-status: open
+status: in-progress
 category: ui
 created: 2026-09-01
 closed:

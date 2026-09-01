@@ -1,7 +1,7 @@
 ---
 id: T-260901-14
 title: Give company detail its logo, its banner and a visible way in to editing
-status: open
+status: in-progress
 category: ui
 created: 2026-09-01
 closed:
