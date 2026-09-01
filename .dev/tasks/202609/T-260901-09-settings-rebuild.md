@@ -1,10 +1,10 @@
 ---
 id: T-260901-09
 title: Rebuild Workspace Settings as a section rail over one vertical page
-status: in-progress
+status: done
 category: ui
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -115,3 +115,54 @@ lands.
 - `BrandingCard` is the one card here that reads no setting at all — it goes
   through `branding:get`/`choose`/`clear`. It must not be folded into the
   settings snapshot on the way past.
+
+## Outcome
+
+Merged into `main` from branch `T-260901-09` (`a22bcb4`). Three files, all
+under `electron/renderer/views/`: `WorkspaceSettings.tsx`, `.css` and
+`.test.tsx` (53 tests, up from the page's previous set). No settings key was
+added, removed or renamed; the selected section is component state that
+resets to Identity on every visit (ADR-014 §1), not a `settings` row and not
+a route.
+
+- `SETTINGS_SECTIONS` fixes the six sections in ADR-014's order — Identity
+  (with Branding as a second `Card.Header`), Default cadence, Integrations,
+  Backup, Appearance, Help (Shortcuts, then Guided tour). One section's card
+  is mounted at a time inside a `<section aria-label={SECTION_LABEL[…]}>`.
+- The rail is a `<nav aria-label="Settings sections">` of real buttons,
+  `aria-current="true"` on the selected one plus an accent bar and weight
+  change, so selection is never colour alone. Activation leaves focus on the
+  button; no roving tabindex.
+- `.settings-layout` is `180px minmax(0, 1fr)` (the `minmax(0, …)` stops a
+  long `.mono.trunc` path forcing a horizontal scroll), content capped at
+  720px; below 900px the rail becomes a wrapping flex strip above the content
+  and the cap lifts. Two scoped rules: `.settings-body .card-h .pop` opens
+  leftwards so a header popover cannot overhang the card, and
+  `.field:has(+ .card-h)` drops its bottom border under a second header.
+- ADR-014 §4 applied by kind: three `InfoPopover`s (`About Branding`,
+  `About Default cadence`, `About Guided tour`) carry explanation; four
+  one-line `.settings-foot` captions stay in the flow — cadence's "no company
+  moves until P2-02", the backup picker's missing dialog channel, density's
+  missing consumer, and Integrations' pull-only line (which stays because
+  §6.11 requires the UI to state it, and has no popover on purpose).
+
+Acceptance: every box is ticked except `npm run verify` (ran as the
+underlying tools on the scratchpad Node 22.22.0 — run summary) and the two
+below, which are verified by reading the stylesheet, not by a test: the 900px
+behaviour is a media query and the section swap has no transition, so
+`prefers-reduced-motion` has nothing to remove and cannot remove the change.
+jsdom evaluates neither; a test would be asserting on the stylesheet's text.
+**The page has not been eyeballed in the running app at 700px, 900px or
+maximised** — that is the user's check.
+
+**Review.** Six mutants against `WorkspaceSettings.test.tsx`, all dead:
+section order swapped (1 test), `aria-current` removed (1), Backup section
+never rendered (6), cadence caption restored to its old three-line form (3),
+`About Default cadence` → `About this view` (2), opening on the second
+section (14).
+
+**Not in scope, noted:** the builder saw one non-reproducing failure in
+`Tour.test.tsx` during a full renderer run on its branch; the file passed on
+every run since, including the covering run at merge. Watch it at the final
+gate. T-260901-16 (two popovers under one manager) is now reachable from
+this page, as its scope predicted.
