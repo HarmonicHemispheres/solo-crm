@@ -5,11 +5,25 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
-## Unreleased
+## 0.5.0
 
 - ✨ **A portable build** — `Solo CRM-Portable-<version>.exe` now ships beside
   the installer: one file to copy onto a USB stick, keeping its database in the
-  folder the file sits in, so the workspace travels with it.
+  folder the file sits in, so the workspace travels with it. It installs
+  nothing and leaves nothing behind on the machine that runs it — an installed
+  copy and a portable copy on one machine are two separate workspaces, and
+  nothing merges them. It asks nothing on first launch, because where its data
+  goes is not a choice: it goes beside the `.exe`. Moving the workspace means
+  moving that file. The cost of the single-file shape is a slower start — the
+  whole app unpacks itself on every launch, and more slowly still off an
+  older USB stick.
+- 🔒 **A portable copy refuses to start rather than lose your work** — if it
+  cannot tell where it was launched from, or the only place it could put the
+  database is a temporary folder Windows empties, it says so and stops. The
+  alternative was an app that opens, saves all day and is empty tomorrow.
+  Dropping the portable `.exe` into a OneDrive, Dropbox or iCloud folder is
+  refused for the same reason it always has been: a sync daemon and a live
+  SQLite file corrupt each other.
 
 ## 0.4.0
 
