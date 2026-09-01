@@ -447,6 +447,16 @@ describe('EngagementSheet', () => {
     expect(payload.agreedRateCents).toBe(350_000)
   })
 
+  it('asks the price list for active offerings only, so an archived one cannot be sold', async () => {
+    const list = vi.fn(async () => ({ ok: true as const, data: STUB_OFFERINGS }))
+    renderSheet(vi.fn(), { 'offerings:list': list })
+    await offeringSelect()
+
+    // The filter is the whole defence: the picker shows whatever this
+    // returns, so an unfiltered read would put archived offerings on sale.
+    expect(list).toHaveBeenCalledWith({ active: true })
+  })
+
   it('shows the price it is about to copy on the option, so the snapshot is visible when it is taken', async () => {
     renderSheet()
     const sold = await offeringSelect()
