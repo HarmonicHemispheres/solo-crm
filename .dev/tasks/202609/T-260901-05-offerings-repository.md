@@ -1,11 +1,11 @@
 ---
 id: T-260901-05
 title: Build the offerings repositories — categories, offerings, versions
-status: in-progress
+status: done
 category: data
 plan_ref: P3-01
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -133,3 +133,55 @@ Constraints this task owns:
 - `offering_versions.version` is a plain integer with no uniqueness
   constraint per offering. Two version 1s are currently representable; decide
   whether this task guards it and say which in the outcome.
+
+## Outcome
+
+**Changed:** 3 new files — `electron/shared/offerings.ts` (three closed
+vocabularies `OFFERING_TYPES` / `OFFERING_BILLING_MODELS` / `OFFERING_UNITS`,
+row schemas, `OfferingListItem` = offering + `currentVersion`,
+`OfferingWithVersions` = offering + `versions[]` newest first, create/update/
+duplicate/filter schemas), `electron/main/db/repositories/offerings.ts`
+(`listOfferingCategories`, `getOfferingCategory`, `createOfferingCategory`,
+`updateOfferingCategory`, `deleteOfferingCategory`, `listOfferings`,
+`getOffering`, `createOffering`, `updateOffering`, `archiveOffering`,
+`duplicateOffering`, and the exported `assertNoOverlappingVersion`), and its
+33-test file. `referential-guard.ts` unchanged — the category refusal uses
+it inline.
+
+**Scope correction, accepted:** "archive a category" is not buildable —
+`offering_categories` has no `active` column and this task has no migration.
+The category surface is create, rename (`updateOfferingCategory`) and delete,
+with delete refused while any offering names the category. If category
+archiving is wanted it is its own task with a migration; none is filed.
+
+**Decisions inside the scope:** version numbers are `MAX(version) + 1`
+derived in the repository rather than a `UNIQUE(offering_id, version)` index
+(a migration P3-02 should add); effective ranges are inclusive on both ends
+with NULL unbounded; the current version is the open-ended one, then the
+latest `effective_from`; `listOfferings` has no implicit `active = 1`;
+`duplicateOffering` copies the current rate into a `null`/`null` range and
+does not copy history; no `restoreOffering`.
+
+**Architecture review:** fine. Fits the `companies.ts`/`engagements.ts`
+idiom and the T-260828-43 machinery rather than a fourth one; computes no
+money (ADR-003 respected — rates are read for display only); tables keep
+their UUID keys and timestamps; the list read is one `ROW_NUMBER()` pass
+over `offering_versions`, not a correlated subquery per row. The `MAX+1`
+version derivation is a deliberate tradeoff documented at the call site,
+not an ADR.
+
+**Review:** six mutants against `offerings.test.ts` alone. Four died as
+built (archive writes `active = 1`; category guard removed; `active` filter
+dropped; duplicate inherits the source's dates). Two survived: the guard
+call inside the private `insertOfferingVersion` (equivalent for this
+task's public surface — both callers create a fresh offering id that can
+have no existing version to clash with; P3-02's append must test its own
+path), and the inclusive boundary — `<=` → `<` on either comparison passed,
+because the same-day assertion ran after an abutting open-ended version
+already existed and clashed with *that* instead. Fixed at merge on the
+branch (commit `4e99085`): the boundary refusal is asserted before the
+abutting version is added, and the mirror case (a candidate ending on the
+day the existing version starts) is asserted too. Both mutants now die.
+
+Covering tests on the merged tree: 33/33. `tsconfig.node.json` and
+`tsconfig.web.json` typecheck; eslint clean on the three files.
