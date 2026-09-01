@@ -1,11 +1,11 @@
 ---
 id: T-260831-02
 title: Guard every artifact the release build writes, not only the NSIS one
-status: in-progress
+status: done
 category: build
 plan_ref: X-09
 created: 2026-08-31
-closed:
+closed: 2026-08-31
 ---
 
 ## Why
@@ -87,3 +87,35 @@ build stores data.
   refusals, not just that the happy path prints.
 - The manifest is in gitignored `release/`, so a wrong migration is invisible in
   review and only shows up on a machine with build history.
+
+---
+
+## Outcome
+
+**Changed:**
+
+- `scripts/release-version.mjs` — the guarded set is now derived from every
+  entry in `build.win.target` (string, list, or `{ target }` objects), each
+  target's name template resolved through electron-builder's real precedence
+  (target → `win` → top-level → the target's own default, read out of the
+  installed app-builder-lib rather than guessed). `decide()` takes every
+  artifact actually present; one is enough to refuse. Unknown targets, empty
+  target lists and unresolvable `${...}` placeholders all throw instead of
+  defaulting — `${arch}` deliberately still refuses, since electron-builder
+  drops it on the default arch and expands it otherwise.
+- `scripts/release-version.test.ts` — 29 tests, up from 10.
+
+**Review:** passed. Verified independently rather than on the builder's word:
+`TargetSpecificOptions` really is `artifactName` + `publish` only
+(`core.d.ts:39`), and a mutation the builder had not tried — narrowing
+`present` to `artifacts.slice(0, 1)`, i.e. the original one-artifact bug —
+fails 4 tests including the zip-artifact and commit-attribution assertions. The
+tests can fail for the reason the task exists. No blocking findings.
+
+One point was flagged for a reviewer's eye: whether `record` should always write
+an `artifacts` array. It should not. This task's own first acceptance criterion
+requires the `nsis`-only config to write a manifest byte-for-byte identical to
+today's, so singular-when-one is required, not a compromise. Resolved as built.
+
+**Deferred:** nothing. The `portable` and `zip` targets are already in the
+guard's table, so T-260831-04 adds a target the guard covers on arrival.
