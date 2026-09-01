@@ -1,11 +1,11 @@
 ---
 id: T-260901-13
 title: Sell an engagement from an offering, snapshotting the rate once
-status: in-progress
+status: done
 category: ui
 plan_ref: P3-03
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -107,3 +107,47 @@ an offering to an engagement".
   to work.
 - This depends on both T-260901-07 (for the channels) and T-260901-10 (for
   the edit mode). Landing it before either means building against nothing.
+
+## Outcome
+
+Merged into `main` from branch `T-260901-13` (builder `91c291b`, one test
+added at merge in `7909d83`). Twenty files.
+
+**Create form.** The sheet reads `offerings:list({ active: true })` and
+offers only offerings with a `currentVersion`; picking one sends the
+*version* id as `offeringVersionId` and copies `version.rateCents` into
+`agreedRateCents` once, at submit. Picking none sends NULL and no rate key
+at all. The option label shows the price about to be copied, so the
+snapshot is visible when it is taken.
+
+**Edit form.** The picker stays editable — the repository accepts
+`offeringVersionId` on update, and re-pointing a signed engagement at
+another offering while keeping its agreed rate is the intended, if
+odd-looking, behaviour the scope's Risks named. The options carry bare
+names and no prices, the field's caption says the agreed rate was set when
+this was signed and does not change here, and the patch carries
+`offeringVersionId` only when it changed; `agreedRateCents` is never in an
+update payload on any path. An engagement sold from an offering the active
+list no longer shows keeps an extra option naming it, so an untouched save
+does not unsell it.
+
+**Read side.** `listEngagements` and a new `getEngagementWithOffering`
+LEFT JOIN through `offering_versions` to `offerings` for `offeringId` and
+`offeringName` only — no rate column is selected, so nothing in the
+renderer can display a live price (ADR-003). `Engagements.tsx` and
+`CompanyDetail.tsx` render "sold as {name}" beneath the card meta; the
+shared `engagementWithOfferingSchema` extends `engagementSchema`, and
+seven fixture files gained the two nullable columns.
+
+**Review.** Seven mutants against the covering files: rate not snapshotted,
+offering id sent as the version id, edit always re-sending the offering,
+stored-but-unlisted offering dropped, join dropping the name, card never
+saying sold-as — all died. The active-only filter on the list request
+survived (the stub returned the same rows either way); the merge commit
+asserts the request itself. `npm run verify`'s parts ran green at merge:
+three tsc projects, eslint, the whole renderer project, the engagement
+repository and IPC tests, the sheet round-trip integration test and the
+renderer boot project.
+
+**Not eyeballed:** the picker and caption have not been opened in the
+running app.
