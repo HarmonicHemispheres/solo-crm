@@ -1,10 +1,10 @@
 ---
 id: T-260901-03
 title: Decide how Workspace Settings is organised, now that the mockup's card grid has stopped scaling
-status: in-progress
+status: done
 category: docs
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -115,3 +115,38 @@ changes the `settings` table.
   bears on question 3: folding Data into Settings removes a nav item, which
   is the cheap direction, but it also buries the one page that tells an
   operator where their database is.
+
+## Outcome
+
+**Changed:** 3 files — `.dev/decisions/ADR-014-settings-layout.md` (new,
+accepted), a DIVERGENCE comment in `planning/solo-crm-mockup.html` directly
+above `views.settings`, and a third exception in AGENTS.md's References
+beside Pipeline and the brand block.
+
+**Decided:** six sections in order — Identity (with Branding as a second
+`Card.Header` in the same card) · Default cadence · Integrations · Backup ·
+Appearance · Help (Shortcuts + Guided tour). One section visible at a time;
+selection is component state, defaults to the first section, not persisted
+and not routed — no new settings key. Data stays its own view; `nav.ts`,
+`ROUTE_META` and the breadcrumb are untouched. Prose rule: explanation goes
+behind `InfoPopover` in the `Card.Header` actions slot; *state* — an honest
+"not wired yet" caption or a constraint §6.11 requires visible — stays in
+the flow. At ≤900px the rail becomes a wrapping strip above the content;
+rail 180px, content max-width 720px, no transition.
+
+**Scope corrections the builder found and this outcome accepts:** the
+mockup's settings view has **five** cards, not three; the shipped page has
+**six** `settings-foot` paragraphs (Identity and Shortcuts have none), not
+seven; and there are **three** honest captions, not two — cadence (P2-02),
+backup folder (no picker), and compact density (no consumer) — all classed
+"stays visible" on the same criterion. T-260901-09's dispatch note carries
+the count.
+
+**Review:** passed. Each claim the ADR makes about the shipped page was
+checked against it: six `settings-foot` occurrences in
+`WorkspaceSettings.tsx`; `appearance.density` has no consumer outside that
+file; the pull-only line is asserted in rendered output by
+`WorkspaceSettings.test.tsx`; ADR-014 is the next free number and
+`check:index` agrees. Not verified: the 720px content cap and 180px rail
+are the ADR's numbers, not the mockup's — the mockup has no rail to lift
+them from — and T-260901-09 may tune them within the decision.
