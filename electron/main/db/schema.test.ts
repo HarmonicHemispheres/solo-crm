@@ -109,12 +109,24 @@ function withoutStackFrames(output: string): string {
     .trim()
 }
 
-/** Every `CREATE INDEX ...;` statement in a migration's text, one per entry, semicolon stripped. */
+/**
+ * Whether a line opens an index statement. `CREATE UNIQUE INDEX` as well as
+ * `CREATE INDEX` since T-260901-08: `company_images` enforces `(company_id,
+ * slot)` as a unique index rather than as its primary key (ADR-015 §2), and a
+ * predicate that matched only the plain form would leave that line in the
+ * delta's residue and fail the "nothing but tables and indexes" assertion for
+ * a statement that is in fact checked in.
+ */
+function isIndexStatement(line: string): boolean {
+  return line.startsWith('CREATE INDEX') || line.startsWith('CREATE UNIQUE INDEX')
+}
+
+/** Every `CREATE [UNIQUE] INDEX ...;` statement in a migration's text, one per entry, semicolon stripped. */
 function createIndexStatements(sql: string): string[] {
   return sql
     .replace(/\r\n/g, '\n')
     .split('\n')
-    .filter((line) => line.startsWith('CREATE INDEX'))
+    .filter(isIndexStatement)
     .map((line) => line.slice(0, line.indexOf(';')))
 }
 
@@ -145,7 +157,7 @@ function createTableStatements(sql: string): string[] {
 
 describe('schema.ts and the checked-in migrations cannot drift', () => {
   it(
-    'regenerating from schema.ts against 0001 (plus 0006’s renames) produces exactly the indexes 0004 creates and the table 0005 creates',
+    'regenerating from schema.ts against 0001 (plus 0006’s renames) produces exactly the tables and indexes 0004, 0005 and 0007 create',
     () => {
       // schema.ts is imported by no production module — the runtime applies
       // the checked-in SQL — so nothing else would catch a hand-edit of the
@@ -273,21 +285,32 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         const withoutTables = delta.replace(/^CREATE TABLE [\s\S]*?^\);$/gm, '')
         const residue = withoutTables
           .split('\n')
-          .filter((line) => !line.startsWith('CREATE INDEX'))
+          .filter((line) => !isIndexStatement(line))
           .join('\n')
           .replace(/--> statement-breakpoint/g, '')
           .trim()
         expect(residue).toBe('')
 
-        const checkedIn0004 = readFileSync(join(migrationsDir, '0004_fk_indexes_polymorphic_cascade.sql'), 'utf-8')
-        expect(createIndexStatements(delta).sort()).toEqual(createIndexStatements(checkedIn0004).sort())
-        // Belt and braces on the empty case: an accidentally-emptied 0004
-        // would satisfy the equality above against an empty delta.
-        expect(createIndexStatements(checkedIn0004).length).toBeGreaterThan(0)
+        // Every checked-in migration that schema.ts declares objects for. The
+        // delta is the union of them, because the base snapshot is 0001 (plus
+        // 0006's renames) and each of these adds something schema.ts carries:
+        // 0004 the foreign-key indexes, 0005 `branding`, 0007
+        // `company_images` and its unique index (T-260901-08). A future
+        // schema.ts-derived migration joins this list; one that does not is
+        // exactly the drift this test exists to catch.
+        const checkedIn = ['0004_fk_indexes_polymorphic_cascade.sql', '0005_branding.sql', '0007_company_images.sql'].map(
+          (file) => readFileSync(join(migrationsDir, file), 'utf-8')
+        )
 
-        const checkedIn0005 = readFileSync(join(migrationsDir, '0005_branding.sql'), 'utf-8')
-        expect(createTableStatements(delta).sort()).toEqual(createTableStatements(checkedIn0005).sort())
-        expect(createTableStatements(checkedIn0005).length).toBeGreaterThan(0)
+        const checkedInIndexes = checkedIn.flatMap(createIndexStatements)
+        expect(createIndexStatements(delta).sort()).toEqual(checkedInIndexes.sort())
+        // Belt and braces on the empty case: an accidentally-emptied set of
+        // migrations would satisfy the equality above against an empty delta.
+        expect(checkedInIndexes.length).toBeGreaterThan(0)
+
+        const checkedInTables = checkedIn.flatMap(createTableStatements)
+        expect(createTableStatements(delta).sort()).toEqual(checkedInTables.sort())
+        expect(checkedInTables.length).toBeGreaterThan(0)
       } finally {
         rmSync(outDir, { recursive: true, force: true })
       }
@@ -356,6 +379,23 @@ const MIGRATION_0001_TABLES = [
  */
 const EXPECTED_TABLES = MIGRATION_0001_TABLES.map((table) => renamedTableName(table, renamesInMigrations(MIGRATIONS)))
 
+/**
+ * Tables added after 0001 that are **not** in ADR-002's exemption class, and
+ * so owe the same UUID key and timestamps every §5 table does.
+ *
+ * Kept separate from `EXPECTED_TABLES` rather than appended to it because that
+ * list has a second job: it is compared against the tables in 0001's snapshot
+ * to guard the rename transform above, and 0001's snapshot cannot contain a
+ * table added by a later migration. `branding` is in neither list — it *is* in
+ * the exemption class (ADR-012), and `branding.test.ts` asserts its shape.
+ */
+const POST_0001_NON_EXEMPT_TABLES = [
+  // T-260901-08 / ADR-015 §2: a UUID key plus a unique index on
+  // `(company_id, slot)`, on `taggings`' precedent — the pair is our own
+  // foreign key and a discriminator, not an outside-world identity.
+  'company_images'
+]
+
 // ADR-002's exemption class: keyed by natural identity, no UUID primary key,
 // no `created_at`. Every other table in EXPECTED_TABLES gets both.
 const NATURAL_KEY_EXEMPT_TABLES = new Set(['favicons', 'settings'])
@@ -380,7 +420,10 @@ describe('migration 0001: the exact set of domain tables', () => {
 })
 
 describe('every non-exempt table: UUID text primary key + created_at + updated_at', () => {
-  const nonExempt = EXPECTED_TABLES.filter((t) => !NATURAL_KEY_EXEMPT_TABLES.has(t))
+  const nonExempt = [
+    ...EXPECTED_TABLES.filter((t) => !NATURAL_KEY_EXEMPT_TABLES.has(t)),
+    ...POST_0001_NON_EXEMPT_TABLES
+  ]
 
   it.each(nonExempt)('%s has an `id` TEXT NOT NULL primary key, plus created_at/updated_at TEXT NOT NULL', (table) => {
     withMigratedDb((db) => {
