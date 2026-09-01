@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   COMPANY_IMAGE_MAX_BYTES,
   COMPANY_IMAGE_MAX_PIXELS,
@@ -264,7 +264,14 @@ describe('writeCompanyImage: what it refuses, and that a refusal writes nothing'
   it('refuses a real GIF — the accepted set here is PNG and JPEG, narrower than the rail’s', () => {
     const db = openTmpDb()
     addCompany(db, 'co-1', 'Rinvii')
-    expect(() => writeCompanyImage(db, 'co-1', 'logo', REAL_GIF, { derive: fakeDeriver() })).toThrow(ValidationError)
+    const derive = fakeDeriver()
+    // On the format, and before any decode: a GIF sniffs fine, so the
+    // refusal has to come from the accepted set — a header read or the
+    // deriver saying "damaged" would be the wrong reason (merge review: a
+    // repository accepting every sniffed type still passed this on
+    // `ValidationError` alone).
+    expect(() => writeCompanyImage(db, 'co-1', 'logo', REAL_GIF, { derive })).toThrow(/not a supported image/)
+    expect(derive.calls).toEqual([])
     expect(rowCount(db)).toBe(0)
   })
 
@@ -448,6 +455,31 @@ describe('writeCompanyImage: writing twice replaces rather than accumulates', ()
     const read = readCompanyImage(db, 'co-1', 'logo')
     expect(read?.contentType).toBe('image/jpeg')
     expect(Array.from(read?.bytes ?? [])).toEqual(Array.from(replacement))
+  })
+
+  it('moves updated_at on a replacement and leaves created_at where it was — read back, not taken from the return value', () => {
+    // Merge review: the upsert's `updated_at = excluded.updated_at` clause
+    // could be dropped with every test above still green, because two writes
+    // in one millisecond share a timestamp. Pin the clock on each side.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-01T10:00:00.000Z'))
+      const db = openTmpDb()
+      addCompany(db, 'co-1', 'Rinvii')
+      const derive = fakeDeriver()
+      writeCompanyImage(db, 'co-1', 'logo', REAL_PNG, { derive })
+
+      vi.setSystemTime(new Date('2026-09-01T10:05:00.000Z'))
+      writeCompanyImage(db, 'co-1', 'logo', jpegDeclaring(800, 600), { derive })
+
+      const stamps = db
+        .prepare('SELECT created_at, updated_at FROM company_images WHERE company_id = ? AND slot = ?')
+        .get('co-1', 'logo') as { created_at: string; updated_at: string }
+      expect(stamps.created_at).toBe('2026-09-01T10:00:00.000Z')
+      expect(stamps.updated_at).toBe('2026-09-01T10:05:00.000Z')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('never holds more than one row per slot across both slots', () => {
