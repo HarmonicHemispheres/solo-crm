@@ -108,7 +108,7 @@ has been sitting behind a placeholder since the schema was written.
 
 ## Outcome
 
-Merged into `main` from branch `T-260901-11` (builder `a8…`, one test
+Merged into `main` from branch `T-260901-11` (builder `bf7c281`, one test
 extended at merge in `d4eee97`). Thirteen files: `views/Offerings.tsx`
 (+ `.css`, `.test.tsx`), `views/offerings-display.ts` (money grouping via
 `BigInt` + `Intl.NumberFormat` on the *string*, so no float touches a rate;
