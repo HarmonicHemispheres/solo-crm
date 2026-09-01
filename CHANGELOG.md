@@ -5,6 +5,12 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## Unreleased
+
+- ✨ **A portable build** — `Solo CRM-Portable-<version>.exe` now ships beside
+  the installer: one file to copy onto a USB stick, keeping its database in the
+  folder the file sits in, so the workspace travels with it.
+
 ## 0.4.0
 
 - ✨ **Today is a real screen** — the page the app opens on has been a heading

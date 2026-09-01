@@ -59,16 +59,32 @@ rather than overwriting the last installer.
    NSIS needs a numeric `FileVersion`, so no `-rc.1` or `+sha` suffixes.
 3. `npm run dist`.
 
-That writes `release/Solo CRM-Setup-<version>.exe`, which is also the version
-Windows shows in **Apps and features**, and which the installer's maintenance
-page compares against an existing install to offer *Update* rather than
-*Repair*.
+That writes two artifacts into `release/`, both unsigned, both carrying the
+version in the file name:
+
+| Artifact | What it is | Where its data lives |
+|---|---|---|
+| `Solo CRM-Setup-<version>.exe` | The NSIS installer, and the default recommendation. Its version is what Windows shows in **Apps and features**, and what the installer's maintenance page compares against an existing install to offer *Update* rather than *Repair*. | `app.getPath('userData')`, or wherever `data-location.json` points |
+| `Solo CRM-Portable-<version>.exe` | One file to copy onto a USB stick — no installation, nothing left behind in Program Files or the registry. | The folder the `.exe` itself sits in: `solocrm.db` lands beside it |
+
+**The two do not share a database.** An installed copy and a portable copy on
+one machine are two separate workspaces, and nothing merges them.
+
+The portable build's costs are deliberate and recorded in
+[ADR-013](.dev/decisions/ADR-013-portable-data-root.md): it extracts the whole
+410 MB unpacked app into `%TEMP%` on every launch and deletes it on exit, so it
+starts slower than the installed build — slower still off a USB 2.0 stick. Its
+data root cannot be moved either: there is no pointer file and no settings UI
+for it, and moving the data means moving the `.exe`. Do not leave that `.exe`
+in a OneDrive, Dropbox or iCloud folder — the database beside it would become a
+synced file, and the app refuses to start rather than let a sync daemon corrupt
+it.
 
 **The overwrite guard.** `npm run dist` runs `scripts/release-version.mjs check`
 before packaging and `… record` after. `record` stamps
 `release/build-manifest.json` with the version, the commit and the timestamp;
-`check` refuses to build when the artifact for the current version is already
-there and was built from a *different* commit. Rebuilding the same commit is
+`check` refuses to build when *either* artifact for the current version is
+already there and was built from a *different* commit. Rebuilding the same commit is
 allowed and overwrites its own output. If the guard stops you, the fix is step 2
 — not deleting the file.
 

@@ -54,13 +54,17 @@ written there, never into the working tree.
 Things that are silently wrong rather than loudly broken:
 
 - **The database file must never live in a Drive, Dropbox or iCloud folder.**
-  File-sync daemons and SQLite corrupt each other. By default it belongs in
-  `app.getPath('userData')`; the data root can be moved via the
-  `data-location.json` pointer file
-  ([ADR-006](.dev/decisions/ADR-006-data-root-pointer-file.md)), but every
-  path a pointer names still resolves through `resolveDatabasePath()` and
-  still runs through this same sync-folder guard — never a second, unchecked
-  way to open the database.
+  File-sync daemons and SQLite corrupt each other. An installed build keeps it
+  in `app.getPath('userData')` by default, and that data root can be moved via
+  the `data-location.json` pointer file
+  ([ADR-006](.dev/decisions/ADR-006-data-root-pointer-file.md)). **A portable
+  build is the exception**: it keeps the database beside the launched `.exe`
+  and ignores the pointer file entirely
+  ([ADR-013](.dev/decisions/ADR-013-portable-data-root.md)) — which makes an
+  operator dropping that `.exe` into a synced folder the easiest route there
+  is into this. Either way, every path resolves through
+  `resolveDatabasePath()` and runs through this same sync-folder guard — never
+  a second, unchecked way to open the database.
 - **The renderer never touches SQLite or the filesystem.** `contextIsolation`
   on, `nodeIntegration` off, everything over typed IPC through `window.crm.*`.
 - **Never call a third-party favicon service.** It leaks every client URL and
