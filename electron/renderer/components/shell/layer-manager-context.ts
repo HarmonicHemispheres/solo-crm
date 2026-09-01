@@ -29,7 +29,7 @@ export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover' | 'tour
 
 /**
  * Which create form the generic `sheet` layer is currently holding
- * (T-260828-27). A closed union of four, every member of which has a real
+ * (T-260828-27). A closed union of five, every member of which has a real
  * form — `LayerManager`'s switch over it is exhaustive, so a sheet with no
  * content is unrepresentable. It was optional until T-260829-08, and the
  * six list-view create buttons that never passed it opened a placeholder
@@ -37,8 +37,13 @@ export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover' | 'tour
  * a plausible sheet with the right title. Making it required — and first,
  * since a required parameter cannot follow an optional one — moved that
  * from "everyone must remember" to "the type checker will not compile it".
+ *
+ * `offering` is the fifth (T-260901-11, the Offerings view). Widening this
+ * union is what keeps `LayerManager`'s switch exhaustive: adding a member
+ * without adding its `case` is a compile error there, not a sheet that opens
+ * onto nothing — which is the only reason the union is worth closing at all.
  */
-export type SheetKind = 'company' | 'person' | 'engagement' | 'todo'
+export type SheetKind = 'company' | 'person' | 'engagement' | 'todo' | 'offering'
 
 /**
  * What a sheet is open *on* — the half of a `SheetTarget` a form actually
@@ -101,9 +106,10 @@ export interface LayerManagerContextValue {
    * create call cannot drift into an edit one by a typo.
    *
    * The form for `kind` has to support edit mode for this to do anything
-   * useful; `engagement` does (T-260901-10), `company` follows in
-   * T-260901-14. Same idempotency contract as `openSheet`: calling either
-   * while 'sheet' is already open does not swap what is mounted.
+   * useful; `engagement` does (T-260901-10) and `offering` does
+   * (T-260901-11), `company` follows in T-260901-14. Same idempotency
+   * contract as `openSheet`: calling either while 'sheet' is already open
+   * does not swap what is mounted.
    */
   editSheet: (kind: SheetKind, id: string, trigger?: HTMLElement | null) => void
 }

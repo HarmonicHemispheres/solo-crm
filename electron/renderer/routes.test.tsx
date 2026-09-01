@@ -91,6 +91,18 @@ describe('AppRoutes', () => {
     }
   })
 
+  it('resolves /offerings to the real view, not a placeholder', async () => {
+    // T-260901-11 replaced this route's `ViewPlaceholder`. The placeholder
+    // rendered an `<h1>Offerings</h1>` too, so the heading alone would pass
+    // against either — what only the real view produces is its own body,
+    // reached through `offerings:list`/`offerings:listCategories` (both empty
+    // under `stubCrm`, so the empty state is the honest answer here).
+    // Offerings.test.tsx covers this view's content in depth.
+    renderAt('/offerings')
+    expect(screen.getByRole('heading', { name: 'Offerings' })).toBeTruthy()
+    expect(await screen.findByText(/Nothing in the catalogue yet/)).toBeTruthy()
+  })
+
   it('nests Settings and Data under /workspace rather than as top-level routes (X-01)', () => {
     // A bare /workspace has no view of its own — it redirects to settings,
     // proving the two children are real nested routes, not synonyms for a

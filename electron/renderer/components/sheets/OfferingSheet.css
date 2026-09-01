@@ -1,0 +1,27 @@
+/*
+ * The one field in `OfferingSheet` that is not a control: the current price,
+ * shown read-only beside the disabled action that would change it. Its own
+ * stylesheet rather than two more rules in `fields.css` — that file is the
+ * shared field grammar every sheet in this directory imports, and these two
+ * rules belong to exactly one of them.
+ *
+ * The same shape `WorkspaceSettings.css` gives its backup-folder row: a
+ * value, a trailing control, and a caption below. Not imported from there —
+ * that stylesheet is scoped to a view and reaching into it from a sheet would
+ * make the sheet's rendering depend on that view having been loaded first.
+ */
+
+.offr-price-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.offr-price-now {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--papyrus);
+}

@@ -6,6 +6,7 @@ import { CompanyDetail } from './views/CompanyDetail'
 import { People } from './views/People'
 import { PersonDetail } from './views/PersonDetail'
 import { Engagements } from './views/Engagements'
+import { Offerings } from './views/Offerings'
 import { Today } from './views/Today'
 import { Todos } from './views/Todos'
 import { WorkspaceSettings } from './views/WorkspaceSettings'
@@ -38,7 +39,7 @@ export function AppRoutes() {
         <Route path="company/:id" element={<CompanyDetail />} />
         <Route path="people" element={<People />} />
         <Route path="person/:id" element={<PersonDetail />} />
-        <Route path="offerings" element={<ViewPlaceholder title="Offerings" />} />
+        <Route path="offerings" element={<Offerings />} />
         <Route path="engagements" element={<Engagements />} />
         <Route path="workspace" element={<Outlet />}>
           <Route index element={<Navigate to="settings" replace />} />
