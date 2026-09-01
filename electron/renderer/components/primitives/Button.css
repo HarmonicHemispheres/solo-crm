@@ -6,6 +6,12 @@
  * LayerManager's sheet footers) imported these classes directly. This file
  * is unchanged from that one — same selectors, same rules — only its home
  * and the primitive that owns it changed.
+ *
+ * `.btn` is shared geometry, not a usable style: it sets no `background` and
+ * no `color`, so an element wearing it alone renders light `--papyrus` text
+ * on the user agent's near-white `ButtonFace`. It is always paired with
+ * `.btn-prim` or `.btn-ghost`, and `Button`'s required `variant` prop is what
+ * enforces that (T-260901-01).
  */
 .btn {
   border-radius: var(--radius-9);
