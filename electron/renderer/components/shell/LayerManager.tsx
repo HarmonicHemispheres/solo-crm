@@ -232,10 +232,11 @@ export function LayerManager({ children }: { children: ReactNode }) {
       // never a reset effect" rule this comment already states, applied to
       // the case that gets missed.
       //
-      // Each `case` passes only what that form takes: `EngagementSheet` and
-      // `OfferingSheet` read the target (create vs. edit), the other three
-      // are create-only today and gain the prop when they gain the mode
-      // (T-260901-14 for company), without this switch changing shape again.
+      // Each `case` passes only what that form takes: `CompanySheet`
+      // (T-260901-14), `EngagementSheet` and `OfferingSheet` read the target
+      // (create vs. edit); `person` and `todo` are create-only today and gain
+      // the prop when they gain the mode, without this switch changing shape
+      // again.
       node: (() => {
         if (!sheetTarget || !isOpen('sheet')) return null
         const sheetOnClose = () => closeLayer('sheet')
@@ -243,7 +244,7 @@ export function LayerManager({ children }: { children: ReactNode }) {
         const form = (() => {
           switch (sheetTarget.kind) {
             case 'company':
-              return <CompanySheet onClose={sheetOnClose} />
+              return <CompanySheet onClose={sheetOnClose} target={sheetTarget} />
             case 'person':
               return <PersonSheet onClose={sheetOnClose} />
             case 'engagement':

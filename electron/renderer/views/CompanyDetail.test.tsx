@@ -10,6 +10,8 @@ import type { EngagementWithOffering } from '../../shared/engagements'
 import type { Task } from '../../shared/tasks'
 import type { Activity } from '../../shared/activity'
 import type { Person, PersonAffiliation } from '../../shared/people'
+import type { CompanyImageSlot, CompanyImageSlotState, CompanyImagesSnapshot } from '../../shared/company-images'
+import { LayerManager } from '../components/shell/LayerManager'
 import { CompanyDetail } from './CompanyDetail'
 
 // This file is typechecked under tsconfig.web.json (no `@types/node`), but a
@@ -218,11 +220,36 @@ const directTouch = makeActivity({ id: 'act-direct', title: 'Quarterly check-in 
 const danaEmail = makeActivity({ id: 'act-dana', title: 'Emailed Dana re: renewal', kind: 'email', personId: 'per-dana', occurredAt: '2026-08-10T00:00:00.000Z' })
 const samayNote = makeActivity({ id: 'act-samay', title: 'Samay kickoff notes', kind: 'note', engagementId: 'eng-samay', occurredAt: '2026-02-10T00:00:00.000Z' })
 
+// -- company images (T-260901-14, ADR-015). Two fake originals, one per slot,
+// with the shapes `companyImageSlotStateSchema` actually describes: a square
+// PNG mark and a 3:1 JPEG banner. --
+
+const LOGO_DATA_URL = 'data:image/png;base64,iVBORw0KGgo='
+const BANNER_DATA_URL = 'data:image/jpeg;base64,/9j/4AAQSkZJRg=='
+
+function presentImage(slot: CompanyImageSlot): CompanyImageSlotState {
+  return slot === 'logo'
+    ? { state: 'present', slot: 'logo', contentType: 'image/png', dataUrl: LOGO_DATA_URL, byteLength: 4096, width: 256, height: 256, updatedAt: TS }
+    : { state: 'present', slot: 'banner', contentType: 'image/jpeg', dataUrl: BANNER_DATA_URL, byteLength: 81_920, width: 2400, height: 800, updatedAt: TS }
+}
+
+function absentImages(): CompanyImagesSnapshot {
+  return { logo: { state: 'absent', slot: 'logo' }, banner: { state: 'absent', slot: 'banner' } }
+}
+
+function withSlot(snapshot: CompanyImagesSnapshot, slot: CompanyImageSlot, state: CompanyImageSlotState): CompanyImagesSnapshot {
+  return slot === 'logo' ? { ...snapshot, logo: state } : { ...snapshot, banner: state }
+}
+
 interface CrmExtras {
   tasks?: readonly Task[]
   activity?: readonly Activity[]
   people?: readonly Person[]
   affiliations?: Record<string, readonly PersonAffiliation[]>
+  /** Company images already stored, keyed by company id. */
+  images?: Record<string, CompanyImagesSnapshot>
+  /** Channel stubs layered over the ones below — how a test makes one channel refuse, or cancel. */
+  crm?: Parameters<typeof stubCrm>[0]
 }
 
 /** A stub `CrmApi` backed by mutable maps, so a mutation (`companies:update`,
@@ -238,6 +265,7 @@ function buildCrm(companySeed: readonly Company[], engagementSeed: readonly Enga
   const activity = new Map((extras.activity ?? []).map((a) => [a.id, a] as const))
   const people = new Map((extras.people ?? []).map((p) => [p.id, p] as const))
   const affiliationsByPerson = extras.affiliations ?? {}
+  const images = new Map<string, CompanyImagesSnapshot>(Object.entries(extras.images ?? {}))
   let nextTaskSeq = 0
   let nextActivitySeq = 0
 
@@ -332,7 +360,23 @@ function buildCrm(companySeed: readonly Company[], engagementSeed: readonly Enga
       const person = people.get(payload.id)
       if (!person) return { ok: true as const, data: null }
       return { ok: true as const, data: { ...person, affiliations: affiliationsByPerson[payload.id] ?? [] } }
-    })
+    }),
+    // The picker never opens here, so `choose` stands for "the operator picked
+    // a valid file": it stores one and answers `chosen`, which is what lets a
+    // test assert the header changed without a reload. A test that wants the
+    // cancelled or refused branch overrides this through `extras.crm`.
+    'companyImages:get': vi.fn(async (payload) => ({ ok: true as const, data: images.get(payload.companyId) ?? absentImages() })),
+    'companyImages:choose': vi.fn(async (payload) => {
+      const state = presentImage(payload.slot)
+      images.set(payload.companyId, withSlot(images.get(payload.companyId) ?? absentImages(), payload.slot, state))
+      return { ok: true as const, data: { ok: true as const, data: { outcome: 'chosen' as const, state } } }
+    }),
+    'companyImages:clear': vi.fn(async (payload) => {
+      const state: CompanyImageSlotState = { state: 'absent', slot: payload.slot }
+      images.set(payload.companyId, withSlot(images.get(payload.companyId) ?? absentImages(), payload.slot, state))
+      return { ok: true as const, data: { ok: true as const, data: state } }
+    }),
+    ...(extras.crm ?? {})
   })
 }
 
@@ -341,15 +385,21 @@ afterEach(() => {
   delete window.crm
 })
 
+/** `LayerManager` wraps the routes because the header's Edit button opens the
+ * company sheet through `editSheet` (T-260901-14) — the same provider
+ * `App.tsx` puts above every route, so the sheet this page opens is the real
+ * one rather than a stand-in. */
 function renderCompanyDetail(companyId: string, crm: CrmApi) {
   window.crm = crm
   return render(
     <QueryClientProvider client={createQueryClient()}>
       <MemoryRouter initialEntries={[`/company/${companyId}`]}>
-        <Routes>
-          <Route path="/company/:id" element={<CompanyDetail />} />
-          <Route path="/companies" element={<div>Companies index</div>} />
-        </Routes>
+        <LayerManager>
+          <Routes>
+            <Route path="/company/:id" element={<CompanyDetail />} />
+            <Route path="/companies" element={<div>Companies index</div>} />
+          </Routes>
+        </LayerManager>
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -461,48 +511,59 @@ describe('CompanyDetail', () => {
     expect(await screen.findByRole('heading', { name: 'EZDeploy' })).toBeTruthy()
   })
 
-  it('editing a details-card field writes only that column, verified by reading the row back', async () => {
+  // -- T-260901-14 made the company sheet the authoritative writer for every
+  // column the Details card shows, and made the card read-only. The three
+  // tests that used to live here covered that card's inline editing — a
+  // click-to-edit field, Escape cancelling it, and the kind chips committing
+  // on click. They are gone with the behaviour, replaced by the assertion the
+  // decision actually needs: that the card no longer writes at all, so the two
+  // paths cannot drift into disagreeing. The editing itself is tested in
+  // CompanySheet.test.tsx, and the round trip through this page is the test
+  // after next. --
+
+  it('renders every Details column as plain text and writes none of them', async () => {
     const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS)
     renderCompanyDetail('co-ezdeploy', crm)
     await screen.findByRole('heading', { name: 'EZDeploy' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'ezdeploy.io' }))
-    const input = screen.getByLabelText('Website')
-    fireEvent.change(input, { target: { value: 'ezdeploy.dev' } })
-    fireEvent.blur(input)
+    const detailsCard = screen.getByText('Details').closest('.card') as HTMLElement
+    expect(within(detailsCard).getByText('Client')).toBeTruthy()
+    expect(within(detailsCard).getByText('ezdeploy.io')).toBeTruthy()
+    expect(within(detailsCard).getByText('10 days')).toBeTruthy()
 
-    await waitFor(() =>
-      expect(crm['companies:update']).toHaveBeenCalledWith({ id: 'co-ezdeploy', patch: { website: 'ezdeploy.dev' } })
-    )
-    // The card re-reads the row rather than trusting the optimistic edit —
-    // the new value is what a fresh companies:get actually returned.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'ezdeploy.dev' })).toBeTruthy())
-    // Every other column on the same row is untouched — kind is still Client.
-    expect(screen.getByRole('button', { name: 'Client' }).getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('Escape cancels an in-progress edit without writing anything', async () => {
-    const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS)
-    renderCompanyDetail('co-ezdeploy', crm)
-    await screen.findByRole('heading', { name: 'EZDeploy' })
-
-    fireEvent.click(screen.getByRole('button', { name: 'ezdeploy.io' }))
-    const input = screen.getByLabelText('Website')
-    fireEvent.change(input, { target: { value: 'discarded.example' } })
-    fireEvent.keyDown(input, { key: 'Escape' })
-
-    expect(screen.getByRole('button', { name: 'ezdeploy.io' })).toBeTruthy()
+    // The guard, and the reason this test exists: clicking everything the card
+    // still offers must not turn a value into an input and must not reach
+    // `companies:update`. With the card's mutation restored this fails on the
+    // second expectation at the latest, rather than shipping two writers over
+    // the same six columns.
+    for (const control of within(detailsCard).queryAllByRole('button')) fireEvent.click(control)
+    expect(within(detailsCard).queryByRole('textbox')).toBeNull()
     expect(crm['companies:update']).not.toHaveBeenCalled()
   })
 
-  it('changing the kind chip commits immediately with only the kind column', async () => {
+  it('the header Edit button opens the company sheet on this company, and saving updates the page without a reload', async () => {
     const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS)
-    renderCompanyDetail('co-rinvii', crm)
-    await screen.findByRole('heading', { name: 'Rinvii' })
+    renderCompanyDetail('co-ezdeploy', crm)
+    await screen.findByRole('heading', { name: 'EZDeploy' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prospect' }))
+    // A real button, so it is in the tab order, and named for the company
+    // rather than being one more "Edit" on a page full of controls.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit EZDeploy' }))
 
-    await waitFor(() => expect(crm['companies:update']).toHaveBeenCalledWith({ id: 'co-rinvii', patch: { kind: 'prospect' } }))
+    const sheet = await screen.findByRole('dialog', { name: 'Edit company' })
+    // Populated with this company's values, not a blank create form.
+    expect((within(sheet).getByLabelText('Name') as HTMLInputElement).value).toBe('EZDeploy')
+    expect((within(sheet).getByLabelText('Website') as HTMLInputElement).value).toBe('ezdeploy.io')
+
+    fireEvent.change(within(sheet).getByLabelText('Budget note'), { target: { value: '$20,000 approved' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(crm['companies:update']).toHaveBeenCalledWith({ id: 'co-ezdeploy', patch: { budgetNote: '$20,000 approved' } })
+    )
+    // Twice over, with no reload: the header's own gold tag and the Details
+    // card's Budget row, both re-read from `companies:get`.
+    await waitFor(() => expect(screen.getAllByText('$20,000 approved')).toHaveLength(2))
   })
 })
 
@@ -970,5 +1031,171 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     const linksCard = screen.getByText('Links').closest('.card') as HTMLElement
     expect(within(linksCard).getByText('No links yet.')).toBeTruthy()
     expect(within(linksCard).getByPlaceholderText('Paste a Drive, Notion, PDF or any URL')).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Header images (T-260901-14, ADR-015) — the company's own logo and banner.
+//
+// Absence is the default and there is no "no image" state to design, so the
+// first test here is the one that says a company with no images renders
+// exactly the header it rendered before any of this existed.
+//
+// The contrast scrim is CSS (`.dbanner.has-image::after` in
+// CompanyDetail.css) and vitest does not apply the imported stylesheet, so
+// these assert the class that selects it rather than a computed colour — the
+// class is what this component decides, the rule is what the stylesheet owns.
+// ---------------------------------------------------------------------------
+
+describe('CompanyDetail — header images (T-260901-14)', () => {
+  function logoGroup() {
+    return screen.getByRole('group', { name: 'Logo' })
+  }
+  function bannerGroup() {
+    return screen.getByRole('group', { name: 'Banner' })
+  }
+
+  it('draws the derived mark and the gradient banner for a company with no images', async () => {
+    const { container } = renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    expect(container.querySelector('.dbanner')).not.toBeNull()
+    expect(container.querySelector('.dbanner.has-image')).toBeNull()
+    expect(container.querySelector('.dbanner-img')).toBeNull()
+    expect(container.querySelector('.dhead .cmark-img')).toBeNull()
+    expect(container.querySelector('.dhead .cmark span')?.textContent).toBe('E')
+    // Both slots offer the upload, neither offers a remove — there is nothing
+    // stored to remove.
+    expect(within(logoGroup()).getByRole('button', { name: 'Upload…' })).toBeTruthy()
+    expect(within(bannerGroup()).queryByRole('button', { name: 'Remove' })).toBeNull()
+  })
+
+  it('renders a stored logo in the mark and a stored banner behind the header', async () => {
+    const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, {
+      images: { 'co-ezdeploy': { logo: presentImage('logo'), banner: presentImage('banner') } }
+    })
+    const { container } = renderCompanyDetail('co-ezdeploy', crm)
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    await waitFor(() => expect(container.querySelector('.dbanner-img')).not.toBeNull())
+    const banner = container.querySelector('.dbanner') as HTMLElement
+    expect(banner.classList.contains('has-image')).toBe(true)
+    expect(container.querySelector('.dbanner-img')?.getAttribute('src')).toBe(BANNER_DATA_URL)
+
+    const mark = container.querySelector('.dhead .cmark') as HTMLElement
+    expect(mark.classList.contains('has-image')).toBe(true)
+    expect(mark.querySelector('.cmark-img')?.getAttribute('src')).toBe(LOGO_DATA_URL)
+    // The initials are replaced, not layered underneath.
+    expect(mark.textContent).toBe('')
+  })
+
+  it('uploading a logo shows it without a reload, and removing it returns the initials mark', async () => {
+    const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS)
+    const { container } = renderCompanyDetail('co-ezdeploy', crm)
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    fireEvent.click(within(logoGroup()).getByRole('button', { name: 'Upload…' }))
+
+    await waitFor(() => expect(container.querySelector('.dhead .cmark-img')).not.toBeNull())
+    expect(crm['companyImages:choose']).toHaveBeenCalledWith({ companyId: 'co-ezdeploy', slot: 'logo' })
+    // The banner is untouched — one slot at a time.
+    expect(container.querySelector('.dbanner-img')).toBeNull()
+
+    fireEvent.click(within(logoGroup()).getByRole('button', { name: 'Remove' }))
+
+    await waitFor(() => expect(container.querySelector('.dhead .cmark-img')).toBeNull())
+    expect(crm['companyImages:clear']).toHaveBeenCalledWith({ companyId: 'co-ezdeploy', slot: 'logo' })
+    expect(container.querySelector('.dhead .cmark span')?.textContent).toBe('E')
+  })
+
+  it('uploading a banner shows it without a reload, and removing it returns the gradient', async () => {
+    const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS)
+    const { container } = renderCompanyDetail('co-ezdeploy', crm)
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    fireEvent.click(within(bannerGroup()).getByRole('button', { name: 'Upload…' }))
+
+    await waitFor(() => expect(container.querySelector('.dbanner-img')).not.toBeNull())
+    expect(crm['companyImages:choose']).toHaveBeenCalledWith({ companyId: 'co-ezdeploy', slot: 'banner' })
+
+    fireEvent.click(within(bannerGroup()).getByRole('button', { name: 'Remove' }))
+
+    await waitFor(() => expect(container.querySelector('.dbanner-img')).toBeNull())
+    expect(container.querySelector('.dbanner.has-image')).toBeNull()
+  })
+
+  it('shows a refusal beside the control that failed, and leaves the image already stored alone', async () => {
+    const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, {
+      images: { 'co-ezdeploy': withSlot(absentImages(), 'logo', presentImage('logo')) },
+      crm: {
+        'companyImages:choose': vi.fn(async () => ({
+          ok: true as const,
+          data: { ok: false as const, error: { code: 'validation' as const, message: 'A company logo must be a PNG or a JPEG.' } }
+        }))
+      }
+    })
+    const { container } = renderCompanyDetail('co-ezdeploy', crm)
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+    await waitFor(() => expect(container.querySelector('.dhead .cmark-img')).not.toBeNull())
+
+    fireEvent.click(within(logoGroup()).getByRole('button', { name: 'Replace…' }))
+
+    // The refusal's own message, not a generic one this view invented.
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('A company logo must be a PNG or a JPEG.')
+    // Beside the control that failed: inside the Logo group, not the Banner
+    // one and not a page-level banner naming neither.
+    expect(logoGroup().contains(alert)).toBe(true)
+    expect(bannerGroup().contains(alert)).toBe(false)
+    // And the image that was already there is exactly as it was.
+    expect(container.querySelector('.cmark-img')?.getAttribute('src')).toBe(LOGO_DATA_URL)
+  })
+
+  it('cancelling the picker changes nothing and shows no error', async () => {
+    const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, {
+      crm: {
+        'companyImages:choose': vi.fn(async () => ({
+          ok: true as const,
+          data: { ok: true as const, data: { outcome: 'cancelled' as const } }
+        }))
+      }
+    })
+    const { container } = renderCompanyDetail('co-ezdeploy', crm)
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    fireEvent.click(within(bannerGroup()).getByRole('button', { name: 'Upload…' }))
+
+    await waitFor(() => expect(crm['companyImages:choose']).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(container.querySelector('.dbanner-img')).toBeNull()
+    expect(container.querySelector('.dhead .cmark span')?.textContent).toBe('E')
+  })
+
+  it('keeps every header part intact for a 40-character name beside a 3:1 banner', async () => {
+    // jsdom has no layout, so this cannot measure an overflow. What it can
+    // assert is the structure the CSS relies on to survive one: the long name
+    // renders in full in the heading (`.dhead`'s middle column is
+    // `flex: 1; min-width: 200px`, so it shrinks and wraps rather than
+    // forcing the row wide), the mark is still its own element beside it, and
+    // the actions cluster — which `flex-wrap` drops onto its own line below
+    // ~700px — still holds every one of its controls.
+    const longName = 'Northwind Trading & Logistics Company Ltd'
+    expect(longName.length).toBeGreaterThanOrEqual(40)
+    const long = makeCompany({ id: 'co-long', name: longName, kind: 'client', cadenceDays: 14 })
+    const crm = buildCrm([...ALL_COMPANIES, long], ALL_ENGAGEMENTS, {
+      images: { 'co-long': withSlot(absentImages(), 'banner', presentImage('banner')) }
+    })
+    const { container } = renderCompanyDetail('co-long', crm)
+    await screen.findByRole('heading', { name: longName })
+
+    await waitFor(() => expect(container.querySelector('.dbanner-img')).not.toBeNull())
+    // A 3:1 original, fitted into the banner's fixed-height box by
+    // `object-fit: cover` rather than by anything this component computes.
+    expect(container.querySelector('.dbanner-img')?.getAttribute('src')).toBe(BANNER_DATA_URL)
+    expect(container.querySelector('.dhead .cmark')).not.toBeNull()
+    const actions = container.querySelector('.dhead-actions') as HTMLElement
+    expect(within(actions).getByRole('button', { name: `Edit ${longName}` })).toBeTruthy()
+    // Edit, Logo's Upload…, Banner's Replace… and Banner's Remove.
+    expect(within(actions).getAllByRole('button')).toHaveLength(4)
   })
 })

@@ -106,8 +106,9 @@ export interface LayerManagerContextValue {
    * create call cannot drift into an edit one by a typo.
    *
    * The form for `kind` has to support edit mode for this to do anything
-   * useful; `engagement` does (T-260901-10) and `offering` does
-   * (T-260901-11), `company` follows in T-260901-14. Same idempotency
+   * useful; `engagement` does (T-260901-10), `offering` does (T-260901-11)
+   * and `company` does (T-260901-14) — `person` and `todo` do not yet, and
+   * calling this on either opens their create form. Same idempotency
    * contract as `openSheet`: calling either while 'sheet' is already open
    * does not swap what is mounted.
    */
