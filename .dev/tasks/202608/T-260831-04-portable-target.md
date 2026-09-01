@@ -1,11 +1,11 @@
 ---
 id: T-260831-04
 title: Add the portable target to the release build, beside the installer
-status: in-progress
+status: done
 category: build
 plan_ref: X-09
 created: 2026-08-31
-closed:
+closed: 2026-08-31
 ---
 
 ## Why
@@ -90,3 +90,53 @@ packaging stays where it is.
 - The new artifact is unsigned in the same way the installer is; nothing here
   changes that, but a portable exe downloaded and run directly draws more
   SmartScreen attention than one arriving via an installer.
+
+---
+
+## Outcome
+
+**Changed:**
+
+- `package.json` — `build.win.target` is `["nsis", "portable"]`, with a
+  `build.portable` block naming the artifact
+  `${productName}-Portable-${version}.${ext}`. No marker, no define, no
+  `resources/` file, no separate `appId`, per ADR-013 Decision 2.
+- `README.md` — *Cutting a release* now describes both artifacts in a table,
+  says where each stores its data, states plainly that the two do not share a
+  database, and records the portable build's costs.
+- `AGENTS.md` — the data-location gotcha names the portable exception and the
+  fact that dropping a portable `.exe` into a synced folder is now the easiest
+  route into it.
+- `CHANGELOG.md` — an `Unreleased` section with one feature bullet.
+
+**Artifacts:** `Solo CRM-Setup-0.4.0.exe` (121,523,759 bytes) and
+`Solo CRM-Portable-0.4.0.exe` (121,154,344 bytes), both recorded in
+`release/build-manifest.json` under the plural `artifacts` shape T-260831-02
+added — so the multi-artifact path is exercised, not just implemented.
+
+**Review:** passed. The builder verified the guard covers the new artifact
+three ways rather than trusting `WINDOWS_TARGETS`, including that `check`
+printed both names before the build and that the later refusal named both. The
+seed exclusion was checked by extracting `app.asar` out of the portable `.exe`
+itself — 3287 entries, zero matching `seed` — rather than inferred from config,
+which is what that acceptance criterion asked for.
+
+One report was checked against direct evidence rather than accepted: the
+builder said neither of its builds wrote `release/latest.yml`, which contradicts
+the `nsis`-only build run earlier the same day that did. Both are true — adding
+the portable target changed the behaviour. The README sentence claiming
+electron-builder "writes it on every build" was therefore false in a section
+this task had just rewritten, and is corrected here as a one-line fix rather
+than left standing or deferred.
+
+**Deferred:**
+
+- ADR-013's Consequences says the extraction ksuid is "fixed at build time…
+  the same path on every launch of a given build". Accurate as written, but two
+  rebuilds of the *same commit* get different ksuids (`NsisTarget.js:246-247`),
+  so the two portable `.exe` files differed by 11 bytes. Worth a clarifying
+  sentence if anyone ever diagnoses the concurrent-launch collision from it; not
+  worth reopening an accepted ADR on its own.
+- The portable target writes no `.blockmap`, so `release/` is not symmetrical
+  between the two artifacts. Nothing claims otherwise; recorded so it is not
+  read as a missing file later.

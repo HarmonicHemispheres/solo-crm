@@ -88,9 +88,11 @@ already there and was built from a *different* commit. Rebuilding the same commi
 allowed and overwrites its own output. If the guard stops you, the fix is step 2
 — not deleting the file.
 
-**`release/latest.yml` is not an update feed.** electron-builder writes it on
-every build and there is no auto-update wired to read it; treat it as build
-output, not as a published manifest.
+**`release/latest.yml` is not an update feed.** electron-builder writes it for
+some target combinations and not others — an `nsis`-only build produced one, and
+the `nsis` + `portable` build that replaced it did not — and there is no
+auto-update wired to read it either way. Treat it as incidental build output,
+not as a published manifest, and do not treat its absence as a failed build.
 
 ## Brand assets
 
