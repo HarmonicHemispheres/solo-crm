@@ -7,13 +7,7 @@
   flex-wrap: wrap;
 }
 
-.vhead h1 {
-  font-size: 27px;
-  font-weight: 700;
-  letter-spacing: -.9px;
-  line-height: 1.1;
-  margin: 0;
-}
+/* The `<h1>` type lives in styles/base.css, globally — see its comment (T-260901-02). */
 
 .vhead .t {
   display: flex;

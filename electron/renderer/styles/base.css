@@ -70,6 +70,36 @@ a {
 }
 
 /*
+ * The page heading, global — mockup line 35, verbatim, in the position the
+ * mockup gives it (straight after `.mono`/`.meta`).
+ *
+ * It is global rather than duplicated into the two detail stylesheets because
+ * the bug it fixes was a heading with *no* rule at all. The mockup styles `h1`
+ * globally; the port scoped it to `.vhead h1` in ViewHeader.css, which was
+ * true at the time — the view header held the only `<h1>` in the app. It has
+ * not been true since `/company/:id` and `/person/:id` started rendering a
+ * bare `<h1>` inside `.dhead`. Those fell through to the user agent's `2em`
+ * with a `.67em` margin, and that top margin cancelled most of `.dbanner`'s
+ * `margin-bottom: -40px`, leaving the company name stranded below the banner
+ * instead of riding up into its lower half (T-260901-02).
+ *
+ * A rule here closes that hole for the next `<h1>` too — `routes.tsx`'s
+ * `ViewPlaceholder` is already one — rather than leaving each new view to
+ * rediscover it. `.vhead h1` is gone from ViewHeader.css accordingly: it
+ * stated these same four values a second time, and this rule reaches it.
+ *
+ * `h2` stays where it is (`.card-h`, `.sheet-h`, `.tour-h`): those consumers
+ * already have a rule that reaches them, so there is no equivalent gap.
+ */
+h1 {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -.9px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+/*
  * prefers-reduced-motion, handled once, centrally.
  *
  * The mockup does this in two parts: a blanket kill of every animation and

@@ -7,9 +7,10 @@
   "// include": "Emptied deliberately (T-260828-53 review). `extends` inherits tsconfig.web.json's include, and `files` unions with it rather than replacing it — so without this the third typecheck pass recompiled all 116 renderer files with Node types on the side, instead of the integration test and what it imports. The web pass still runs without Node types, so nothing went unenforced; the renderer was simply typechecked twice per `npm run typecheck`.",
   "include": [],
   "exclude": [],
-  "// files": "window.d.ts is listed because it is an ambient augmentation nothing imports — it declares `Window.crm`, which the test and electron/renderer/lib/ipc.ts both use. The inherited glob was picking it up by accident; narrowing the program made that dependency explicit rather than lucky.",
+  "// files": "window.d.ts is listed because it is an ambient augmentation nothing imports — it declares `Window.crm`, which the test and electron/renderer/lib/ipc.ts both use. The inherited glob was picking it up by accident; narrowing the program made that dependency explicit rather than lucky. styles/base.test.ts is listed (T-260901-02) because this is the project's only program with both the DOM lib and Node types, and that file now needs both: it reads base.css off disk with `node:fs` — which is why it sat in tsconfig.node.json with the other stylesheet tests — and, since it began asserting the resolved `h1` type through `getComputedStyle` rather than the file's text, the DOM too. Giving the Node program the DOM lib instead would let every main-process file reference `document` unchallenged, so the file moved rather than the lib.",
   "files": [
     "electron/renderer/window.d.ts",
+    "electron/renderer/styles/base.test.ts",
     "tests/integration/engagement-sheet-roundtrip.test.ts"
   ]
 }
