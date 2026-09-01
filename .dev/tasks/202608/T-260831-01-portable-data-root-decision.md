@@ -1,11 +1,11 @@
 ---
 id: T-260831-01
 title: Decide how a portable build names its data root, and record it
-status: in-progress
+status: done
 category: docs
 plan_ref: X-09
 created: 2026-08-31
-closed:
+closed: 2026-08-31
 ---
 
 ## Why
@@ -135,3 +135,40 @@ AGENTS.md / CHANGELOG updates — those land with the tasks that make them true
   implements it.
 - Comes near the AGENTS.md gotchas on the sync-folder guard and on
   `resolveDatabasePath()` being the only path to the database.
+
+---
+
+## Outcome
+
+**Changed:**
+
+- `.dev/decisions/ADR-013-portable-data-root.md` (new) — settles all five
+  questions this task set: the single-file `portable` target as chosen; the
+  portable marker; the root; the refusal behaviour; the sync guard; and
+  `data-location.json`.
+- `.dev/decisions/ADR-006-data-root-pointer-file.md` — cross-referenced at
+  Decision item 6 and in the env-var Alternatives paragraph. Still `accepted`.
+- `planning/solo-crm-taskplan.md` — X-09's second criterion now binds the
+  *installed* build and names the portable exception.
+
+**Review:** passed, with two load-bearing claims verified independently rather
+than taken on the builder's word. `TargetSpecificOptions` really is
+`artifactName` + `publish` only (`app-builder-lib/out/core.d.ts:39`), and
+`UNPACK_DIR_NAME` really defaults to a build-time ksuid
+(`NsisTarget.js:246-247`) — the first removes a deliverable from T-260831-04,
+the second is why "I tested it twice" would not catch the data-loss case. No
+blocking findings.
+
+The decision worth calling out is Decision 2. The scope assumed a build-time
+marker would be produced and read; there is no such thing available, because
+both Windows artifacts are packed from one build over one payload. The ADR
+makes the marker an *observation* — packaged, and running out of a directory
+inside `os.tmpdir()` — which is strictly better than what was scoped: it
+removes the two-halves-drift bug, and it makes "portable launch with no usable
+`PORTABLE_EXECUTABLE_DIR`" a detectable, refusable state rather than a silent
+fall back to `userData`.
+
+**Deferred:** hiding or disabling the data-root UI in portable mode (ADR-013
+Decision 6) is a `ui` change, out of scope here and not in T-260831-03 either.
+Recorded as a follow-up in R-260831-01; it needs its own task before the
+portable build is offered to an operator who might go looking for that setting.
