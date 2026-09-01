@@ -8,7 +8,6 @@ Category: 🗄 data · 🔌 ipc · 🎨 ui · 🔗 integration · 📦 build · 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260829-03](T-260829-03-installer-maintenance-qa.md) | Drive the installer maintenance page by hand — repair, remove, and the database that must survive | 📦 build | X-09 |
-| ◐ in-progress | [T-260831-06](T-260831-06-portable-mode-ui.md) | Stop offering a data location the portable build cannot honour | 🎨 ui | X-09 |
 | ○ open | [T-260831-05](T-260831-05-portable-qa.md) | Drive the portable build by hand — the folder it writes to, and the folders it must refuse | 📦 build | X-09 |
 
 The update path is driven and recorded (R-260829-03): the maintenance page
@@ -25,6 +24,7 @@ T-260829-02's overwrite guard that exists today, before any second target does.
 
 | | ID | Title | Cat | Run |
 |---|---|---|---|---|
+| ● done | [T-260831-06](T-260831-06-portable-mode-ui.md) | Stop offering a data location the portable build cannot honour | 🎨 ui | R-260831-01 |
 | ● done | [T-260831-04](T-260831-04-portable-target.md) | Add the portable target to the release build, beside the installer | 📦 build | R-260831-01 |
 | ● done | [T-260831-03](T-260831-03-portable-data-root.md) | Resolve the data root beside the executable when the build is portable | 🗄 data | R-260831-01 |
 | ● done | [T-260831-01](T-260831-01-portable-data-root-decision.md) | Decide how a portable build names its data root, and record it | 📄 docs | R-260831-01 |

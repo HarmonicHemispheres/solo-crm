@@ -1,11 +1,11 @@
 ---
 id: T-260831-06
 title: Stop offering a data location the portable build cannot honour
-status: in-progress
+status: done
 category: ui
 plan_ref: X-09
 created: 2026-08-31
-closed:
+closed: 2026-08-31
 ---
 
 ## Why
@@ -92,3 +92,52 @@ screen.
 - **Sequencing:** this should land before [T-260831-05](T-260831-05-portable-qa.md),
   or the QA pass spends its time rediscovering the first-run dialog instead of
   testing what it was written to test.
+
+---
+
+## Outcome
+
+**Changed:** 11 files.
+
+- `electron/main/first-run/data-location-prompt.ts` — a new `{ kind: 'portable' }`
+  outcome returned after the `skip` opt-out and **before**
+  `app.getPath('userData')` is read.
+- `electron/main/app-menu.ts` — `Data ▸ Move Data Folder…` is disabled on a
+  portable launch and relabelled
+  `Move Data Folder… — portable copies keep data beside Solo CRM.exe`. That
+  branch has no `click` handler at all; the disabled flag is the enforcement.
+- `electron/main/db/stats.ts`, `electron/shared/ipc-types.ts` — `db:stats`
+  gained `portable: boolean`.
+- `electron/renderer/views/WorkspaceData.tsx` — the note beside the path.
+- Plus the five test files and the renderer stub.
+
+**Review:** passed. The branch-placement argument is the substance and it is
+right: on a portable launch `app.getPath('userData')` is the *host's* folder,
+shared with any installed copy, so both the pointer file and the `solocrm.db`
+that flow looks for there belong to a different copy — asking "have you been
+set up before?" from another install's files is the wrong question asked of the
+wrong machine. Putting the branch inside the prompt rather than at
+`index.ts:78` also leaves the call site unconditional and `await`ed, so boot
+ordering for a non-portable launch is byte-identical by construction rather
+than by test luck.
+
+Verified rather than accepted: the single-predicate grep (`isPortableLaunch`
+defined once, `PORTABLE_EXECUTABLE_DIR` nowhere outside `portable.ts`, no other
+`isPortable*` identifier, no `node:` import in the renderer); the claim that the
+only `-` line in the first-run test diff is the extended import — it is, no
+existing case was touched; and a mutation, disabling the portable branch with
+`false &&`, which fails 2 tests. No blocking findings.
+
+The builder's own finding is worth keeping: the Workspace Data view was already
+showing the *correct* path on a portable launch, because `db:stats.path` comes
+from `db.name` and so resolves through `portableDataRoot()` already. What was
+false was the static sentence beside it — "The database lives in this app's own
+user-data folder." So the third scope bullet was a truthfulness fix, not a
+path-plumbing job, which is why one boolean was the entire payload change.
+
+**Deferred:** `db:stats` is an IPC payload change and therefore a
+`security-review` surface. Per `.dev/README.md` that review runs in its own
+session over the accumulated boundary, not per diff inside a run, so it is
+recorded in R-260831-01's follow-ups rather than run here. The change adds no
+new exposure — one boolean qualifying a `path` that already crossed
+deliberately — but it should be in the next batched pass.
