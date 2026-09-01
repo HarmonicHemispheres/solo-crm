@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { FaviconContentType } from './favicons'
+import { timestampSchema } from './types'
 
 /**
  * A company's own logo and banner (T-260901-08, ADR-015) — the shared
@@ -132,3 +133,151 @@ export const COMPANY_IMAGE_THUMBNAILS = {
   logo: { boxWidth: 96, boxHeight: 96, contentType: 'image/png' },
   banner: { boxWidth: 480, boxHeight: 270, contentType: 'image/jpeg', quality: 75 }
 } as const satisfies Record<CompanyImageSlot, CompanyImageThumbnailSpec>
+
+// ---------------------------------------------------------------------------
+// The wire (T-260901-12) — what the four `companyImages:*` channels take and
+// answer. Same shapes as `electron/shared/branding.ts`'s, and for the same
+// reasons, restated only where a company image differs from a workspace one.
+// ---------------------------------------------------------------------------
+
+/**
+ * One slot's state — `brandingSlotStateSchema`'s two immediate branches, with
+ * the original's `width`/`height` added because a detail page reserves the
+ * banner's box before the bytes decode (ADR-015): `absent` is an *answer* the
+ * page draws the derived mark against right now, never a pending read.
+ *
+ * `dataUrl` rather than raw bytes, for `electron/shared/favicons.ts`'s reason:
+ * the renderer's CSP is `img-src 'self' data:` and nothing else.
+ *
+ * `byteLength` is bounded by the **slot's** cap, not one number for both — a
+ * present banner may be twice what a present logo may. The per-slot check is a
+ * refinement over the union rather than a bound on the field because the two
+ * caps differ and the discriminant is `state`, not `slot`.
+ */
+export const companyImageSlotStateSchema = z
+  .discriminatedUnion('state', [
+    z
+      .object({
+        state: z.literal('present'),
+        slot: companyImageSlotSchema,
+        contentType: companyImageContentTypeSchema,
+        /** `data:<contentType>;base64,<bytes>` — directly usable as an `<img src>` under the renderer's CSP. */
+        dataUrl: z.string().min(1),
+        /** The stored original's length in bytes, before base64. Never recomputed from `dataUrl`. */
+        byteLength: z.number().int().positive(),
+        /** The original's pixel dimensions, from the decoder — what an `aspect-ratio` box wants. */
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+        updatedAt: timestampSchema
+      })
+      .strict(),
+    z
+      .object({
+        state: z.literal('absent'),
+        slot: companyImageSlotSchema
+      })
+      .strict()
+  ])
+  .superRefine((value, ctx) => {
+    if (value.state === 'present' && value.byteLength > COMPANY_IMAGE_MAX_BYTES[value.slot]) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['byteLength'],
+        message: `a company ${value.slot} is at most ${COMPANY_IMAGE_MAX_BYTES[value.slot]} bytes`
+      })
+    }
+  })
+export type CompanyImageSlotState = z.infer<typeof companyImageSlotStateSchema>
+
+/**
+ * Both of one company's slots — what `companyImages:get` answers, and the
+ * **only** channel that carries an original (ADR-015). Keyed by slot and total
+ * by construction: a slot added to `COMPANY_IMAGE_SLOTS` without a branch here
+ * fails `tsc`.
+ */
+const companyImagesSnapshotShape = {
+  logo: companyImageSlotStateSchema,
+  banner: companyImageSlotStateSchema
+} satisfies Record<CompanyImageSlot, typeof companyImageSlotStateSchema>
+
+export const companyImagesSnapshotSchema = z.object(companyImagesSnapshotShape).strict()
+export type CompanyImagesSnapshot = z.infer<typeof companyImagesSnapshotSchema>
+
+/**
+ * `{ companyId }` — what `companyImages:get` takes. `.strict()`, so nothing
+ * rides along; the id is a UUID the renderer already holds from
+ * `companies:list`, so naming it here leaks nothing.
+ */
+export const companyImagesRequestSchema = z.object({ companyId: z.string().min(1) }).strict()
+export type CompanyImagesRequest = z.infer<typeof companyImagesRequestSchema>
+
+/**
+ * `{ companyId, slot }` — the whole request body of both mutating channels.
+ * `brandingSlotRequestSchema`'s argument, with a company id in front: no path,
+ * no filename, no declared content type and no byte count, because every one
+ * of those would be a claim the renderer made about a file it is not allowed
+ * to see. Main opens the picker, main reads the bytes bounded by the slot's
+ * cap, and the bytes decide what they are.
+ */
+export const companyImageSlotRequestSchema = z
+  .object({ companyId: z.string().min(1), slot: companyImageSlotSchema })
+  .strict()
+export type CompanyImageSlotRequest = z.infer<typeof companyImageSlotRequestSchema>
+
+/**
+ * What `companyImages:choose` answers with. **A cancelled picker is a
+ * success**, exactly as `brandingChoiceSchema` models it: the operator
+ * pressing Escape did nothing wrong and nothing failed, so cancellation is a
+ * branch of the answer, not an `{ ok: false }` envelope. And the `chosen`
+ * branch carries the stored image's state and nothing about where it came
+ * from — no path, no directory, no basename.
+ */
+export const companyImageChoiceSchema = z.discriminatedUnion('outcome', [
+  z.object({ outcome: z.literal('chosen'), state: companyImageSlotStateSchema }).strict(),
+  z.object({ outcome: z.literal('cancelled') }).strict()
+])
+export type CompanyImageChoice = z.infer<typeof companyImageChoiceSchema>
+
+/**
+ * One present slot's **derivative**, as the companies grid reads it. Carries
+ * the *original's* `width`/`height` (the aspect box a card reserves) and the
+ * derivative's own `contentType`, which is a function of the slot
+ * (`COMPANY_IMAGE_THUMBNAILS`) rather than of what was picked. No byte count:
+ * nothing draws a thumbnail differently by size, and a list read carries
+ * what its readers use.
+ */
+export const companyImageThumbnailSchema = z
+  .object({
+    slot: companyImageSlotSchema,
+    contentType: companyImageContentTypeSchema,
+    /** `data:<contentType>;base64,<derivative bytes>` — the 96 × 96 / 480 × 270 rendition, never the original. */
+    dataUrl: z.string().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    updatedAt: timestampSchema
+  })
+  .strict()
+export type CompanyImageThumbnail = z.infer<typeof companyImageThumbnailSchema>
+
+/**
+ * What `companyImages:thumbnails` answers with — ADR-015's list read, exactly:
+ * a map keyed by company id, **present slots only**, and a company with no
+ * images is simply absent from it. The grid indexes by the id it already has
+ * and draws the derived mark for a miss; it never has to search an array, and
+ * a company with one slot filled has one key under its id, not a `null`.
+ *
+ * This is the only shape the channel may answer with. A version that put the
+ * originals here, or took a list of ids, would be the naive whole-grid read
+ * ADR-015 exists to rule out, and the shape is what stops it being widened
+ * because it was convenient.
+ */
+const companyImageThumbnailsBySlotShape = {
+  logo: companyImageThumbnailSchema.optional(),
+  banner: companyImageThumbnailSchema.optional()
+} satisfies Record<CompanyImageSlot, z.ZodOptional<typeof companyImageThumbnailSchema>>
+
+export const companyImageThumbnailsSchema = z.record(
+  z.string().min(1),
+  z.object(companyImageThumbnailsBySlotShape).strict()
+)
+export type CompanyImageThumbnails = z.infer<typeof companyImageThumbnailsSchema>

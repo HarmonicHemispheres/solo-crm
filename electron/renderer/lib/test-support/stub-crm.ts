@@ -168,6 +168,29 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
       data: { ok: true as const, data: { state: 'absent' as const, slot: 'icon' as const } }
     })),
 
+    // Company images (T-260901-12) default the way branding does and for the
+    // same reasons: no company has an image — the thumbnails map is empty
+    // and both of a company's slots are absent, which is what the seeded
+    // database looks like and what every card draws its derived mark
+    // against — and `companyImages:choose` answers `cancelled`, the one
+    // outcome that is true without a native dialog having opened.
+    'companyImages:thumbnails': vi.fn(async () => ({ ok: true as const, data: {} })),
+    'companyImages:get': vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        logo: { state: 'absent' as const, slot: 'logo' as const },
+        banner: { state: 'absent' as const, slot: 'banner' as const }
+      }
+    })),
+    'companyImages:choose': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: { outcome: 'cancelled' as const } }
+    })),
+    'companyImages:clear': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: { state: 'absent' as const, slot: 'logo' as const } }
+    })),
+
     'settings:get': vi.fn(async () => ({ ok: true as const, data: { key: 'workspace.name' as const, value: '' } })),
     'settings:getAll': vi.fn(async () => ({ ok: true as const, data: STUB_SETTINGS_SNAPSHOT })),
     'settings:set': vi.fn(async () => ({
