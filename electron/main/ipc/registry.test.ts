@@ -57,6 +57,26 @@ vi.mock('electron', () => ({
       electronFake.openDialogCalls.push(options)
       return electronFake.openDialogResult
     }
+  },
+  // T-260901-12: `companyImages:choose` stores a derivative beside the
+  // original, and `writeCompanyImage`'s default deriver decodes through
+  // `nativeImage` — a registry entry, again, takes no injection point. This
+  // fake decodes nothing: it answers a fixed 1 × 1 source and encodes each
+  // slot's thumbnail as a recognisable byte string, so the channel tests can
+  // assert the *shape* the wire carries (a `data:` URL of the derivative, the
+  // slot's content type, the decoded size) without a real decoder, which
+  // `images/derive.electron.test.ts` proves separately.
+  nativeImage: {
+    createFromBuffer: () => {
+      const image = {
+        isEmpty: () => false,
+        getSize: () => ({ width: 1, height: 1 }),
+        resize: () => image,
+        toPNG: () => Buffer.from('fake-png-thumbnail', 'utf-8'),
+        toJPEG: () => Buffer.from('fake-jpeg-thumbnail', 'utf-8')
+      }
+      return image
+    }
   }
 }))
 
@@ -922,6 +942,256 @@ describe('branding channels — end to end against a real database', () => {
     // of successes that never had a chance to leak anything.
     const refusals = responses.filter((response) => (response as { ok?: boolean }).ok === false)
     expect(refusals).toHaveLength(2)
+
+    expect(pathLikeStrings(responses)).toEqual([])
+  })
+})
+
+/**
+ * The four company image channels (T-260901-12), driven end to end through
+ * `callChannel` the way the branding block above is — so every assertion is
+ * about what a *renderer* receives after both schemas have run. The picker's
+ * branch coverage (per-slot cap before the read, single flight, the unknown
+ * company, the SVG refusal) lives in `electron/main/images/company-images.test.ts`;
+ * what is here is the wire: that the channels exist, that the two reads have
+ * ADR-015's shapes and never open a dialog, that a cancelled pick is a
+ * success, that a refusal is an envelope, and that nothing any of the four
+ * answers with names a location on disk.
+ */
+describe('companyImages channels — end to end against a real database', () => {
+  let tmpDir: string
+  let fileDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-company-images-'))
+    fileDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-company-files-'))
+    openDatabase({ userDataDir: tmpDir })
+    electronFake.focusedWindow = {}
+    electronFake.openDialogResult = { canceled: true, filePaths: [] }
+    electronFake.openDialogCalls.length = 0
+  })
+
+  afterEach(() => {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(fileDir, { recursive: true, force: true })
+  })
+
+  const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+  /** A genuine 1x1 PNG, written where the picker's fake says it was chosen. */
+  function writePng(name: string): string {
+    const path = join(fileDir, name)
+    writeFileSync(path, Buffer.from(PNG_BASE64, 'base64'))
+    return path
+  }
+
+  async function createCompany(name: string): Promise<string> {
+    return expectOk(await callChannel('companies:create', { name })).id
+  }
+
+  it('companyImages:get answers both slots as absent for a company with no images, and opens no dialog', async () => {
+    const id = await createCompany('Rinvii')
+    expect(await callChannel('companyImages:get', { companyId: id })).toEqual({
+      logo: { state: 'absent', slot: 'logo' },
+      banner: { state: 'absent', slot: 'banner' }
+    })
+    expect(electronFake.openDialogCalls).toEqual([])
+  })
+
+  it('companyImages:thumbnails is an empty map on a database with companies but no images, and opens no dialog', async () => {
+    await createCompany('Rinvii')
+    expect(await callChannel('companyImages:thumbnails')).toEqual({})
+    expect(electronFake.openDialogCalls).toEqual([])
+  })
+
+  it('companyImages:choose stores the picked file for that company and answers with a data: URL of the original plus its size', async () => {
+    const id = await createCompany('Rinvii')
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('logo.png')] }
+
+    const choice = expectOk(await callChannel('companyImages:choose', { companyId: id, slot: 'logo' }))
+    expect(choice.outcome).toBe('chosen')
+    if (choice.outcome !== 'chosen') return
+    expect(choice.state).toEqual({
+      state: 'present',
+      slot: 'logo',
+      contentType: 'image/png',
+      dataUrl: `data:image/png;base64,${PNG_BASE64}`,
+      byteLength: Buffer.from(PNG_BASE64, 'base64').length,
+      width: 1,
+      height: 1,
+      updatedAt: expect.any(String)
+    })
+
+    // Readable back through the per-company read, which never opens a
+    // dialog of its own; the other slot is untouched.
+    const snapshot = await callChannel('companyImages:get', { companyId: id })
+    expect(snapshot.logo).toEqual(choice.state)
+    expect(snapshot.banner).toEqual({ state: 'absent', slot: 'banner' })
+    expect(electronFake.openDialogCalls).toHaveLength(1)
+  })
+
+  it('companyImages:thumbnails is keyed by company id, present slots only, and carries the derivative rather than the original', async () => {
+    const withLogo = await createCompany('Logo only')
+    const withBoth = await createCompany('Both')
+    await createCompany('Nothing')
+
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('a.png')] }
+    expectOk(await callChannel('companyImages:choose', { companyId: withLogo, slot: 'logo' }))
+    expectOk(await callChannel('companyImages:choose', { companyId: withBoth, slot: 'logo' }))
+    expectOk(await callChannel('companyImages:choose', { companyId: withBoth, slot: 'banner' }))
+
+    const thumbnails = await callChannel('companyImages:thumbnails')
+
+    expect(Object.keys(thumbnails).sort()).toEqual([withLogo, withBoth].sort())
+    expect(Object.keys(thumbnails[withLogo] ?? {})).toEqual(['logo'])
+    expect(Object.keys(thumbnails[withBoth] ?? {}).sort()).toEqual(['banner', 'logo'])
+
+    // The derivative is what the fake decoder encoded — per slot, PNG for the
+    // logo and JPEG for the banner — never the picked file's own bytes.
+    expect(thumbnails[withBoth]?.logo).toEqual({
+      slot: 'logo',
+      contentType: 'image/png',
+      dataUrl: `data:image/png;base64,${Buffer.from('fake-png-thumbnail', 'utf-8').toString('base64')}`,
+      width: 1,
+      height: 1,
+      updatedAt: expect.any(String)
+    })
+    expect(thumbnails[withBoth]?.banner?.contentType).toBe('image/jpeg')
+    expect(thumbnails[withBoth]?.banner?.dataUrl).toBe(
+      `data:image/jpeg;base64,${Buffer.from('fake-jpeg-thumbnail', 'utf-8').toString('base64')}`
+    )
+    expect(JSON.stringify(thumbnails)).not.toContain(PNG_BASE64)
+  })
+
+  it('a cancelled picker is ok: true with outcome cancelled, and the company’s images are identical before and after', async () => {
+    const id = await createCompany('Rinvii')
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('banner.png')] }
+    expectOk(await callChannel('companyImages:choose', { companyId: id, slot: 'banner' }))
+    const before = await callChannel('companyImages:get', { companyId: id })
+    const thumbnailsBefore = await callChannel('companyImages:thumbnails')
+
+    electronFake.openDialogResult = { canceled: true, filePaths: [] }
+    const result = await callChannel('companyImages:choose', { companyId: id, slot: 'banner' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data).toEqual({ outcome: 'cancelled' })
+
+    expect(await callChannel('companyImages:get', { companyId: id })).toEqual(before)
+    expect(await callChannel('companyImages:thumbnails')).toEqual(thumbnailsBefore)
+  })
+
+  it('companyImages:choose with no focused window is refused as a mutation error, path-free, and no dialog is opened', async () => {
+    const id = await createCompany('Rinvii')
+    electronFake.focusedWindow = null
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('logo.png')] }
+
+    const result = await callChannel('companyImages:choose', { companyId: id, slot: 'logo' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('validation')
+    expect(pathLikeStrings(result)).toEqual([])
+    expect(electronFake.openDialogCalls).toEqual([])
+  })
+
+  it('companyImages:choose for a company that does not exist is refused as not-found, echoes only the id, and writes nothing', async () => {
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('logo.png')] }
+
+    const result = await callChannel('companyImages:choose', { companyId: 'no-such-company', slot: 'logo' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('not-found')
+    expect(result.error.message).toBe('Company "no-such-company" was not found')
+    expect(pathLikeStrings(result)).toEqual([])
+
+    expect(await callChannel('companyImages:thumbnails')).toEqual({})
+  })
+
+  it('companyImages:clear on an absent slot succeeds with { state: absent } rather than erroring', async () => {
+    const id = await createCompany('Rinvii')
+    expect(expectOk(await callChannel('companyImages:clear', { companyId: id, slot: 'banner' }))).toEqual({
+      state: 'absent',
+      slot: 'banner'
+    })
+  })
+
+  it('companyImages:clear removes one slot only, and both reads agree', async () => {
+    const id = await createCompany('Rinvii')
+    electronFake.openDialogResult = { canceled: false, filePaths: [writePng('a.png')] }
+    expectOk(await callChannel('companyImages:choose', { companyId: id, slot: 'logo' }))
+    expectOk(await callChannel('companyImages:choose', { companyId: id, slot: 'banner' }))
+
+    expect(expectOk(await callChannel('companyImages:clear', { companyId: id, slot: 'logo' }))).toEqual({
+      state: 'absent',
+      slot: 'logo'
+    })
+
+    const snapshot = await callChannel('companyImages:get', { companyId: id })
+    expect(snapshot.logo).toEqual({ state: 'absent', slot: 'logo' })
+    expect(snapshot.banner.state).toBe('present')
+    expect(Object.keys((await callChannel('companyImages:thumbnails'))[id] ?? {})).toEqual(['banner'])
+  })
+
+  it('the request schemas take a company id and a slot and nothing else — no path, no filename, no declared content type', () => {
+    for (const name of ['companyImages:choose', 'companyImages:clear'] as const) {
+      const request = registry[name].request
+      expect(request.safeParse({ companyId: 'c1', slot: 'logo' }).success).toBe(true)
+      expect(request.safeParse({ companyId: 'c1', slot: 'banner' }).success).toBe(true)
+      expect(request.safeParse({ companyId: 'c1', slot: 'icon' }).success).toBe(false)
+      expect(request.safeParse({ slot: 'logo' }).success).toBe(false)
+      expect(request.safeParse({ companyId: '', slot: 'logo' }).success).toBe(false)
+      expect(request.safeParse({ companyId: 'c1', slot: 'logo', path: 'C:\\logo.png' }).success).toBe(false)
+      expect(request.safeParse({ companyId: 'c1', slot: 'logo', contentType: 'image/png' }).success).toBe(false)
+      expect(request.safeParse({ companyId: 'c1', slot: 'logo', byteLength: 12 }).success).toBe(false)
+    }
+    expect(registry['companyImages:get'].request.safeParse({ companyId: 'c1' }).success).toBe(true)
+    expect(registry['companyImages:get'].request.safeParse({}).success).toBe(false)
+    expect(registry['companyImages:get'].request.safeParse({ companyId: 'c1', slot: 'logo' }).success).toBe(false)
+    expect(registry['companyImages:thumbnails'].request.safeParse(undefined).success).toBe(true)
+    expect(registry['companyImages:thumbnails'].request.safeParse({ companyId: 'c1' }).success).toBe(false)
+    expect(registry['companyImages:thumbnails'].request.safeParse({ ids: ['c1'] }).success).toBe(false)
+  })
+
+  it('no response from any of the four channels contains a filesystem path — every branch, walked', async () => {
+    const id = await createCompany('Rinvii')
+    const chosenPath = writePng('logo.png')
+    expect(chosenPath).toContain(sep)
+
+    const responses: unknown[] = []
+
+    electronFake.openDialogResult = { canceled: false, filePaths: [chosenPath] }
+    responses.push(await callChannel('companyImages:choose', { companyId: id, slot: 'logo' }))
+    responses.push(await callChannel('companyImages:get', { companyId: id }))
+    responses.push(await callChannel('companyImages:thumbnails'))
+
+    electronFake.openDialogResult = { canceled: true, filePaths: [] }
+    responses.push(await callChannel('companyImages:choose', { companyId: id, slot: 'banner' }))
+
+    // The refusal branches — their messages cross the boundary verbatim, so
+    // they are part of the same property, not a separate concern: a file
+    // that is not there, no focused window, no such company, and a file
+    // the store refuses (an SVG named as a PNG).
+    electronFake.openDialogResult = { canceled: false, filePaths: [join(fileDir, 'not-here.png')] }
+    responses.push(await callChannel('companyImages:choose', { companyId: id, slot: 'banner' }))
+
+    electronFake.focusedWindow = null
+    responses.push(await callChannel('companyImages:choose', { companyId: id, slot: 'banner' }))
+    electronFake.focusedWindow = {}
+
+    electronFake.openDialogResult = { canceled: false, filePaths: [chosenPath] }
+    responses.push(await callChannel('companyImages:choose', { companyId: 'no-such-company', slot: 'logo' }))
+
+    const svgPath = join(fileDir, 'brand.png')
+    writeFileSync(svgPath, '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>')
+    electronFake.openDialogResult = { canceled: false, filePaths: [svgPath] }
+    responses.push(await callChannel('companyImages:choose', { companyId: id, slot: 'banner' }))
+
+    responses.push(await callChannel('companyImages:clear', { companyId: id, slot: 'logo' }))
+    responses.push(await callChannel('companyImages:get', { companyId: id }))
+    responses.push(await callChannel('companyImages:thumbnails'))
+
+    const refusals = responses.filter((response) => (response as { ok?: boolean }).ok === false)
+    expect(refusals).toHaveLength(4)
 
     expect(pathLikeStrings(responses)).toEqual([])
   })

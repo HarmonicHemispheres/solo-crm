@@ -51,6 +51,13 @@ import { addLink, deleteLink, listLinks, updateLink } from '../db/repositories/l
 import { getFavicon } from '../favicons'
 import { chooseBrandingImage, getBrandingSlotState, getBrandingSnapshot } from '../branding'
 import { clearBrandingSlot } from '../db/repositories/branding'
+import {
+  chooseCompanyImage,
+  getCompanyImageSlotState,
+  getCompanyImagesSnapshot,
+  getCompanyImageThumbnails
+} from '../images/company-images'
+import { clearCompanyImage } from '../db/repositories/company-images'
 import { getAllSettings, getSetting, resetSetting, setSetting } from '../db/repositories/settings'
 import type { SettingKey } from '../db/repositories/settings'
 import { RefusalError, RepositoryError } from '../db/repositories/errors'
@@ -609,6 +616,77 @@ export const registry = {
         const db = getDatabase()
         clearBrandingSlot(db, slot)
         return getBrandingSlotState(db, slot)
+      })
+  }),
+
+  // ---------------------------------------------------------------------
+  // companyImages — a company's own logo and banner (T-260901-12, ADR-015).
+  //
+  // The branding channels' shape, per company, on the same picker: read
+  // `electron/main/images/picker.ts`'s header before changing any of the
+  // four. The property is unchanged — the picker's result crosses back as an
+  // image and never as a path — and so is the discipline that nothing here
+  // re-checks what the repository refuses: an unknown company, an empty or
+  // oversized or non-PNG/JPEG file, a decompression bomb, are each a
+  // `RepositoryError` raised in `writeCompanyImage` with a path-free
+  // message, relayed as the envelope's reason.
+  // ---------------------------------------------------------------------
+
+  /**
+   * The companies grid's one image read (ADR-015): every present slot's
+   * stored derivative, keyed by company id, in one call regardless of how
+   * many companies there are. Never an original — the repository's query
+   * selects `thumb_bytes` and nothing else — and never widened to take a
+   * list of ids, which would be the naive whole-grid read in disguise. A
+   * synchronous read: no dialog, no file.
+   */
+  'companyImages:thumbnails': defineChannel({
+    ...CHANNEL_CONTRACTS['companyImages:thumbnails'],
+    handler: () => getCompanyImageThumbnails(getDatabase())
+  }),
+
+  /**
+   * One company's two slots, originals — the only channel that carries one,
+   * and deliberately per company: a detail page reads it once. A read, and
+   * only a read, like `branding:get`.
+   */
+  'companyImages:get': defineChannel({
+    ...CHANNEL_CONTRACTS['companyImages:get'],
+    handler: ({ companyId }) => getCompanyImagesSnapshot(getDatabase(), companyId)
+  }),
+
+  /**
+   * `runMutationAsync`, for `branding:choose`'s reason: the operator may sit
+   * on the open dialog indefinitely, and every refusal — no focused window,
+   * over the slot's cap, unreadable, not PNG or JPEG, over the pixel ceiling,
+   * no such company — is a `RepositoryError` that has to become an error
+   * envelope rather than an unhandled rejection.
+   *
+   * A cancelled picker takes neither path: it resolves as
+   * `{ ok: true, data: { outcome: 'cancelled' } }`, because the operator
+   * changing their mind is not a failed mutation, and the slot — including an
+   * image already stored in it — is exactly as it was.
+   */
+  'companyImages:choose': defineChannel({
+    ...CHANNEL_CONTRACTS['companyImages:choose'],
+    handler: ({ companyId, slot }) => runMutationAsync(() => chooseCompanyImage(getDatabase(), companyId, slot))
+  }),
+
+  /**
+   * Clearing is a `DELETE`, and clearing an already-absent slot is a no-op
+   * that succeeds — absence *is* the default
+   * (`electron/shared/company-images.ts`), so "no image here" is the state
+   * the caller asked for and it is already true. The response is the slot's
+   * state afterwards, therefore always `{ state: 'absent' }`, read back rather
+   * than assumed.
+   */
+  'companyImages:clear': defineChannel({
+    ...CHANNEL_CONTRACTS['companyImages:clear'],
+    handler: ({ companyId, slot }) =>
+      runMutation(() => {
+        const db = getDatabase()
+        clearCompanyImage(db, companyId, slot)
+        return getCompanyImageSlotState(db, companyId, slot)
       })
   }),
 

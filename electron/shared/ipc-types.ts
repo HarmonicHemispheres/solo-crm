@@ -7,6 +7,14 @@ import {
   brandingSnapshotSchema
 } from './branding'
 import { companySchema, createCompanyInputSchema, updateCompanyInputSchema } from './companies'
+import {
+  companyImageChoiceSchema,
+  companyImageSlotRequestSchema,
+  companyImageSlotStateSchema,
+  companyImagesRequestSchema,
+  companyImagesSnapshotSchema,
+  companyImageThumbnailsSchema
+} from './company-images'
 import { faviconRequestSchema, faviconResultSchema } from './favicons'
 import {
   createEngagementInputSchema,
@@ -653,6 +661,39 @@ export const CHANNEL_CONTRACTS = {
   'branding:get': { request: z.undefined(), response: brandingSnapshotSchema },
   'branding:choose': { request: brandingSlotRequestSchema, response: mutationResultSchema(brandingChoiceSchema) },
   'branding:clear': { request: brandingSlotRequestSchema, response: mutationResultSchema(brandingSlotStateSchema) },
+
+  // -- companyImages — a company's own logo and banner (T-260901-12) -----
+  //
+  // The branding channels' shape, per company (ADR-015): the renderer names
+  // a company it already knows the id of and a slot, and gets back an
+  // *image*. `companyImages:choose` takes no path, no filename and no declared
+  // content type — main opens the dialog through the same generalised picker
+  // (`electron/main/images/picker.ts`) with the same guards, main reads the
+  // bytes bounded by the *slot's* cap (`COMPANY_IMAGE_MAX_BYTES`), and the
+  // bytes' own magic numbers decide what they are. Nothing in any of the four
+  // responses names a location on disk, in any branch, including the
+  // refusals — asserted by the same path-leak walker the branding tests run.
+  //
+  // Two reads, and the difference between them is the whole of ADR-015:
+  // `companyImages:thumbnails` is the companies grid's one call — every
+  // present slot's stored *derivative*, for every company, keyed by id; a
+  // company with no images is absent. `companyImages:get` is the only channel
+  // that carries an original, one company at a time. Both are synchronous
+  // database reads that never open a dialog and never touch the filesystem.
+  //
+  // A cancelled picker is `{ ok: true, data: { outcome: 'cancelled' } }`, not
+  // a failed mutation, exactly as `branding:choose` answers.
+
+  'companyImages:thumbnails': { request: z.undefined(), response: companyImageThumbnailsSchema },
+  'companyImages:get': { request: companyImagesRequestSchema, response: companyImagesSnapshotSchema },
+  'companyImages:choose': {
+    request: companyImageSlotRequestSchema,
+    response: mutationResultSchema(companyImageChoiceSchema)
+  },
+  'companyImages:clear': {
+    request: companyImageSlotRequestSchema,
+    response: mutationResultSchema(companyImageSlotStateSchema)
+  },
 
   // -- settings ---------------------------------------------------------
 

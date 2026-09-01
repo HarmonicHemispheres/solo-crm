@@ -253,6 +253,21 @@ export const queryKeys = {
     all: () => ['branding'] as const,
     current: () => ['branding', 'current'] as const
   },
+  /**
+   * `companyImages:*` (T-260901-12, ADR-015) — a company's own logo and
+   * banner. Two read scopes, matching the two channels and the two readers:
+   * `thumbnails()` is the companies grid's one call (every present slot's
+   * derivative, for every company, keyed by id), and `detail(companyId)` is
+   * one company's originals, read by its detail page alone. They are one
+   * entity so that `invalidate.companyImages` covers both — a pick or a clear
+   * changes what the grid draws *and* what the header draws, and ADR-015
+   * requires the two to agree without a reload.
+   */
+  companyImages: {
+    all: () => ['companyImages'] as const,
+    thumbnails: () => ['companyImages', 'thumbnails'] as const,
+    detail: (companyId: string) => ['companyImages', 'detail', companyId] as const
+  },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
   settings: {
     all: () => ['settings'] as const,
@@ -337,6 +352,15 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
    * only honest cache entry is the one the channel came back with.
    */
   branding: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.branding.all() }),
+  /**
+   * Called by `companyImages:choose` and `companyImages:clear` (T-260901-12),
+   * for `branding`'s reason — the result of a pick depends on a native dialog
+   * and a sniff the renderer cannot predict, so the only honest cache entry is
+   * the one the channel came back with. The prefix covers both the grid's
+   * `thumbnails()` and the company's `detail(id)` in one call, which is what
+   * ADR-015 asks of every write to this table.
+   */
+  companyImages: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.companyImages.all() }),
   settings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
 }
 
