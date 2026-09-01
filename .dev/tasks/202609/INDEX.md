@@ -14,7 +14,6 @@ the two 📄 docs tasks and the settings ADR are for.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ◐ in-progress | [T-260901-06](T-260901-06-info-popover-primitive.md) | Extract ViewHeader's info popover into a primitive anything can use | 🎨 ui | |
 | ○ open | [T-260901-07](T-260901-07-offerings-ipc.md) | Expose the offerings repositories over IPC | 🔌 ipc | |
 | ○ open | [T-260901-08](T-260901-08-company-images-store.md) | Store a company's logo and banner as bytes, per company | 🗄 data | |
 | ○ open | [T-260901-09](T-260901-09-settings-rebuild.md) | Rebuild Workspace Settings as a section rail over one vertical page | 🎨 ui | |
@@ -24,6 +23,7 @@ the two 📄 docs tasks and the settings ADR are for.
 | ○ open | [T-260901-13](T-260901-13-engagement-offering.md) | Sell an engagement from an offering, snapshotting the rate once | 🎨 ui | P3-03 |
 | ○ open | [T-260901-14](T-260901-14-company-header-images-edit.md) | Give company detail its logo, its banner and a visible way in to editing | 🎨 ui | |
 | ○ open | [T-260901-15](T-260901-15-company-card-banner.md) | Carry a company's banner onto its card, behind a gradient | 🎨 ui | |
+| ○ open | [T-260901-16](T-260901-16-popover-layer-retarget.md) | Retarget the popover layer when a second InfoPopover opens over the first | 🎨 ui | |
 
 ## Closed this month
 
@@ -34,6 +34,7 @@ the two 📄 docs tasks and the settings ADR are for.
 | ● done | [T-260901-03](T-260901-03-settings-layout-decision.md) | Decide how Workspace Settings is organised, now that the mockup's card grid has stopped scaling | 📄 docs | | R-260901-01 |
 | ● done | [T-260901-04](T-260901-04-company-images-decision.md) | Decide where a company's logo and banner live, and how a grid of them is read | 📄 docs | | R-260901-01 |
 | ● done | [T-260901-05](T-260901-05-offerings-repository.md) | Build the offerings repositories — categories, offerings, versions | 🗄 data | P3-01 | R-260901-01 |
+| ● done | [T-260901-06](T-260901-06-info-popover-primitive.md) | Extract ViewHeader's info popover into a primitive anything can use | 🎨 ui | | R-260901-01 |
 
 ## Order
 

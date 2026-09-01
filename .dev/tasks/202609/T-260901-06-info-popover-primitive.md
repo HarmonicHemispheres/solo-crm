@@ -1,10 +1,10 @@
 ---
 id: T-260901-06
 title: Extract ViewHeader's info popover into a primitive anything can use
-status: in-progress
+status: done
 category: ui
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -98,3 +98,38 @@ reviewable, and it is the piece a second consumer would otherwise copy.
 - `ui-design.md`'s "icon buttons by default … icon-only controls need an
   `aria-label`" applies to every instance of this primitive, so the label
   must be required, not optional with a default.
+
+## Outcome
+
+**Changed:** 6 files — `primitives/InfoPopover.tsx` / `.css` / `.test.tsx`
+(new; 14 tests), `ViewHeader.tsx` (renders `<InfoPopover aria-label="About
+this view">`, public API and markup unchanged), `ViewHeader.css` (`.info`
+/ `.pop` rules moved out; `.vhead` / `.vicon` stay), and the `popover`
+comment in `layer-manager-context.ts`.
+
+**Decided:** the primitive **registers** with the layer stack
+(`openLayer('popover', trigger)`) and installs no Escape listener of its own
+while a provider is above it — `LayerManager` owns Escape so one keypress
+closes one thing; a popover inside an open sheet stacks `['sheet',
+'popover']`, the first Escape closes the popover and returns focus to its
+trigger, the second closes the sheet (asserted). Standalone (no provider —
+`ViewHeader.test.tsx`'s bare mount) it keeps its own Escape and focus
+return. Visible open state is `selfOpen && layers.isOpen('popover')`, so the
+palette opening over it (`CLOSES_MENU_AND_POPOVER`) hides it with no sync.
+The `.info-wrap` span stops click propagation so the manager's document
+click dismisser does not drop the layer the same click opened.
+
+**Review:** passed. Five mutants against `InfoPopover.test.tsx` +
+`ViewHeader.test.tsx`: layer registration removed, standalone gate removed
+from the Escape effect, `open` ignoring the manager, `stopPropagation`
+removed, inside/outside check inverted — every one red. `ViewHeader.test.tsx`
+is byte-identical to `main`'s and passes; the byte-for-byte markup test
+covers the "same DOM as before" criterion.
+
+**Found, filed as [T-260901-16](T-260901-16-popover-layer-retarget.md):**
+under a manager, opening popover B while A is open leaves the `popover`
+layer holding A's trigger (`openLayer` is a no-op for an open kind, and B's
+wrapper stops the click that would have dropped it), so Escape then focuses
+A's button. Not reachable until a view carries two popovers — T-260901-09's
+settings page will — and a focus-return misdirect rather than a broken
+control, so it does not block this merge.
