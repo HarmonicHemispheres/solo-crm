@@ -73,3 +73,51 @@ Nothing in the working tree. The record is this file's outcome.
   portable copy, and do not run step (6) against a database that matters.
 - If step (5) shows the app opening a database inside OneDrive, that is a
   release blocker, not a finding to note and move past.
+
+---
+
+## Notes from an attempted automated pass (2026-08-31)
+
+**Status is unchanged — this task is still open, and nothing below counts as a
+step passing.** Recorded so the next person does not spend the same hour.
+
+The packaged app cannot be driven from Claude Code's shell session. Observed
+against the real `Solo CRM-Portable-0.5.0.exe` and, identically, against
+`release/win-unpacked/Solo CRM.exe`:
+
+- exits after 0.24 s (unpacked) / 4.6 s (portable) with **exit code 0**;
+- writes no database anywhere — not beside the `.exe`, not in `%APPDATA%`;
+- produces no stdout or stderr even with `ELECTRON_ENABLE_LOGGING=1`, and no
+  Windows Application error event;
+- leaves no extraction directory behind.
+
+Because both the portable `.exe` and the plain unpacked build behave the same,
+it is not the NSIS wrapper. Electron itself works fine here — the
+`runtime-boot-node` pool spawns real Electron processes and passes — so this is
+specific to launching the packaged *GUI* app from a non-interactive session.
+
+One deduction was made and then disproved, which is the useful part. Exit code
+0 looked conclusive at first: the only `app.exit(0)` in `index.ts` is the
+`firstRun.kind === 'quit'` branch, so the app appeared to be reaching the
+first-run chooser and cancelling it — which would have meant the portable
+marker was not firing. That would have been a serious finding. It is not
+supported: suppressing the chooser entirely (by planting a `solocrm.db` under
+the default root so the prompt returns `existing-install` without any dialog)
+changed nothing — the app still wrote nothing, and the planted file never
+gained a `-wal` sidecar or any migration. So the app is not reaching
+`openDatabase()` at all, and no conclusion about the portable marker can be
+drawn from any of it, in either direction.
+
+**Nothing here is evidence of a defect in the portable data root**, and it must
+not be read as reassurance either. The feature is untested outside its unit
+tests until a human runs step 1 and step 2 at a real desktop.
+
+Also settled: **step 4 cannot run on this machine at all** — no removable drive
+is attached (`Win32_LogicalDisk` DriveType 2 returns nothing).
+
+The machine was left exactly as found: no `%APPDATA%\Solo CRM`, no QA folders,
+no leftover extraction directories, no processes. The sync-folder step was
+deliberately *not* run against the real `C:\Users\heavy\OneDrive` — the guard
+matches path segments, so a folder merely named `OneDrive` exercises the
+identical code path without uploading a 121 MB binary to the operator's cloud
+storage.
