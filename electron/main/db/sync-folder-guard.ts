@@ -161,6 +161,30 @@ export function findSyncFolderMatch(targetPath: string): SyncFolderMatch | null 
 }
 
 /**
+ * The one thing this module lets a caller say about the *launch* rather than
+ * the path. It changes a sentence of advice and nothing else — never whether
+ * a path matches, never whether the override applies — so this module stays
+ * the pure function of a path it was built as (T-260828-06), and there is
+ * still exactly one refusal rule rather than a portable variant that can
+ * drift from the installed one.
+ */
+export interface SyncFolderGuardContext {
+  /**
+   * ADR-013 Decision 5. The guard applies to a portable build's data root
+   * with no exemption — the root *is* the folder the `.exe` sits in, so a
+   * portable copy dropped in `OneDrive\Apps` makes the live SQLite file a
+   * synced file, which is the corruption case arriving by a much easier
+   * route than any installed build's. Only the advice differs, because it
+   * has to: the installed message's implicit "choose another folder" is
+   * useless to an operator who has no chooser, and the fix they do have is
+   * to move the `.exe`. `connection.ts`'s `resolveDatabasePath` is the only
+   * caller that sets it, from the same launch observation it resolves the
+   * root with.
+   */
+  readonly portable?: boolean
+}
+
+/**
  * The error `connection.ts` throws on a match, before the `Database` handle
  * is constructed. Its message is written to be shown verbatim in the startup
  * failure dialog (`electron/main/index.ts`'s existing `dialog.showErrorBox` /
@@ -170,12 +194,17 @@ export function findSyncFolderMatch(targetPath: string): SyncFolderMatch | null 
 export class SyncFolderGuardError extends Error {
   readonly match: SyncFolderMatch
 
-  constructor(match: SyncFolderMatch) {
+  constructor(match: SyncFolderMatch, context: SyncFolderGuardContext = {}) {
     super(
       `Solo CRM will not open its database at "${match.resolvedPath}" because that path runs through a ` +
         `"${match.marker}" folder. File-sync services (Google Drive, Dropbox, iCloud, OneDrive) and SQLite ` +
         `write to the same file at the same time and corrupt each other — this is not a database bug, it ` +
-        `only shows up later as one. Move Solo CRM's data out of the synced folder and restart the app. ` +
+        `only shows up later as one. ` +
+        (context.portable === true
+          ? `This is the portable Solo CRM, so its data lives in the same folder as the .exe and no setting ` +
+            `can move it: move Solo CRM's .exe out of the synced folder — onto a USB stick, or an ordinary ` +
+            `folder on this machine — and run it again. `
+          : `Move Solo CRM's data out of the synced folder and restart the app. `) +
         `If you understand the risk and want to proceed anyway, set the environment variable ` +
         `${SYNC_FOLDER_GUARD_OVERRIDE_ENV}=1 before starting Solo CRM.`
     )
@@ -230,9 +259,9 @@ export function findBlockingSyncFolderMatch(targetPath: string): SyncFolderMatch
  * `connection.ts`. See that function for why the guard belongs in the path
  * resolver rather than beside each call that constructs a connection.
  */
-export function assertPathOutsideSyncFolder(targetPath: string): void {
+export function assertPathOutsideSyncFolder(targetPath: string, context: SyncFolderGuardContext = {}): void {
   const match = findBlockingSyncFolderMatch(targetPath)
   if (match) {
-    throw new SyncFolderGuardError(match)
+    throw new SyncFolderGuardError(match, context)
   }
 }

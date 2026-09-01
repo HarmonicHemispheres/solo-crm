@@ -3,6 +3,7 @@ import Database from 'better-sqlite3'
 import { resolveDataRoot } from './data-root'
 import { runMigrations } from './migrate'
 import type { MigrationDefinition } from './migrations'
+import { isPortableLaunch, observePortableLaunch, type PortableLaunchProbe } from './portable'
 import { assertPathOutsideSyncFolder } from './sync-folder-guard'
 
 /**
@@ -62,6 +63,13 @@ export interface OpenDatabaseOptions {
    * isolation.
    */
   migrations?: readonly MigrationDefinition[]
+  /**
+   * Overrides ADR-013's portable-launch observation, passed straight through
+   * to `resolveDataRoot`. Tests only, on the same terms as the two above —
+   * see `DataRootOptions.portableLaunch` for why this stays test-only and
+   * never becomes a way to name a data root from outside the process.
+   */
+  portableLaunch?: PortableLaunchProbe
 }
 
 /**
@@ -124,10 +132,22 @@ export function databasePathIn(dataRoot: string): string {
  * ADR-006 and this task's Risks note call out as the thing to avoid, since
  * the guard below depends on being able to reason about this function as one
  * explicit, visible composition rather than an opaque call.
+ *
+ * ADR-013 changed nothing about that arrangement, which is the point: a
+ * portable launch resolves its root inside `resolveDataRoot` like every
+ * other launch, so the guard protects the portable root for free (Decision
+ * 5 — no exemption, and `SOLOCRM_ALLOW_SYNC_FOLDER_DB=1` still the only
+ * override). The launch is observed once, here, and that one observation
+ * supplies both the root and the wording of a sync-folder refusal: a
+ * portable operator has no folder chooser to be pointed at, so the message
+ * has to name the fix they actually have, which is to move the `.exe`. It
+ * selects wording only — it cannot select, widen or skip a path, and the
+ * guard runs identically either way.
  */
 export function resolveDatabasePath(options: OpenDatabaseOptions = {}): string {
-  const candidate = databasePathIn(resolveDataRoot({ userDataDir: options.userDataDir }))
-  assertPathOutsideSyncFolder(candidate)
+  const probe = options.portableLaunch ?? observePortableLaunch()
+  const candidate = databasePathIn(resolveDataRoot({ userDataDir: options.userDataDir, portableLaunch: probe }))
+  assertPathOutsideSyncFolder(candidate, { portable: isPortableLaunch(probe) })
   return candidate
 }
 
