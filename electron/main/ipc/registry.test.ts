@@ -546,6 +546,228 @@ describe("'search:query'", () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// T-260901-07: the offerings catalogue's ten channels.
+//
+// The repository's own behaviour — the version window, the overlap check, the
+// duplicate's copied rate, the archive's idempotence — belongs to T-260901-05
+// and is covered by `db/repositories/offerings.test.ts`. What is covered here
+// is the wire: that each channel exists, that a request carrying a field the
+// contract does not declare is refused rather than quietly dropped, that a
+// refusal's own sentence survives the envelope, and that no response names a
+// location on disk.
+// ---------------------------------------------------------------------------
+
+describe('offerings channels — end to end against a real database', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-registry-offerings-'))
+    openDatabase({ userDataDir: tmpDir })
+  })
+
+  afterEach(() => {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('categories: create -> listCategories -> update round-trips through each channel’s own request and response schema', async () => {
+    const created = expectOk(await callChannel('offerings:createCategory', { name: 'Consulting', color: '#C9A84C', sort: 1 }))
+    expect(created.name).toBe('Consulting')
+
+    const listed = await callChannel('offerings:listCategories')
+    expect(listed.map((category) => category.id)).toEqual([created.id])
+
+    const renamed = expectOk(await callChannel('offerings:updateCategory', { id: created.id, patch: { name: 'Advisory' } }))
+    expect(renamed).toEqual({ ...created, name: 'Advisory', updatedAt: expect.any(String) })
+
+    const deleted = expectOk(await callChannel('offerings:deleteCategory', { id: created.id }))
+    expect(deleted).toEqual({ id: created.id })
+    expect(await callChannel('offerings:listCategories')).toEqual([])
+  })
+
+  it('offerings: create -> list (with its current rate joined on) -> get (with the history) -> update -> archive -> duplicate', async () => {
+    const category = expectOk(await callChannel('offerings:createCategory', { name: 'Retainers' }))
+
+    const created = expectOk(
+      await callChannel('offerings:create', {
+        name: 'Fractional CTO',
+        type: 'service',
+        categoryId: category.id,
+        billingModel: 'retainer',
+        unit: 'mo',
+        rateCents: 800_000
+      })
+    )
+    // `offerings:create`'s response is the offering WITH its history, and the
+    // repository writes the first version in the same transaction — so a
+    // freshly created offering already has exactly one.
+    expect(created.versions).toHaveLength(1)
+    expect(created.versions[0]?.rateCents).toBe(800_000)
+
+    const listed = await callChannel('offerings:list')
+    expect(listed.map((offering) => offering.id)).toEqual([created.id])
+    // The list carries the current rate so a row can show a price without a
+    // second call — the whole reason `offerings:list` answers with
+    // `OfferingListItem` rather than a bare `Offering`.
+    expect(listed[0]?.currentVersion?.rateCents).toBe(800_000)
+
+    expect((await callChannel('offerings:list', { type: 'service' })).map((o) => o.id)).toEqual([created.id])
+    expect(await callChannel('offerings:list', { type: 'product' })).toEqual([])
+    expect((await callChannel('offerings:list', { categoryId: category.id })).map((o) => o.id)).toEqual([created.id])
+
+    const fetched = await callChannel('offerings:get', { id: created.id })
+    expect(fetched?.name).toBe('Fractional CTO')
+    expect(fetched?.versions).toHaveLength(1)
+
+    const updated = expectOk(await callChannel('offerings:update', { id: created.id, patch: { blurb: 'Two days a month' } }))
+    expect(updated.blurb).toBe('Two days a month')
+
+    const archived = expectOk(await callChannel('offerings:archive', { id: created.id }))
+    expect(archived.active).toBe(false)
+    // Archiving hides nothing from a read by id, and an unfiltered list still
+    // shows it — there is no implicit `active = true`.
+    expect((await callChannel('offerings:list', { active: false })).map((o) => o.id)).toEqual([created.id])
+    expect(await callChannel('offerings:list', { active: true })).toEqual([])
+
+    const copy = expectOk(await callChannel('offerings:duplicate', { id: created.id, overrides: { name: 'Fractional CTO (lite)' } }))
+    expect(copy.name).toBe('Fractional CTO (lite)')
+    expect(copy.id).not.toBe(created.id)
+    // The copy starts its own history at the original's current rate — it does
+    // not inherit the original's versions.
+    expect(copy.versions).toHaveLength(1)
+    expect(copy.versions[0]?.rateCents).toBe(800_000)
+
+    // Omitting `overrides` entirely is legal and is the repository's
+    // " (copy)" default, not a name this channel invents.
+    const defaultCopy = expectOk(await callChannel('offerings:duplicate', { id: created.id }))
+    expect(defaultCopy.name).toBe('Fractional CTO (copy)')
+  })
+
+  it('offerings:deleteCategory on a category holding an offering refuses as data — the repository’s sentence reaches the caller verbatim and the category still exists', async () => {
+    const category = expectOk(await callChannel('offerings:createCategory', { name: 'Consulting' }))
+    expectOk(await callChannel('offerings:create', { name: 'Discovery Sprint', categoryId: category.id, rateCents: 250_000 }))
+
+    const result = await callChannel('offerings:deleteCategory', { id: category.id })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('refused')
+    // Verbatim, not a substring: this is the exact sentence
+    // `deleteOfferingCategory` composes, so anything that re-words or
+    // truncates it on the way through the envelope fails here.
+    expect(result.error.message).toBe(
+      'Cannot delete "Consulting": 1 offering is in it (e.g. "Discovery Sprint"). Move them to another category before deleting this one.'
+    )
+    expect(result.error.blocker).toEqual({ reason: 'offerings', count: 1 })
+
+    // Refused, not partially applied.
+    expect((await callChannel('offerings:listCategories')).map((c) => c.id)).toEqual([category.id])
+  })
+
+  it('offerings:create with no rate is refused and writes no row — at the wire, and again in the repository', async () => {
+    // At the wire: `createOfferingInputSchema` makes `rateCents` required, so
+    // a real IPC call never reaches the handler at all — index.ts answers
+    // `{ ok: false, error: { code: 'invalid-request' } }`.
+    const rejected = registry['offerings:create'].request.safeParse({ name: 'Rateless' })
+    expect(rejected.success).toBe(false)
+    if (!rejected.success) {
+      expect(rejected.error.issues.some((issue) => issue.path.includes('rateCents'))).toBe(true)
+    }
+
+    // And again one layer in, independently of the request schema — the same
+    // second-line-of-defence the `settings:set` test above proves. Not routed
+    // through `callChannel`, whose `request.parse` would refuse this payload
+    // before the handler ran.
+    // @ts-expect-error - deliberately missing the required rateCents, to prove the repository's own validation refuses it too rather than writing a version-less offering.
+    const result = await registry['offerings:create'].handler({ name: 'Rateless' })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('validation')
+
+    // Nothing was written — not the `offerings` row, not a version.
+    expect(await callChannel('offerings:list')).toEqual([])
+  })
+
+  it('every mutating offerings channel refuses a request body carrying a field its contract does not declare', () => {
+    // Categories.
+    expect(registry['offerings:createCategory'].request.safeParse({ name: 'Consulting' }).success).toBe(true)
+    expect(registry['offerings:createCategory'].request.safeParse({ name: 'Consulting', archived: true }).success).toBe(false)
+    expect(registry['offerings:updateCategory'].request.safeParse({ id: 'c1', patch: { name: 'x' } }).success).toBe(true)
+    expect(registry['offerings:updateCategory'].request.safeParse({ id: 'c1', patch: { archived: true } }).success).toBe(false)
+    expect(registry['offerings:updateCategory'].request.safeParse({ id: 'c1', patch: {}, force: true }).success).toBe(false)
+    expect(registry['offerings:deleteCategory'].request.safeParse({ id: 'c1' }).success).toBe(true)
+    expect(registry['offerings:deleteCategory'].request.safeParse({ id: 'c1', cascade: true }).success).toBe(false)
+
+    // Offerings. `active` is not a create field — archiving is a named action,
+    // not a flag a generic form can set on the way in.
+    expect(registry['offerings:create'].request.safeParse({ name: 'x', rateCents: 1 }).success).toBe(true)
+    expect(registry['offerings:create'].request.safeParse({ name: 'x', rateCents: 1, active: false }).success).toBe(false)
+    expect(registry['offerings:create'].request.safeParse({ name: 'x', rateCents: 1, version: 3 }).success).toBe(false)
+    expect(registry['offerings:create'].request.safeParse({ name: 'x', rateCents: 1, type: 'widget' }).success).toBe(false)
+
+    // The one that matters most: §6.5 makes changing a price a distinct
+    // action (P3-02), so a rate in an update patch is refused rather than
+    // ignored — an ignored one would look like a saved price change.
+    expect(registry['offerings:update'].request.safeParse({ id: 'o1', patch: { name: 'x' } }).success).toBe(true)
+    expect(registry['offerings:update'].request.safeParse({ id: 'o1', patch: { rateCents: 999 } }).success).toBe(false)
+    expect(registry['offerings:update'].request.safeParse({ id: 'o1', patch: { active: true } }).success).toBe(false)
+
+    expect(registry['offerings:archive'].request.safeParse({ id: 'o1' }).success).toBe(true)
+    expect(registry['offerings:archive'].request.safeParse({ id: 'o1', hard: true }).success).toBe(false)
+
+    expect(registry['offerings:duplicate'].request.safeParse({ id: 'o1' }).success).toBe(true)
+    expect(registry['offerings:duplicate'].request.safeParse({ id: 'o1', overrides: { name: 'x' } }).success).toBe(true)
+    expect(registry['offerings:duplicate'].request.safeParse({ id: 'o1', overrides: { rateCents: 1 } }).success).toBe(false)
+    expect(registry['offerings:duplicate'].request.safeParse({ id: 'o1', name: 'x' }).success).toBe(false)
+
+    // And the reads: the list filter is `.strict()`, so a typo'd key is a
+    // validation failure rather than a silently unfiltered list.
+    expect(registry['offerings:list'].request.safeParse(undefined).success).toBe(true)
+    expect(registry['offerings:list'].request.safeParse({ active: true }).success).toBe(true)
+    expect(registry['offerings:list'].request.safeParse({ archived: true }).success).toBe(false)
+    expect(registry['offerings:list'].request.safeParse({ limit: 10 }).success).toBe(false)
+    expect(registry['offerings:listCategories'].request.safeParse(undefined).success).toBe(true)
+    expect(registry['offerings:listCategories'].request.safeParse({}).success).toBe(false)
+    expect(registry['offerings:get'].request.safeParse({ id: 'o1' }).success).toBe(true)
+    expect(registry['offerings:get'].request.safeParse({ id: 'o1', withVersions: true }).success).toBe(false)
+  })
+
+  it('no offerings response names a location on disk, and no channel accepts one — every branch, walked', async () => {
+    const category = expectOk(await callChannel('offerings:createCategory', { name: 'Consulting' }))
+    const offering = expectOk(
+      await callChannel('offerings:create', { name: 'Discovery Sprint', categoryId: category.id, rateCents: 250_000 })
+    )
+
+    const responses: unknown[] = [
+      await callChannel('offerings:listCategories'),
+      await callChannel('offerings:list'),
+      await callChannel('offerings:get', { id: offering.id }),
+      await callChannel('offerings:update', { id: offering.id, patch: { blurb: 'Two weeks' } }),
+      await callChannel('offerings:archive', { id: offering.id }),
+      await callChannel('offerings:duplicate', { id: offering.id }),
+      // The refusal branches — their messages cross verbatim, so they are part
+      // of the same property rather than a separate concern.
+      await callChannel('offerings:deleteCategory', { id: category.id }),
+      await callChannel('offerings:updateCategory', { id: 'does-not-exist', patch: { name: 'x' } }),
+      await callChannel('offerings:archive', { id: 'does-not-exist' })
+    ]
+
+    const refusals = responses.filter((response) => (response as { ok?: boolean }).ok === false)
+    expect(refusals).toHaveLength(3)
+
+    expect(pathLikeStrings(responses)).toEqual([])
+
+    // And nothing on the way in accepts one either: no request schema in this
+    // group has a path-shaped field to put one in, so a caller naming one is
+    // refused by `.strict()` rather than handed to the filesystem.
+    expect(registry['offerings:create'].request.safeParse({ name: 'x', rateCents: 1, path: 'C:\\catalogue.csv' }).success).toBe(
+      false
+    )
+    expect(registry['offerings:list'].request.safeParse({ file: '/tmp/offerings.json' }).success).toBe(false)
+  })
+})
+
 /**
  * The three branding channels (T-260829-05), driven end to end through
  * `callChannel` — so every assertion below is about what a *renderer* would

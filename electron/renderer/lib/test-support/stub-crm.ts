@@ -84,6 +84,35 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     'engagements:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT } })),
     'engagements:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
 
+    // T-260901-07's catalogue. Empty lists and `null` for the three reads,
+    // successful envelopes for the seven writes — and each write's `data` is a
+    // shape that really matches its channel's response schema (an
+    // `OfferingWithVersions` carries its history inline, so the stub carries
+    // exactly one version, the one `createOffering` writes in the same
+    // transaction), not a placeholder a view would reject.
+    'offerings:listCategories': vi.fn(async () => ({ ok: true as const, data: [] })),
+    'offerings:list': vi.fn(async () => ({ ok: true as const, data: [] })),
+    'offerings:get': vi.fn(async () => ({ ok: true as const, data: null })),
+    'offerings:createCategory': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: STUB_OFFERING_CATEGORY }
+    })),
+    'offerings:updateCategory': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: STUB_OFFERING_CATEGORY }
+    })),
+    'offerings:deleteCategory': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: { id: 'stub-id' } }
+    })),
+    'offerings:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_OFFERING } })),
+    'offerings:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_OFFERING } })),
+    'offerings:archive': vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: { ...STUB_OFFERING, active: false } }
+    })),
+    'offerings:duplicate': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_OFFERING } })),
+
     'tasks:list': vi.fn(async () => ({ ok: true as const, data: [] })),
     'tasks:get': vi.fn(async () => ({ ok: true as const, data: null })),
     'tasks:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_TASK } })),
@@ -216,6 +245,42 @@ const STUB_ENGAGEMENT = {
   notes: null,
   createdAt: STUB_TIMESTAMP,
   updatedAt: STUB_TIMESTAMP
+}
+
+const STUB_OFFERING_CATEGORY = {
+  id: 'stub-offering-category-id',
+  name: 'Stub Category',
+  color: '#C9A84C',
+  sort: 1,
+  createdAt: STUB_TIMESTAMP,
+  updatedAt: STUB_TIMESTAMP
+}
+
+const STUB_OFFERING_VERSION = {
+  id: 'stub-offering-version-id',
+  offeringId: 'stub-offering-id',
+  version: 1,
+  rateCents: 500_000,
+  // Unbounded on both ends — "this is the price", the range `createOffering`
+  // writes when a caller names none.
+  effectiveFrom: null,
+  effectiveTo: null,
+  createdAt: STUB_TIMESTAMP,
+  updatedAt: STUB_TIMESTAMP
+}
+
+const STUB_OFFERING = {
+  id: 'stub-offering-id',
+  name: 'Stub Offering',
+  type: 'service' as const,
+  categoryId: STUB_OFFERING_CATEGORY.id,
+  billingModel: 'retainer' as const,
+  unit: 'mo' as const,
+  blurb: null,
+  active: true,
+  createdAt: STUB_TIMESTAMP,
+  updatedAt: STUB_TIMESTAMP,
+  versions: [STUB_OFFERING_VERSION]
 }
 
 const STUB_TASK = {

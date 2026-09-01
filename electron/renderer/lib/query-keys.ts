@@ -1,5 +1,6 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
 import type { ActivityFilters } from '../../shared/activity'
+import type { ListOfferingsFilter } from '../../shared/offerings'
 
 /**
  * The query-key convention (documented alongside it in CONVENTIONS.md's
@@ -75,6 +76,35 @@ export const queryKeys = {
      */
     byBillingCompany: (companyId: string) => ['engagements', 'byBillingCompany', companyId] as const,
     byClientCompany: (companyId: string) => ['engagements', 'byClientCompany', companyId] as const
+  },
+  /**
+   * `offerings:*` (T-260901-07). The entity is the channel's own namespace, so
+   * the categories read lives here as a *scope* rather than under an
+   * `offeringCategories` entity of its own: `offerings:createCategory` and
+   * `offerings:create` both come back through `invalidate.offerings`, and a
+   * separate entity would need every category mutation to remember to
+   * invalidate two prefixes (a rename changes what every offering row draws as
+   * its chip).
+   *
+   * `list` is filter-aware for the same reason `activity.list` is — the
+   * offerings view filters by type, category and archived-or-not, and a
+   * filtered read is a genuinely different answer from the unfiltered one, not
+   * one both queries should compete to populate. An absent or empty filter
+   * collapses to the bare key, so `list()` and `list({})` address one entry.
+   *
+   * There is no `versions(id)` scope: `offerings:get` answers with the history
+   * inline (`OfferingWithVersions`), so `detail(id)` is the only key a version
+   * list could be read from or invalidated through.
+   */
+  offerings: {
+    all: () => ['offerings'] as const,
+    list: (filter?: ListOfferingsFilter) =>
+      filter && Object.keys(filter).length > 0
+        ? (['offerings', 'list', filter] as const)
+        : (['offerings', 'list'] as const),
+    detail: (id: string) => ['offerings', 'detail', id] as const,
+    /** `offerings:listCategories` — one unfiltered read, so no id (this file's header: "id is present only when scope addresses one record"). */
+    categories: () => ['offerings', 'categories'] as const
   },
   tasks: {
     all: () => ['tasks'] as const,
@@ -258,6 +288,16 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
   companies: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.companies.all() }),
   people: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.people.all() }),
   engagements: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.engagements.all() }),
+  /**
+   * The whole `['offerings']` prefix — list, every filtered list, each
+   * `detail`, and `categories`. Deliberately not narrower: every one of the
+   * seven `offerings:*` mutations can change what another scope reads
+   * (renaming a category changes the chip on every offering row; duplicating
+   * adds a row to every filtered list it matches; archiving moves a row
+   * between the `active: true` and `active: false` lists), so a call site
+   * picking one scope would be picking wrong most of the time.
+   */
+  offerings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.offerings.all() }),
   tasks: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all() }),
   activity: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.activity.all() }),
   /**
