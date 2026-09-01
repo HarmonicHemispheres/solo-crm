@@ -1,8 +1,14 @@
-import { useState, type CSSProperties, type KeyboardEvent, type ReactNode, type SVGProps } from 'react'
+import { useState, type CSSProperties, type ReactNode, type SVGProps } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { nowTimestamp, parseDateOnly, parseTimestamp } from '../../shared/format'
-import { COMPANY_KINDS, type Company, type CompanyKind, type UpdateCompanyInput } from '../../shared/companies'
+import type { Company, CompanyKind } from '../../shared/companies'
+import {
+  COMPANY_IMAGE_SLOTS,
+  type CompanyImageSlot,
+  type CompanyImageSlotState,
+  type CompanyImagesSnapshot
+} from '../../shared/company-images'
 import type { BillingModel, EngagementStatus, EngagementWithOffering } from '../../shared/engagements'
 import type { Task } from '../../shared/tasks'
 import type { Activity, ActivityKind } from '../../shared/activity'
@@ -10,7 +16,7 @@ import type { Person, PersonAffiliation, PersonWithAffiliations } from '../../sh
 import { ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { Card } from '../components/primitives/Card'
-import { Chip } from '../components/primitives/Chip'
+import { Button } from '../components/primitives/Button'
 import { ModelTag, type BillingModel as ModelTagBillingModel } from '../components/primitives/ModelTag'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
@@ -20,6 +26,7 @@ import { QuickAdd } from '../components/primitives/QuickAdd'
 import { Row } from '../components/primitives/Row'
 import { IconButton } from '../components/primitives/IconButton'
 import { LinksCard } from '../components/links/LinksCard'
+import { useLayerManager } from '../components/shell/layer-manager-context'
 import './CompanyDetail.css'
 
 /**
@@ -72,10 +79,29 @@ function initials(name: string): string {
 
 type StyleWithAccent = CSSProperties & { '--c': string }
 
-function CompanyMark({ name, size, color }: { name: string; size: number; color: string }) {
+/**
+ * The derived mark, and — since T-260901-14 — the company's own logo where
+ * one has been set. `imageUrl` is optional and only this view's own header
+ * passes it: the mark is used at three sizes across three views, and teaching
+ * a *shared* one to render an image would change the companies grid and the
+ * table row too, which is T-260901-15's territory (this task's Risks). So the
+ * image-aware mark stays local here, exactly as `hue`/`initials` did.
+ *
+ * Absence is the default rather than a state to design (ADR-015): no image is
+ * the initials, computed at render time, which is also what a company with no
+ * images looked like before this existed.
+ *
+ * `alt=""` because the mark is decorative in the only place it renders an
+ * image — the `<h1>` beside it names the company, so a logo with an alt text
+ * would announce the name twice.
+ */
+function CompanyMark({ name, size, color, imageUrl }: { name: string; size: number; color: string; imageUrl?: string | null }) {
   return (
-    <span className="cmark" style={{ width: size, height: size, fontSize: Math.round(size * 0.37), color }}>
-      <span>{initials(name)}</span>
+    <span
+      className={imageUrl != null ? 'cmark has-image' : 'cmark'}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.37), color }}
+    >
+      {imageUrl != null ? <img className="cmark-img" src={imageUrl} alt="" /> : <span>{initials(name)}</span>}
     </span>
   )
 }
@@ -371,23 +397,39 @@ function withinAffiliationWindow(occurredAt: string, affiliation: PersonAffiliat
 }
 
 // ---------------------------------------------------------------------------
-// Details card — inline edit
+// Details card — read-only since T-260901-14.
+//
+// **The company sheet is the authoritative writer for every column on this
+// card.** That decision is this task's own requirement, and the reason is its
+// Risks section: inline editing here and a form over the same six columns
+// (kind, website, cadence, since, budget note, notes) is two writers with two
+// validations and two error surfaces, and they drift. One of them had to stop
+// writing, and the one that stops is this card — the sheet is the path the
+// header's Edit button makes discoverable, it is the shape every other entity
+// in the app is already edited through, and it can say "name is required"
+// against a named field, which a click-a-value-to-type-in-it row cannot do at
+// all (it has no way to render the name).
+//
+// So this card holds no mutation, no `companies:update` call and no control
+// that writes — asserted in CompanyDetail.test.tsx, so the two cannot
+// silently become two writers again. `PersonDetail` keeps its own inline
+// editing; person detail is explicitly out of this task's scope, and the same
+// question there is a decision that has not been made yet.
 // ---------------------------------------------------------------------------
 
 type TextFieldKey = 'website' | 'cadenceDays' | 'since' | 'budgetNote' | 'notes'
 
-const TEXT_FIELD_CONFIG: Record<TextFieldKey, { label: string; type: 'text' | 'number' | 'date' | 'textarea'; placeholder?: string }> = {
-  website: { label: 'Website', type: 'text', placeholder: 'example.com' },
-  cadenceDays: { label: 'Cadence', type: 'number', placeholder: 'Days' },
-  since: { label: 'Since', type: 'date' },
-  budgetNote: { label: 'Budget', type: 'text' },
-  notes: { label: 'Notes', type: 'textarea' }
+const TEXT_FIELD_LABEL: Record<TextFieldKey, string> = {
+  website: 'Website',
+  cadenceDays: 'Cadence',
+  since: 'Since',
+  budgetNote: 'Budget',
+  notes: 'Notes'
 }
 
-/** The raw, edit-ready string for a text field — `''` stands in for `null`
- * in every case below, and every commit path below maps `''` back to
- * `null` on the way out, so "field is empty" round-trips instead of
- * writing the literal string `"null"`. */
+/** The stored value as a plain string — `''` stands in for `null` in every
+ * case, which `displayValueOf` below renders as an em dash rather than as an
+ * empty row. */
 function rawValueOf(company: Company, key: TextFieldKey): string {
   switch (key) {
     case 'website':
@@ -410,155 +452,7 @@ function displayValueOf(company: Company, key: TextFieldKey): ReactNode {
   return raw
 }
 
-type PatchResult = { ok: true; patch: UpdateCompanyInput } | { ok: false; error: string }
-
-/** Builds the one-column patch a commit sends — the acceptance guard this
- * task's Risks names ("writes only the columns it shows"): each field
- * commits its own key alone, never the whole card's state. `ok: false`
- * signals a validation failure the caller should show instead of mutating
- * (cadenceDays must be a positive whole number, matching
- * `companyWritableFieldsSchema`) — a literal `ok` discriminant rather than
- * an optional `error` field so the two branches narrow cleanly at the call
- * site. */
-function buildPatch(key: TextFieldKey, raw: string): PatchResult {
-  const trimmed = raw.trim()
-  switch (key) {
-    case 'website':
-      return { ok: true, patch: { website: trimmed === '' ? null : trimmed } }
-    case 'cadenceDays': {
-      if (trimmed === '') return { ok: true, patch: { cadenceDays: null } }
-      const parsed = Number(trimmed)
-      if (!Number.isInteger(parsed) || parsed <= 0) {
-        return { ok: false, error: 'Cadence must be a positive whole number of days.' }
-      }
-      return { ok: true, patch: { cadenceDays: parsed } }
-    }
-    case 'since':
-      return { ok: true, patch: { since: trimmed === '' ? null : trimmed } }
-    case 'budgetNote':
-      return { ok: true, patch: { budgetNote: trimmed === '' ? null : trimmed } }
-    case 'notes':
-      return { ok: true, patch: { notes: trimmed === '' ? null : trimmed } }
-  }
-}
-
-function DetailField({
-  fieldKey,
-  company,
-  editingKey,
-  onStartEdit,
-  onCommit,
-  onCancel,
-  fieldError
-}: {
-  fieldKey: TextFieldKey
-  company: Company
-  editingKey: TextFieldKey | null
-  onStartEdit: (key: TextFieldKey) => void
-  onCommit: (key: TextFieldKey, raw: string) => void
-  onCancel: () => void
-  fieldError: string | null
-}) {
-  const config = TEXT_FIELD_CONFIG[fieldKey]
-  const isEditing = editingKey === fieldKey
-  const [draft, setDraft] = useState(() => rawValueOf(company, fieldKey))
-
-  if (!isEditing) {
-    return (
-      <div className="field">
-        <span className="k">{config.label}</span>
-        <span className="v">
-          <button
-            type="button"
-            className="field-value-btn"
-            onClick={() => {
-              setDraft(rawValueOf(company, fieldKey))
-              onStartEdit(fieldKey)
-            }}
-          >
-            {displayValueOf(company, fieldKey)}
-          </button>
-        </span>
-      </div>
-    )
-  }
-
-  const commit = () => onCommit(fieldKey, draft)
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onCancel()
-    } else if (event.key === 'Enter' && config.type !== 'textarea') {
-      event.preventDefault()
-      commit()
-    }
-  }
-
-  return (
-    <div className="field">
-      <span className="k">{config.label}</span>
-      <span className="v">
-        {config.type === 'textarea' ? (
-          <textarea
-            className="field-input"
-            value={draft}
-            autoFocus
-            aria-label={config.label}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={commit}
-            onKeyDown={handleKeyDown}
-          />
-        ) : (
-          <input
-            className="field-input"
-            type={config.type}
-            value={draft}
-            autoFocus
-            placeholder={config.placeholder}
-            aria-label={config.label}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={commit}
-            onKeyDown={handleKeyDown}
-          />
-        )}
-        {fieldError != null && <span className="field-error">{fieldError}</span>}
-      </span>
-    </div>
-  )
-}
-
-function DetailsCard({ companyId, company, companiesById }: { companyId: string; company: Company; companiesById: Map<string, Company> }) {
-  const queryClient = useQueryClient()
-  const [editingKey, setEditingKey] = useState<TextFieldKey | null>(null)
-  const [fieldError, setFieldError] = useState<string | null>(null)
-
-  const updateCompany = useMutation({
-    mutationFn: (patch: UpdateCompanyInput) =>
-      ipcMutationFn('companies:update')({ id: companyId, patch }).then(unwrapMutationResult),
-    onSuccess: () => invalidate.companies(queryClient)
-  })
-
-  const commitField = (key: TextFieldKey, raw: string) => {
-    if (raw === rawValueOf(company, key)) {
-      setEditingKey(null)
-      setFieldError(null)
-      return
-    }
-    const built = buildPatch(key, raw)
-    if (!built.ok) {
-      setFieldError(built.error)
-      return
-    }
-    setFieldError(null)
-    setEditingKey(null)
-    updateCompany.mutate(built.patch)
-  }
-
-  const cancelEdit = () => {
-    setEditingKey(null)
-    setFieldError(null)
-  }
-
+function DetailsCard({ company, companiesById }: { company: Company; companiesById: Map<string, Company> }) {
   const billedVia = company.billedViaCompanyId != null ? companiesById.get(company.billedViaCompanyId) : undefined
   const introducedBy = company.introducedByCompanyId != null ? companiesById.get(company.introducedByCompanyId) : undefined
 
@@ -567,34 +461,13 @@ function DetailsCard({ companyId, company, companiesById }: { companyId: string;
       <Card.Header title="Details" />
       <div className="field">
         <span className="k">Kind</span>
-        <span className="v">
-          <div className="chiprow">
-            {COMPANY_KINDS.map((kind) => (
-              <Chip
-                key={kind}
-                selected={company.kind === kind}
-                onClick={() => updateCompany.mutate({ kind })}
-              >
-                {KIND_LABEL[kind]}
-              </Chip>
-            ))}
-          </div>
-        </span>
+        <span className="v">{company.kind != null ? KIND_LABEL[company.kind] : '—'}</span>
       </div>
       {(['website', 'cadenceDays', 'since', 'budgetNote', 'notes'] as const).map((key) => (
-        <DetailField
-          key={key}
-          fieldKey={key}
-          company={company}
-          editingKey={editingKey}
-          onStartEdit={(k) => {
-            setFieldError(null)
-            setEditingKey(k)
-          }}
-          onCommit={commitField}
-          onCancel={cancelEdit}
-          fieldError={editingKey === key ? fieldError : null}
-        />
+        <div className="field" key={key}>
+          <span className="k">{TEXT_FIELD_LABEL[key]}</span>
+          <span className="v">{displayValueOf(company, key)}</span>
+        </div>
       ))}
       <div className="field">
         <span className="k">Billed via</span>
@@ -616,7 +489,6 @@ function DetailsCard({ companyId, company, companiesById }: { companyId: string;
           )}
         </span>
       </div>
-      <Toast message={updateCompany.isError ? updateCompany.error.message : null} onDismiss={() => updateCompany.reset()} />
     </Card>
   )
 }
@@ -969,6 +841,192 @@ function ContactsCard({
 }
 
 // ---------------------------------------------------------------------------
+// The header — the company's own banner and logo, and the way in to editing
+// (T-260901-14, ADR-015).
+//
+// Nothing here is optimistic, for `WorkspaceSettings`' `BrandingGroup`'s
+// reason restated: what a pick produces depends on a native dialog the
+// renderer cannot predict and on a refusal decided in main by the bytes' own
+// magic number, so the only image shown is one a channel came back with.
+//
+// The rail's `BrandingRow` is deliberately NOT extracted and shared with the
+// row below, though this task asked the question. They agree on the two
+// buttons and on where a refusal lands, and on nothing else: the previews are
+// different components in different boxes (a `.mark`/`.wordmark` pair against
+// Solo CRM's own default, versus this page's derived initials mark and
+// `hue(name)` gradient), the state lines are different sentences over
+// different content-type sets (six formats and one cap, versus two formats
+// and a cap per slot), and the union types are structurally similar but
+// nominally distinct. A shared component would take the preview as a render
+// prop, the caption as a string and the state as a third generic — which is
+// the two rows plus a seam, not one row. See T-260901-15 if a *third*
+// instance appears; two is not yet duplication worth an abstraction.
+// ---------------------------------------------------------------------------
+
+const IMAGE_SLOT_LABEL: Record<CompanyImageSlot, string> = { logo: 'Logo', banner: 'Banner' }
+
+/**
+ * Both slots absent — what the header draws against while `companyImages:get`
+ * is in flight, and what it keeps drawing when the answer is that this company
+ * has no images. Those two render identically on purpose: absence is the
+ * default (ADR-015, and this task's Scope), so there is no placeholder that
+ * flashes into an image and no "no image" state to design — the derived mark
+ * and the gradient *are* it.
+ */
+const NO_COMPANY_IMAGES: CompanyImagesSnapshot = {
+  logo: { state: 'absent', slot: 'logo' },
+  banner: { state: 'absent', slot: 'banner' }
+}
+
+/**
+ * One slot's upload/replace/remove pair. `role="group"` carrying the slot's
+ * own name is what disambiguates them: two rows both offering "Upload…" read
+ * identically on their own, and an `aria-label` on the button would have
+ * replaced its visible text rather than qualified it (`BrandingRow`'s own
+ * reasoning, which is the one thing the two rows genuinely share).
+ *
+ * A refusal renders inside this group, so it lands beside the control that
+ * failed rather than under the header as a banner naming neither slot.
+ */
+function ImageSlotControls({
+  state,
+  message,
+  onChoose,
+  onClear
+}: {
+  state: CompanyImageSlotState
+  message?: string
+  onChoose: () => void
+  onClear: () => void
+}) {
+  const label = IMAGE_SLOT_LABEL[state.slot]
+  return (
+    <span className="dhead-img" role="group" aria-label={label}>
+      <span className="dhead-img-k">{label}</span>
+      <Button variant="ghost" onClick={onChoose}>
+        {state.state === 'present' ? 'Replace…' : 'Upload…'}
+      </Button>
+      {state.state === 'present' && (
+        <Button variant="ghost" onClick={onClear}>
+          Remove
+        </Button>
+      )}
+      {message != null && (
+        <span className="dhead-img-error" role="alert">
+          {message}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function CompanyHeader({
+  company,
+  companiesById,
+  decay
+}: {
+  company: Company
+  companiesById: Map<string, Company>
+  decay: { pct: number; label: string }
+}) {
+  const queryClient = useQueryClient()
+  const { editSheet } = useLayerManager()
+  const accent = hue(company.name)
+
+  // The one read that carries originals, one company at a time (ADR-015) —
+  // never the grid's read, which is `companyImages:thumbnails`.
+  const imagesQuery = useQuery({
+    queryKey: queryKeys.companyImages.detail(company.id),
+    queryFn: ipcQueryFn('companyImages:get', { companyId: company.id })
+  })
+
+  // One refusal at a time, remembered with the slot it belongs to.
+  const [failure, setFailure] = useState<{ slot: CompanyImageSlot; message: string } | null>(null)
+
+  const chooseImage = useMutation({
+    mutationFn: (slot: CompanyImageSlot) =>
+      ipcMutationFn('companyImages:choose')({ companyId: company.id, slot }).then(unwrapMutationResult),
+    onSuccess: async (choice) => {
+      // Cancelling is a success that changed nothing
+      // (`companyImageChoiceSchema`), so it shows nothing — no error raised,
+      // and no standing message cleared either: the operator changed their
+      // mind, they did not fix anything.
+      if (choice.outcome === 'cancelled') return
+      setFailure(null)
+      await invalidate.companyImages(queryClient)
+    },
+    onError: (error, slot) => setFailure({ slot, message: error.message })
+  })
+
+  const clearImage = useMutation({
+    mutationFn: (slot: CompanyImageSlot) =>
+      ipcMutationFn('companyImages:clear')({ companyId: company.id, slot }).then(unwrapMutationResult),
+    onSuccess: async () => {
+      setFailure(null)
+      await invalidate.companyImages(queryClient)
+    },
+    onError: (error, slot) => setFailure({ slot, message: error.message })
+  })
+
+  const images = imagesQuery.data ?? NO_COMPANY_IMAGES
+  const banner = images.banner
+  const logo = images.logo
+
+  return (
+    <>
+      {/* The banner keeps its `hue(name)` gradient exactly as it was until an
+          image is actually stored. With one, `.dbanner.has-image` swaps the
+          accent radial for a contrast scrim over the picture — see the CSS,
+          which is where the "works for a white banner and a black one"
+          argument lives. `alt=""`: it is a wash behind a heading that already
+          names the company. */}
+      <div className={banner.state === 'present' ? 'dbanner has-image' : 'dbanner'} style={{ '--c': accent } as StyleWithAccent}>
+        {banner.state === 'present' && <img className="dbanner-img" src={banner.dataUrl} alt="" />}
+      </div>
+      <div className="dhead">
+        <CompanyMark name={company.name} size={50} color={accent} imageUrl={logo.state === 'present' ? logo.dataUrl : null} />
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <h1>{company.name}</h1>
+          <div className="dmeta">
+            {company.kind != null && <Tag variant={KIND_TAG_VARIANT[company.kind]}>{KIND_LABEL[company.kind]}</Tag>}
+            {company.billedViaCompanyId != null && (
+              <Tag variant="lapis">billed through {companiesById.get(company.billedViaCompanyId)?.name ?? company.billedViaCompanyId}</Tag>
+            )}
+            {company.budgetNote != null && <Tag variant="gold">{company.budgetNote}</Tag>}
+            <DecayMeter pct={decay.pct} label={decay.label} />
+          </div>
+        </div>
+        <div className="dhead-actions">
+          {/* The whole point of this control: a company has always been
+              editable, but only through a card called "Details" below the
+              fold with no cue that anything on the page could be changed.
+              The accessible name carries the company so "Edit" is not the
+              only thing announced on a page full of buttons; the visible
+              text stays a prefix of it, which is what keeps voice control
+              working. */}
+          <Button
+            variant="primary"
+            aria-label={`Edit ${company.name}`}
+            onClick={(event) => editSheet('company', company.id, event.currentTarget)}
+          >
+            Edit
+          </Button>
+          {COMPANY_IMAGE_SLOTS.map((slot) => (
+            <ImageSlotControls
+              key={slot}
+              state={images[slot]}
+              message={failure?.slot === slot ? failure.message : undefined}
+              onChoose={() => chooseImage.mutate(slot)}
+              onClear={() => clearImage.mutate(slot)}
+            />
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // The view
 // ---------------------------------------------------------------------------
 
@@ -1142,7 +1200,6 @@ export function CompanyDetail() {
   for (const result of engagementActivityQueries) for (const activity of result.data ?? []) activityById.set(activity.id, activity)
   const activityItems = Array.from(activityById.values()).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
 
-  const accent = hue(company.name)
   const decay = cadenceState(company.lastTouchAt, company.cadenceDays, now)
 
   return (
@@ -1150,21 +1207,7 @@ export function CompanyDetail() {
       <Link className="back" to="/companies">
         ← Companies
       </Link>
-      <div className="dbanner" style={{ '--c': accent } as StyleWithAccent} />
-      <div className="dhead">
-        <CompanyMark name={company.name} size={50} color={accent} />
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <h1>{company.name}</h1>
-          <div className="dmeta">
-            {company.kind != null && <Tag variant={KIND_TAG_VARIANT[company.kind]}>{KIND_LABEL[company.kind]}</Tag>}
-            {company.billedViaCompanyId != null && (
-              <Tag variant="lapis">billed through {companiesById.get(company.billedViaCompanyId)?.name ?? company.billedViaCompanyId}</Tag>
-            )}
-            {company.budgetNote != null && <Tag variant="gold">{company.budgetNote}</Tag>}
-            <DecayMeter pct={decay.pct} label={decay.label} />
-          </div>
-        </div>
-      </div>
+      <CompanyHeader company={company} companiesById={companiesById} decay={decay} />
 
       <div className="company-detail-grid">
         <EngagementCard
@@ -1189,7 +1232,7 @@ export function CompanyDetail() {
         <TodosCard companyId={company.id} companyName={company.name} tasks={tasksQuery.data ?? []} now={now} />
         <ActivityCard companyId={company.id} companyName={company.name} items={activityItems} />
         <ContactsCard current={currentContacts} historical={historicalContacts} />
-        <DetailsCard companyId={company.id} company={company} companiesById={companiesById} />
+        <DetailsCard company={company} companiesById={companiesById} />
         {/* §6.10's links, in the mockup's own position — the card immediately
             after Details in the right-hand column (mockup line ~1596). */}
         <LinksCard entityType="company" entityId={company.id} />

@@ -1,21 +1,31 @@
 /*
  * `/company/:id` (T-260828-29, extended by T-260828-30). `.back`, `.dbanner`,
- * `.dhead`, `.dmeta`, `.cmark`, `.field`, `.eng`, `.eng-t`, `.via`, `.endrow`,
- * `.chiprow` are transcribed from planning/solo-crm-mockup.html — the
+ * `.dhead`, `.dmeta`, `.cmark`, `.field`, `.eng`, `.eng-t`, `.via`, `.endrow`
+ * are transcribed from planning/solo-crm-mockup.html — the
  * detail-page classes that view shares with the future person-detail route
  * (T-260828-32), ported once here since neither primitive nor shared file
  * for them exists yet. T-260828-30 adds `.todo`/`.check`/`.due`/`.nextbadge`
  * (mockup's todo list, lines ~324-345) and `.tl`/`.tli` (mockup's timeline,
  * lines ~173-182) the same way, for the same reason — no shared home for
- * either yet, and this is their first consumer. `.company-detail-grid`,
- * `.next-step-block`/`.next-step-title` and everything under "inline edit"
- * below have no mockup source: the mockup never shows an editable detail
- * card or how a next step gets chosen, so both are new UI, styled to match
- * the mockup's existing look (`.inp`/`select`/`textarea` lines ~248-251;
- * the next-step block's gold wash reproduces the mockup's inline
- * `rgba(201,168,76,.05)` — `--gold` is exactly `#C9A84C` — as
+ * either yet, and this is their first consumer. `.company-detail-grid` and
+ * `.next-step-block`/`.next-step-title` have no mockup source: the mockup
+ * never shows how a next step gets chosen, so that block is new UI, styled to
+ * match the mockup's existing look (its gold wash reproduces the mockup's
+ * inline `rgba(201,168,76,.05)` — `--gold` is exactly `#C9A84C` — as
  * `color-mix()`, matching `.dbanner::after`'s own precedent in this file)
  * rather than lifted from a selector that isn't there.
+ *
+ * The inline-edit rules that used to live here (`.field-value-btn`,
+ * `.field-input`, this file's own `.field-error`) and `.chiprow` are gone with
+ * T-260901-14: the Details card is read-only now — the company sheet is the
+ * authoritative writer, see CompanyDetail.tsx's own comment on that decision —
+ * so nothing on this page renders any of them. `PersonDetail.css` declares its
+ * own copies of the first three for the inline editing that view still has,
+ * and `.chiprow` is `components/sheets/fields.css`'s, loaded eagerly.
+ *
+ * T-260901-14 adds `.dbanner-img`/`.dbanner.has-image`, `.cmark-img`/
+ * `.cmark.has-image` and the `.dhead-actions` cluster — a company's own logo
+ * and banner (ADR-015) and the header's way in to editing.
  */
 
 .company-detail-grid {
@@ -67,6 +77,51 @@
   background: radial-gradient(60% 120% at 88% 0%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
 }
 
+/* ── the company's own banner (T-260901-14, ADR-015) ──
+ *
+ * `object-fit: cover` with a stated anchor — `center` — is the whole of this
+ * task's cropping story: no focal point, no reposition handle, because a
+ * focal point is a decision and a task rather than something to invent here.
+ * The image is a `<img>` rather than a `background-image` so the CSP's
+ * `img-src 'self' data:` covers it exactly as it covers every other image
+ * that crosses IPC.
+ *
+ * The scrim is required rather than nice to have: `.dhead` overlaps the
+ * banner's bottom 40px (that negative margin above), so an operator-supplied
+ * image renders directly behind the mark and the top of the heading, and
+ * nothing about an arbitrary photograph guarantees contrast. It replaces the
+ * accent radial `::after` draws over the gradient — one pseudo-element, two
+ * jobs, so the two can never paint at once.
+ *
+ * It is a downward ramp of `--obsidian`, the page's darkest surface, ending
+ * at 82% where the header text sits. That works in both directions the risk
+ * names: over a white banner the bottom is dark enough for `--papyrus` text,
+ * and over a black one the ramp is nearly invisible — it can only ever make
+ * the area behind the text darker, never lighter, so there is no image for
+ * which it makes contrast worse. */
+.dbanner.has-image {
+  background: var(--surface-2);
+}
+
+.dbanner-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.dbanner.has-image::after {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--obsidian) 18%, transparent) 0%,
+    color-mix(in srgb, var(--obsidian) 55%, transparent) 55%,
+    color-mix(in srgb, var(--obsidian) 82%, transparent) 100%
+  );
+}
+
 .dhead {
   position: relative;
   z-index: 1;
@@ -111,6 +166,70 @@
   background: currentColor;
 }
 
+/* ── the company's own logo in the mark (T-260901-14) ──
+ *
+ * `contain`, not `cover`: this is a mark, and cropping someone's logo to fill
+ * a square is a worse answer than letting it sit inside one. The accent wash
+ * `::after` paints is switched off with an image present — it would tint the
+ * logo — and a solid surface takes its place so a PNG with transparency has
+ * something to sit on rather than showing the page through it. */
+.cmark.has-image {
+  background: var(--surface-2);
+}
+
+.cmark.has-image::after {
+  content: none;
+}
+
+.cmark-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* ── header actions (T-260901-14) ──
+ *
+ * A single wrapping row, deliberately: it keeps its own height under the
+ * 50px mark's, so `.dhead` is exactly as tall as it was before these
+ * controls existed — T-260901-02 had just set this header's type and
+ * vertical rhythm, and this task is not the one to move it. Below roughly
+ * 700px the whole cluster wraps onto its own line under the heading, which
+ * is `.dhead`'s existing `flex-wrap` doing the work rather than a new
+ * breakpoint. */
+.dhead-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.dhead-img {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dhead-img-k {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Forced onto its own line inside the group (`flex-basis: 100%`) so a long
+   refusal wraps under the two buttons it belongs to instead of pushing them
+   off the row. */
+.dhead-img-error {
+  flex: 0 0 100%;
+  color: var(--red);
+  font-size: 11px;
+  max-width: 260px;
+}
+
 /* ── details card ────────────────────── */
 
 .field {
@@ -139,63 +258,6 @@
 .field .v {
   flex: 1;
   min-width: 0;
-}
-
-.chiprow {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-/* ── inline edit — this view's own affordance, no mockup source ── */
-
-.field-value-btn {
-  background: none;
-  border: 0;
-  padding: 2px 4px;
-  margin: -2px -4px;
-  border-radius: var(--radius-5);
-  color: var(--papyrus);
-  text-align: left;
-  font: inherit;
-  width: 100%;
-  transition: background var(--motion-hover);
-}
-
-.field-value-btn:hover,
-.field-value-btn:focus-visible {
-  background: var(--surface-2);
-}
-
-.field-input {
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-9);
-  padding: 5px 8px;
-  color: var(--papyrus);
-  font-family: inherit;
-  font-size: 12.5px;
-  outline: none;
-  transition: border-color var(--motion-hover);
-}
-
-.field-input:focus {
-  border-color: var(--verdigris);
-}
-
-textarea.field-input {
-  resize: vertical;
-  min-height: 60px;
-  line-height: 1.5;
-  font-family: var(--font);
-}
-
-.field-error {
-  color: var(--red);
-  font-size: 11px;
-  margin-top: 4px;
-  display: block;
 }
 
 /* ── engagement rows ─────────────────── */
