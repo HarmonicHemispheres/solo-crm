@@ -98,7 +98,10 @@ export interface FaviconFetchDeps {
  * and an IPv4 literal already normalised.
  */
 export function isFetchableHost(host: string): boolean {
-  const lower = host.toLowerCase()
+  // A fully-qualified spelling (`localhost.`) keeps its trailing dot through
+  // the URL parser and resolves to the same address; strip it before every
+  // rule below so a one-character suffix cannot bypass them (T-260901-21).
+  const lower = host.toLowerCase().replace(/\.$/, '')
   if (lower.length === 0) return false
   if (lower === 'localhost' || lower.endsWith('.localhost') || lower.endsWith('.local')) return false
   // Any IPv6 literal: `URL#hostname` gives these unbracketed, and a colon
@@ -192,50 +195,65 @@ async function fetchBounded(target: URL, maxBytes: number, deps: FaviconFetchDep
   let current = target
   for (let hop = 0; hop <= maxRedirects; hop += 1) {
     const controller = new AbortController()
+    // One deadline per hop, and it covers the body as well as the headers
+    // (T-260901-21): `fetch` resolves once the status line and headers are
+    // in, and a host that answers 200 and then trickles or stalls the body
+    // used to hold `readBounded` open for the life of the process — with
+    // `service.ts`'s in-flight entry for that host never clearing, so every
+    // later lookup on it answered `fetching` until restart.
     const timer = setTimeout(() => controller.abort(), timeoutMs)
-    let response: Response
     try {
-      response = await doFetch(current.href, {
-        method: 'GET',
-        redirect: 'manual',
-        signal: controller.signal,
-        // No cookies, no credentials, no referrer: this request identifies
-        // nothing about the user, and must not tell the remote host which
-        // page it was made from.
-        credentials: 'omit',
-        referrerPolicy: 'no-referrer',
-        headers: { accept: 'image/*,text/html;q=0.5' }
-      })
-    } catch {
-      // The only signal in play is this loop's own timer, so an aborted
-      // controller means the deadline passed; anything else that threw is the
-      // network refusing, DNS failing, or TLS not negotiating.
-      return { ok: false, reason: controller.signal.aborted ? 'timeout' : 'network-error' }
+      let response: Response
+      try {
+        response = await doFetch(current.href, {
+          method: 'GET',
+          redirect: 'manual',
+          signal: controller.signal,
+          // No cookies, no credentials, no referrer: this request identifies
+          // nothing about the user, and must not tell the remote host which
+          // page it was made from.
+          credentials: 'omit',
+          referrerPolicy: 'no-referrer',
+          headers: { accept: 'image/*,text/html;q=0.5' }
+        })
+      } catch {
+        // The only signal in play is this loop's own timer, so an aborted
+        // controller means the deadline passed; anything else that threw is the
+        // network refusing, DNS failing, or TLS not negotiating.
+        return { ok: false, reason: controller.signal.aborted ? 'timeout' : 'network-error' }
+      }
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location')
+        if (!location) return { ok: false, reason: 'http-error' }
+        let next: URL
+        try {
+          next = new URL(location, current)
+        } catch {
+          return { ok: false, reason: 'http-error' }
+        }
+        // Same rules as the original target: scheme allowlist plus the
+        // public-host rule. A redirect is a new request, not a continuation.
+        if (!faviconOriginFor(next.href)) return { ok: false, reason: 'unsupported-url' }
+        current = next
+        continue
+      }
+
+      if (!response.ok) return { ok: false, reason: 'http-error' }
+
+      let bytes: Uint8Array | null
+      try {
+        bytes = await readBounded(response, maxBytes)
+      } catch {
+        // The body stream rejects when the signal aborts mid-read; anything
+        // else is the connection dropping partway through.
+        return { ok: false, reason: controller.signal.aborted ? 'timeout' : 'network-error' }
+      }
+      if (!bytes) return { ok: false, reason: 'too-large' }
+      return { ok: true, value: { bytes, finalUrl: current.href } }
     } finally {
       clearTimeout(timer)
     }
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location')
-      if (!location) return { ok: false, reason: 'http-error' }
-      let next: URL
-      try {
-        next = new URL(location, current)
-      } catch {
-        return { ok: false, reason: 'http-error' }
-      }
-      // Same rules as the original target: scheme allowlist plus the
-      // public-host rule. A redirect is a new request, not a continuation.
-      if (!faviconOriginFor(next.href)) return { ok: false, reason: 'unsupported-url' }
-      current = next
-      continue
-    }
-
-    if (!response.ok) return { ok: false, reason: 'http-error' }
-
-    const bytes = await readBounded(response, maxBytes)
-    if (!bytes) return { ok: false, reason: 'too-large' }
-    return { ok: true, value: { bytes, finalUrl: current.href } }
   }
 
   return { ok: false, reason: 'too-many-redirects' }

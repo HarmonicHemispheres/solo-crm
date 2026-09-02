@@ -22,6 +22,15 @@ describe('isFetchableHost: which hosts this app will ever contact', () => {
     }
   })
 
+  // T-260901-21: `new URL('http://localhost./').hostname` is `localhost.`.
+  it('refuses the fully-qualified spelling of a refused name — the trailing dot is not a bypass', () => {
+    expect(isFetchableHost('localhost.')).toBe(false)
+    expect(isFetchableHost('foo.localhost.')).toBe(false)
+    expect(isFetchableHost('printer.local.')).toBe(false)
+    expect(isFetchableHost('intranet.')).toBe(false)
+    expect(faviconOriginFor('http://localhost./favicon.ico')).toBeNull()
+  })
+
   it('refuses loopback and intranet names', () => {
     for (const host of ['localhost', 'app.localhost', 'printer.local', 'intranet', '']) {
       expect(isFetchableHost(host)).toBe(false)
@@ -135,6 +144,19 @@ describe('the three bounds', () => {
     // Both attempts time out, so the whole call is bounded by roughly two
     // budgets — the point being that it is bounded at all, in tens of
     // milliseconds rather than whenever the remote host gives up.
+    expect(Date.now() - started).toBeLessThan(2_000)
+  })
+
+  // T-260901-21: the deadline used to be cleared once headers arrived.
+  it('a host that answers and then stalls the body is ended by the same timeout', async () => {
+    const recorder = recordingFetch({
+      'https://trickle.example.com/favicon.ico': { stallBody: true },
+      'https://trickle.example.com/': { stallBody: true }
+    })
+    const started = Date.now()
+    const outcome = await fetchFavicon(new URL('https://trickle.example.com/'), { fetch: recorder.fetch, timeoutMs: 40 })
+
+    expect(outcome).toEqual({ ok: false, reason: 'timeout' })
     expect(Date.now() - started).toBeLessThan(2_000)
   })
 

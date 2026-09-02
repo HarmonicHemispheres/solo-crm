@@ -21,6 +21,8 @@ export interface RouteResponse {
   readonly chunks?: readonly Uint8Array[]
   /** Never resolves; the fetcher's own AbortController is what ends it. Used for the timeout case. */
   readonly hang?: true
+  /** Answers headers at once, then a body stream that never closes — until the request's signal aborts, when the read rejects the way undici's does. */
+  readonly stallBody?: true
   /** Rejects, as a DNS failure or a refused connection would. */
   readonly networkError?: true
 }
@@ -61,6 +63,16 @@ export function recordingFetch(routes: Record<string, RouteResponse>): Recording
 
     const status = route.status ?? 200
     const headers = new Headers(route.headers ?? {})
+
+    if (route.stallBody) {
+      const signal = init?.signal
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          signal?.addEventListener('abort', () => controller.error(new DOMException('The operation was aborted.', 'AbortError')), { once: true })
+        }
+      })
+      return new Response(stream, { status, headers })
+    }
 
     if (route.chunks) {
       const stream = new ReadableStream<Uint8Array>({
