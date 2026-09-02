@@ -1,5 +1,5 @@
 import { useState, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { parseDateOnly } from '../../shared/format'
 import type { Company, CompanyKind } from '../../shared/companies'
@@ -11,6 +11,7 @@ import { Card } from '../components/primitives/Card'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { Button } from '../components/primitives/Button'
+import { ConfirmDelete } from '../components/primitives/ConfirmDelete'
 import { Toast } from '../components/primitives/Toast'
 import './detail-header.css'
 import { identityColor as hue, initials } from '../lib/identity'
@@ -512,6 +513,10 @@ function ActivityItem({ entry, company }: { entry: Activity; company: Company | 
 export function PersonDetail() {
   const { id } = useParams<{ id: string }>()
   const personId = id ?? ''
+  const navigate = useNavigate()
+  // Local rather than a LayerManager layer, for the reason CompanyDetail's
+  // own copy of this state gives.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   // Computed once per mount, not read live during render — matches
   // CompanyDetail.tsx's own `[now]` (`Date.now()` is an impure call
   // react-hooks/purity refuses inline; a detail page's "since contact"
@@ -563,8 +568,25 @@ export function PersonDetail() {
               <Tag>{contactTagLabel(person, now)}</Tag>
             </div>
           </div>
+          {/* The person page has no Edit button — its Details card edits in
+              place — so this is the header's only action, and it sits where
+              the company page puts the same one. */}
+          <div className="dhead-actions">
+            <Button variant="ghost" aria-label={`Delete ${person.name}`} onClick={() => setConfirmingDelete(true)}>
+              Delete
+            </Button>
+          </div>
         </div>
       </div>
+      {confirmingDelete && (
+        <ConfirmDelete
+          entity="person"
+          id={person.id}
+          name={person.name}
+          onClose={() => setConfirmingDelete(false)}
+          onDeleted={() => navigate('/people')}
+        />
+      )}
 
       <div className="person-detail-grid">
         <AffiliationsCard affiliations={affiliationsMostRecentFirst} companiesById={companiesById} />

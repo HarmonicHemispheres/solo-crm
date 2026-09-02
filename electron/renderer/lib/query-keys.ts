@@ -278,6 +278,21 @@ export const queryKeys = {
     thumbnails: () => ['companyImages', 'thumbnails'] as const,
     detail: (companyId: string) => ['companyImages', 'detail', companyId] as const
   },
+  /**
+   * `<entity>:deleteImpact` — what deleting one record would take with it
+   * (T-260902-09). Keyed by entity *and* id because the four impact channels
+   * answer different questions about different tables, and the confirmation
+   * dialog is mounted per record.
+   *
+   * There is no `invalidate.deletion`: this is read once, while a dialog is
+   * open, and the record it describes does not exist afterwards. The
+   * entity's own `invalidate` helper runs after the delete instead — see
+   * `ConfirmDelete`'s `AFFECTED`.
+   */
+  deletion: {
+    all: () => ['deletion'] as const,
+    impact: (entity: string, id: string) => ['deletion', 'impact', entity, id] as const
+  },
   /** `settings` is ADR-002's one-row-per-key registry, not create/update/delete — `detail(key)` addresses one declared key, `all()`/`list()` cover `settings:getAll`'s snapshot. */
   settings: {
     all: () => ['settings'] as const,
@@ -373,6 +388,8 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
    * ADR-015 asks of every write to this table.
    */
   companyImages: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.companyImages.all() }),
+  /** Present so `invalidate` stays exhaustive over `queryKeys`; nothing calls it — see `queryKeys.deletion`'s comment. */
+  deletion: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.deletion.all() }),
   settings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
 }
 

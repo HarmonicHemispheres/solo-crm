@@ -8,6 +8,7 @@ import { Chip } from '../components/primitives/Chip'
 import { Tag } from '../components/primitives/Tag'
 import { IconButton } from '../components/primitives/IconButton'
 import { QuickAdd } from '../components/primitives/QuickAdd'
+import { ConfirmDelete } from '../components/primitives/ConfirmDelete'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
 import { useLayerManager } from '../components/shell/layer-manager-context'
@@ -42,10 +43,21 @@ import './Offerings.css'
  * shows the current one read-only on edit, beside a disabled "Change price"
  * control. This view shows a rate and never offers to edit one.
  *
- * **Archive, never delete.** There is no delete control for an offering here,
- * and there is no channel behind one either (`electron/shared/ipc-types.ts`
- * says why). Archived rows are hidden until the Archived filter reveals them,
- * and they carry no actions at all — `archiveOffering` has no inverse in the
+ * **Archive and delete, and they are different questions** (T-260902-09).
+ * Archiving keeps every row and takes the offering off the list, which is
+ * what a *sold* offering needs: engagements were priced from it and the
+ * catalogue is the record of why. Deleting removes it outright, which is
+ * what something typed by mistake needs, and no amount of archiving is the
+ * right answer for that — this view offered only archiving until now, so a
+ * mis-keyed row was permanent.
+ *
+ * Deleting never takes an engagement with it: the engagement is unlinked and
+ * keeps the `agreedRateCents` it snapshotted at signature, which is the
+ * reason that column is a snapshot rather than a join. `ConfirmDelete` says
+ * so in the dialog before anything happens.
+ *
+ * Archived rows are hidden until the Archived filter reveals them, and they
+ * carry no actions at all — `archiveOffering` has no inverse in the
  * repository, so a Restore button would be a control with nothing behind it.
  *
  * The card/list toggle §6.13 gives Companies and People is deliberately
@@ -212,6 +224,9 @@ export function Offerings() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  // One dialog for the view, holding whichever offering asked for it —
+  // the same arrangement Engagements.tsx uses for its rows.
+  const [deletingOffering, setDeletingOffering] = useState<{ id: string; name: string } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
 
@@ -345,7 +360,7 @@ export function Offerings() {
       icon={<OfferingsGlyph />}
       accent={ACCENT}
       title="Offerings"
-      description="The price list you sell from. A rate is set when an offering is created and versioned after that, so engagements keep the rate they were signed at — and nothing here is ever deleted, only archived."
+      description="The price list you sell from. A rate is set when an offering is created and versioned after that, so engagements keep the rate they were signed at. Archive an offering you have stopped selling; delete one you never meant to add — either way the engagements sold from it keep their agreed rate."
       actions={
         <>
           <Toggle aria-label="Offering type" options={TYPE_FILTER_OPTIONS} value={typeFilter} onChange={setTypeFilter} />
@@ -452,6 +467,7 @@ export function Offerings() {
             onEdit={(id, trigger) => editSheet('offering', id, trigger)}
             onDuplicate={(id) => duplicateMutation.mutate(id)}
             onArchive={(id) => archiveMutation.mutate(id)}
+            onDeleteOffering={setDeletingOffering}
           />
         ))
       )}
@@ -481,6 +497,14 @@ export function Offerings() {
           <p className="meta offr-foot">Archived offerings stay attached to every engagement already sold at their rate.</p>
         </div>
       )}
+      {deletingOffering && (
+        <ConfirmDelete
+          entity="offering"
+          id={deletingOffering.id}
+          name={deletingOffering.name}
+          onClose={() => setDeletingOffering(null)}
+        />
+      )}
     </div>
   )
 }
@@ -506,7 +530,8 @@ function CategoryBlockView({
   onQuickAdd,
   onEdit,
   onDuplicate,
-  onArchive
+  onArchive,
+  onDeleteOffering
 }: {
   block: CategoryBlock
   renaming: boolean
@@ -519,6 +544,7 @@ function CategoryBlockView({
   onEdit: (id: string, trigger: HTMLElement | null) => void
   onDuplicate: (id: string) => void
   onArchive: (id: string) => void
+  onDeleteOffering: (offering: { id: string; name: string }) => void
 }) {
   const isCategory = block.categoryId != null
   return (
@@ -563,6 +589,7 @@ function CategoryBlockView({
               onEdit={onEdit}
               onDuplicate={onDuplicate}
               onArchive={onArchive}
+          onDeleteOffering={onDeleteOffering}
             />
           ))
         )}
@@ -655,12 +682,14 @@ function OfferingRow({
   offering,
   onEdit,
   onDuplicate,
-  onArchive
+  onArchive,
+  onDeleteOffering
 }: {
   offering: OfferingListItem
   onEdit?: (id: string, trigger: HTMLElement | null) => void
   onDuplicate?: (id: string) => void
   onArchive?: (id: string) => void
+  onDeleteOffering?: (offering: { id: string; name: string }) => void
 }) {
   const current = offering.currentVersion
   const archived = isArchived(offering)
@@ -686,7 +715,7 @@ function OfferingRow({
           {current?.effectiveFrom != null && ` · since ${current.effectiveFrom.slice(0, 7)}`}
         </span>
       </span>
-      {onEdit && onDuplicate && onArchive && (
+      {onEdit && onDuplicate && onArchive && onDeleteOffering && (
         <span className="sacts">
           <IconButton aria-label={`Edit "${offering.name}"`} onClick={(event) => onEdit(offering.id, event.currentTarget)}>
             <PencilIcon />
@@ -696,6 +725,17 @@ function OfferingRow({
           </IconButton>
           <IconButton aria-label={`Archive "${offering.name}"`} onClick={() => onArchive(offering.id)}>
             <ArchiveIcon />
+          </IconButton>
+          {/* Archive and delete both, side by side, because they are
+              different intentions: archiving keeps a sold offering's history
+              and takes it off the list; deleting removes something typed by
+              mistake. This view's header still says nothing is deleted, only
+              archived — that sentence is updated with this control. */}
+          <IconButton
+            aria-label={`Delete "${offering.name}"`}
+            onClick={() => onDeleteOffering({ id: offering.id, name: offering.name })}
+          >
+            <TrashIcon />
           </IconButton>
         </span>
       )}

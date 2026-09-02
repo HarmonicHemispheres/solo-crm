@@ -54,6 +54,8 @@ function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: strin
     startedOn: '2026-01-01',
     endsOn: null,
     renewsOn: null,
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: null,
     hourlyRateCents: null,
@@ -93,7 +95,15 @@ const retainerEngagement = makeEngagement({
   clientCompanyId: 'co-acme',
   billingModel: 'retainer',
   status: 'active',
+  // The hours basis, so the edit sheet opened on this card shows the pair
+  // that prices it (migration 0008) rather than the flat-amount default.
+  retainerBasis: 'hours',
+  monthlyAmountCents: null,
   hoursIncluded: 20,
+  // 20 hrs x $165 = $3,300/mo. The card states that product, so the rate has
+  // to be here — a retainer with an allowance and no rate is exactly the
+  // half-priced state migration 0008 exists to make visible.
+  hourlyRateCents: 16_500,
   endsOn: null
 })
 
@@ -104,6 +114,7 @@ const fixedEngagement = makeEngagement({
   clientCompanyId: 'co-client',
   billingModel: 'fixed',
   status: 'active',
+  contractValueCents: 1_800_000,
   startedOn: '2026-02-10',
   endsOn: '2026-10-15'
 })
@@ -115,6 +126,7 @@ const tmEngagement = makeEngagement({
   clientCompanyId: 'co-acme',
   billingModel: 'tm',
   status: 'pending',
+  hourlyRateCents: 16_500,
   estimatedHours: 30,
   notToExceedCents: 500_000
 })
@@ -233,13 +245,60 @@ function expectRealEngagementForm(dialog: HTMLElement): void {
 }
 
 describe('Engagements', () => {
-  it('renders three distinct progress shapes — retainer hours-vs-allowance, fixed milestones, T&M hours-vs-estimate', async () => {
+  it('states what each engagement is worth, in the shape its billing model is priced in', async () => {
+    // T-260902-10. These cards used to read "0 of 20 hrs this month" and
+    // "0 of ~30 hrs" — a hardcoded 0 out of an allowance, waiting on a
+    // timelog import the app is not going to have. What a card can say is
+    // the engagement's own headline price, which ADR-003 names as one of its
+    // two explicit exceptions to "revenue comes from revenue_lines".
     renderEngagements()
     await screen.findByText('Advisory retainer')
 
-    expect(within(cardFor('Advisory retainer')).getByText('0 of 20 hrs this month')).toBeTruthy()
+    // 20 hrs x $165.
+    expect(within(cardFor('Advisory retainer')).getByText('$3300.00 / mo')).toBeTruthy()
+    expect(within(cardFor('Advisory retainer')).getByText('20 hrs × $165.00')).toBeTruthy()
+
+    expect(within(cardFor('Fixed-scope build')).getByText('$18000.00')).toBeTruthy()
     expect(await within(cardFor('Fixed-scope build')).findByText('1 of 3 milestones')).toBeTruthy()
-    expect(within(cardFor('Platform advisory')).getByText('0 of ~30 hrs')).toBeTruthy()
+
+    // 30 hrs x $165 is $4,950, under the $5,000 cap, so the cap does not bite.
+    expect(within(cardFor('Platform advisory')).getByText('$4950.00')).toBeTruthy()
+    expect(within(cardFor('Platform advisory')).getByText('~30 hrs × $165.00 / hr')).toBeTruthy()
+  })
+
+  it('a T&M estimate above its not-to-exceed is stated at the cap, not above it', async () => {
+    // The cap is the number that will actually be invoiced, so it is the
+    // number the card shows. 40 x $165 = $6,600 against a $5,000 ceiling.
+    renderEngagements({
+      engagements: [makeEngagement({ ...tmEngagement, id: 'eng-capped', name: 'Capped work', estimatedHours: 40 })]
+    })
+    await screen.findByText('Capped work')
+
+    expect(within(cardFor('Capped work')).getByText('$5000.00')).toBeTruthy()
+    expect(within(cardFor('Capped work')).queryByText('$6600.00')).toBeNull()
+  })
+
+  it('an unpriced engagement says so rather than showing a zero', async () => {
+    // A retainer written before migration 0008 has no basis and no amount.
+    // "$0.00 / mo" would be a claim about its terms; "No price set" is the
+    // truth and is also the prompt to go and fix it.
+    renderEngagements({
+      engagements: [
+        makeEngagement({
+          id: 'eng-unpriced',
+          name: 'Unpriced retainer',
+          billingModel: 'retainer',
+          status: 'active',
+          retainerBasis: null,
+          monthlyAmountCents: null,
+          hoursIncluded: null
+        })
+      ]
+    })
+    await screen.findByText('Unpriced retainer')
+
+    expect(within(cardFor('Unpriced retainer')).getByText('No price set')).toBeTruthy()
+    expect(cardFor('Unpriced retainer').textContent).not.toContain('$0')
   })
 
   it('says what an engagement was sold as, and says nothing where it was sold from nothing', async () => {
@@ -286,16 +345,18 @@ describe('Engagements', () => {
     expect(noneCard.querySelector('.prog')).toBeNull()
   })
 
-  it('marks every hours-derived figure provisional — retainer and T&M, never the milestone count', async () => {
+  it('claims no hours at all — no "Provisional", no consumed figure, no empty bar', async () => {
+    // The inverse of what this test used to assert. Two cards carried a
+    // "Provisional" tag because the hours beside it were a hardcoded 0
+    // waiting on a timelog import (P4-05). T-260902-10 removed the figure,
+    // so the tag that excused it has nothing left to excuse — and the app no
+    // longer implies it tracks hours, which it does not and is not going to.
     renderEngagements()
     await screen.findByText('Advisory retainer')
 
-    // Exactly the two hours-derived cards (retainer, T&M) — not the
-    // milestone-based fixed card, which isn't derived from time_entries.
-    expect(screen.getAllByText('Provisional')).toHaveLength(2)
-    expect(within(cardFor('Advisory retainer')).getByText('Provisional')).toBeTruthy()
-    expect(within(cardFor('Platform advisory')).getByText('Provisional')).toBeTruthy()
-    expect(within(cardFor('Fixed-scope build')).queryByText('Provisional')).toBeNull()
+    expect(screen.queryAllByText('Provisional')).toHaveLength(0)
+    expect(screen.queryByText(/0 of \d+ hrs/)).toBeNull()
+    expect(screen.queryByText(/hrs this month/)).toBeNull()
   })
 
   it('renders a NULL ends_on as "rolling", never blank or a far-future date', async () => {
@@ -401,14 +462,26 @@ describe('Engagements', () => {
     expectRealEngagementForm(screen.getByRole('dialog', { name: 'New engagement' }))
   })
 
-  it('does not render any dollar amount unless the Scope explicitly calls for one (T&M not-to-exceed)', async () => {
+  it('states one engagement\'s own price and never a total across them', async () => {
+    // This test used to assert that a card showed no dollar amount at all,
+    // which was the right rule read one notch too strictly: ADR-003 forbids
+    // *aggregation and attribution*, and explicitly permits "a single
+    // engagement's own headline price ... it states the engagement's terms;
+    // it does not aggregate."
+    //
+    // What must still be absent is anything summed: no total across the
+    // cards, and no annualised projection of one — "$3,300/mo x 12" is an
+    // attribution to periods, which is `revenue_lines`' job and the
+    // generator's (P3-05 / T-260902-03), not a card's.
     renderEngagements()
     await screen.findByText('Advisory retainer')
 
-    expect(cardFor('Advisory retainer').textContent).not.toMatch(/\$/)
-    expect(cardFor('Fixed-scope build').textContent).not.toMatch(/\$/)
-    // The one deliberate exception (this task's Scope).
-    expect(within(cardFor('Platform advisory')).getByText(/not to exceed \$5000\.00/)).toBeTruthy()
+    expect(within(cardFor('Advisory retainer')).getByText('$3300.00 / mo')).toBeTruthy()
+    // No annual figure anywhere: 20 x 165 x 12 = $39,600.
+    expect(screen.queryByText(/39600/)).toBeNull()
+    expect(screen.queryByText(/\/ *yr/)).toBeNull()
+    // And no portfolio total: the three priced cards come to $26,250.
+    expect(screen.queryByText(/26250/)).toBeNull()
   })
 
   // T-260901-10: ADR-005 leaves an engagement with no detail route, so the
@@ -459,7 +532,7 @@ describe('Engagements', () => {
       // answers, so the dialog is re-queried rather than held across it.
       const name = await screen.findByLabelText('Name')
       expect((name as HTMLInputElement).value).toBe('Advisory retainer')
-      expect((screen.getByLabelText('Hours included') as HTMLInputElement).value).toBe('20')
+      expect((screen.getByLabelText('Hours per month') as HTMLInputElement).value).toBe('20')
       expect(screen.getByRole('dialog', { name: 'Edit engagement' })).toBeTruthy()
     })
 
@@ -478,7 +551,7 @@ describe('Engagements', () => {
       // T&M's own columns, not the retainer's, and no trace of the edit
       // typed into the previous one.
       expect((screen.getByLabelText('Estimated hours') as HTMLInputElement).value).toBe('30')
-      expect(screen.queryByLabelText('Hours included')).toBeNull()
+      expect(screen.queryByLabelText('Hours per month')).toBeNull()
     })
 
     it('returns focus to the card control the sheet was opened from', async () => {

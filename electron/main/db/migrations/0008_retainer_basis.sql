@@ -1,0 +1,41 @@
+-- T-260902-08: a retainer says what it is worth per month.
+--
+-- Until now the only retainer-specific column was `hours_included`, so a
+-- retainer could record an allowance and nothing else — no rate against
+-- those hours, and no way at all to state a flat monthly fee. The form
+-- showed one field, "Hours included", and there was no path to the amount
+-- the client is actually invoiced. Reported by the user: "in engagements
+-- for retainer, we can set the hours but not the rate."
+--
+-- `agreed_rate_cents` was not the answer. It is the snapshot taken from the
+-- offering at signature (see electron/shared/engagements.ts's header), it is
+-- deliberately unwritable by `updateEngagement`, and it means whatever the
+-- offering's own unit meant — /mo for a retainer offering, /hr for another.
+-- Overloading it as "the monthly fee" would have made a column that is
+-- sometimes a snapshot and sometimes a live term.
+--
+-- So a retainer now names its own basis and carries its own amount:
+--
+--   'amount' -> monthly_amount_cents         is the fee, invoiced monthly
+--   'hours'  -> hours_included x hourly_rate_cents
+--
+-- `hourly_rate_cents` already exists (it was T&M's) and is reused rather
+-- than duplicated: it means the same thing in both places — the rate one
+-- hour is billed at — and the revenue generator (P3-05) reads it the same
+-- way for both models.
+--
+-- Why a stored discriminant rather than inferring the basis from which
+-- columns are non-null: a half-filled retainer (hours entered, rate not yet)
+-- is indistinguishable from a flat-fee retainer whose amount is missing, and
+-- the two forecast very differently. ADR-003 puts every revenue figure
+-- through `revenue_lines`, and the generator has to branch on a fact the row
+-- states, not on a guess about the author's intent.
+--
+-- No backfill. Every existing retainer gets `retainer_basis` NULL, which
+-- reads as "not stated yet" — the honest description of a row written before
+-- the question could be asked. The generator emits nothing for those and the
+-- form shows them unset, rather than a default that would put a number in
+-- the forecast nobody entered.
+
+ALTER TABLE `engagements` ADD `retainer_basis` text;--> statement-breakpoint
+ALTER TABLE `engagements` ADD `monthly_amount_cents` integer;

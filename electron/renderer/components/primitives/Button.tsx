@@ -11,12 +11,24 @@ import './Button.css'
  * was optional and the type checker had nothing to object to; `variant` is
  * required now so the next one does not compile. This union is closed
  * deliberately — a size or intent matrix the mockup doesn't have is a scope
- * change, not a typo fix. */
-export type ButtonVariant = 'primary' | 'ghost'
+ * change, not a typo fix.
+ *
+ * `danger` is that scope change, made deliberately (T-260902-09). The app
+ * gained its first destructive action — deleting a company, person,
+ * engagement or offering, which takes their attached records with them — and
+ * `.claude/rules/ui-design.md` already names "destructive confirmation" as
+ * one of the three places a text label is required rather than an icon. A
+ * confirm button that looked identical to Cancel would be the one control in
+ * the app where getting it wrong cannot be undone. It stays a *third*
+ * variant rather than a `tone` prop crossed with the other two: there is no
+ * dangerous ghost button and no dangerous primary, there is one red button
+ * that appears in one dialog. */
+export type ButtonVariant = 'primary' | 'ghost' | 'danger'
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary: 'btn-prim',
-  ghost: 'btn-ghost'
+  ghost: 'btn-ghost',
+  danger: 'btn-danger'
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

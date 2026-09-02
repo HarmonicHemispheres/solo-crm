@@ -287,11 +287,18 @@ export const engagements = sqliteTable(
     // default of any kind on this column.
     endsOn: text('ends_on'),
     renewsOn: text('renews_on'),
-    // retainer
+    // retainer — 'amount' (monthly_amount_cents is the fee) or 'hours'
+    // (hours_included x hourly_rate_cents). NULL means no basis stated yet,
+    // which is what every retainer written before migration 0008 has; see
+    // that migration's header for why this is a stored fact rather than
+    // inferred from which columns are non-null.
+    retainerBasis: text('retainer_basis'),
+    monthlyAmountCents: integer('monthly_amount_cents'),
     hoursIncluded: real('hours_included'),
     // fixed
     contractValueCents: integer('contract_value_cents'),
-    // tm
+    // tm, and retainer on the 'hours' basis — the same fact in both, the
+    // rate one hour bills at, so one column rather than two.
     hourlyRateCents: integer('hourly_rate_cents'),
     estimatedHours: real('estimated_hours'),
     notToExceedCents: integer('not_to_exceed_cents'),

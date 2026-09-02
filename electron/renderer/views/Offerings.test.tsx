@@ -249,15 +249,45 @@ describe('Offerings', () => {
     expect(screen.queryByRole('button', { name: /Retired Sprint/ })).toBeNull()
   })
 
-  it('archives an offering rather than offering to delete it', async () => {
+  it('archives an offering without deleting it — the two are separate controls', async () => {
     const { crm } = renderOfferings()
     await waitFor(() => expect(screen.getByText('Discovery Audit')).toBeTruthy())
 
-    // Nothing anywhere in the view deletes an offering.
-    expect(screen.queryByRole('button', { name: /Delete "Discovery Audit"/ })).toBeNull()
-
     fireEvent.click(screen.getByRole('button', { name: 'Archive "Discovery Audit"' }))
     await waitFor(() => expect(crm['offerings:archive']).toHaveBeenCalledWith({ id: 'o-audit' }))
+    // Archiving is not deleting: the row is still there, and nothing was
+    // removed on the way. This used to assert that no delete control existed
+    // at all; T-260902-09 added one, and what is worth keeping from the old
+    // assertion is that the two buttons do different things.
+    expect(crm['offerings:delete']).not.toHaveBeenCalled()
+  })
+
+  it('deleting an offering asks first, and says the engagements sold from it are kept', async () => {
+    const { crm } = renderOfferings()
+    await waitFor(() => expect(screen.getByText('Discovery Audit')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete "Discovery Audit"' }))
+
+    // The dialog, not the delete: nothing has been removed yet.
+    const dialog = await screen.findByRole('dialog', { name: /Delete Discovery Audit/ })
+    expect(crm['offerings:delete']).not.toHaveBeenCalled()
+    await waitFor(() => expect(crm['offerings:deleteImpact']).toHaveBeenCalledWith({ id: 'o-audit' }))
+
+    // And only then, on the second, explicit confirmation.
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Delete/ }))
+    await waitFor(() => expect(crm['offerings:delete']).toHaveBeenCalledWith({ id: 'o-audit', cascade: true }))
+  })
+
+  it('cancelling the delete dialog deletes nothing', async () => {
+    const { crm } = renderOfferings()
+    await waitFor(() => expect(screen.getByText('Discovery Audit')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete "Discovery Audit"' }))
+    const dialog = await screen.findByRole('dialog', { name: /Delete Discovery Audit/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(crm['offerings:delete']).not.toHaveBeenCalled()
   })
 
   it('duplicates an offering through the channel, letting the repository name the copy', async () => {

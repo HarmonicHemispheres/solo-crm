@@ -28,6 +28,8 @@ import {
 } from '../../../shared/offerings'
 import { NotFoundError, RefusalError } from './errors'
 import { boolToSql, parseInput } from './input'
+import type { DeletionImpact } from '../../../shared/deletion'
+import { impactOf, runCascade } from './cascade'
 import { refuseIfReferenced } from './referential-guard'
 import { type ConstraintHandler, NOT_NULL_HANDLER, PRIMARY_KEY_HANDLER, translateWriteError, UNIQUE_HANDLER } from './sqlite-errors'
 
@@ -706,6 +708,72 @@ export function archiveOffering(db: Database.Database, id: string): OfferingWith
   }
   db.prepare('UPDATE offerings SET active = ?, updated_at = ? WHERE id = ?').run(boolToSql(false), nowTimestamp(), id)
   return getOffering(db, id) as OfferingWithVersions
+}
+
+/**
+ * What deleting this offering would take with it (T-260902-09) — the counts
+ * the renderer's confirmation shows before it asks again with
+ * `cascade: true`. Derived from the same declarations `runCascade` deletes
+ * by, so the dialog and the delete cannot disagree (`cascade.ts`'s header).
+ */
+export function offeringDeleteImpact(db: Database.Database, id: string): DeletionImpact {
+  const row = getOfferingRow(db, id)
+  if (!row) {
+    throw new NotFoundError('Offering', id)
+  }
+  return impactOf(db, 'offering', id, row.name)
+}
+
+/**
+ * Removes an offering outright, with its price versions — as distinct from
+ * `archiveOffering` above, which takes it off the list and keeps every row.
+ *
+ * Archiving was the only thing this repository offered, and it is still the
+ * right default: an offering that has been *sold* is a piece of history, and
+ * a price list that forgets what things used to cost cannot answer why an
+ * engagement was priced the way it was. But it left no way to remove
+ * something typed by mistake, and an operator who wants a wrong row gone
+ * should not have to keep it forever behind an "archived" flag.
+ *
+ * An engagement sold from this offering is **never** deleted with it. It
+ * loses `offering_version_id` and keeps `agreed_rate_cents` — the snapshot
+ * it took at signature, which exists precisely so a signed deal does not
+ * depend on the catalogue still being there
+ * (`electron/shared/engagements.ts`'s header). The confirmation says so, in
+ * those words, because "the engagements stay" is the fact an operator needs
+ * before agreeing to this.
+ *
+ * `cascade` defaults to false and, with no cascade, this refuses exactly as
+ * every other delete in this directory does. There is nothing else to guard
+ * against: `offering_versions` is the only table with a foreign key at
+ * `offerings`, and engagements reach it one hop further on.
+ */
+export function deleteOffering(db: Database.Database, id: string, cascade = false): void {
+  const run = db.transaction(() => {
+    const offering = getOfferingRow(db, id)
+    if (!offering) {
+      throw new NotFoundError('Offering', id)
+    }
+
+    if (cascade) {
+      runCascade(db, 'offering', id)
+      return
+    }
+
+    refuseIfReferenced(db, id, [
+      {
+        table: 'offering_versions',
+        column: 'offering_id',
+        reason: 'versions',
+        describe: (count) =>
+          `Cannot delete "${offering.name}": it has ${count} price version${count === 1 ? '' : 's'}. ` +
+          'Deleting the offering removes them, and unlinks any engagement sold from it.'
+      }
+    ])
+
+    db.prepare('DELETE FROM offerings WHERE id = ?').run(id)
+  })
+  run()
 }
 
 /**

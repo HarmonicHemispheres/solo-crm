@@ -454,9 +454,9 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
     const insertEngagement = db.prepare(
       `INSERT INTO engagements
          (id, name, billing_company_id, client_company_id, offering_version_id, agreed_rate_cents, billing_model, status,
-          started_on, ends_on, renews_on, hours_included, contract_value_cents, hourly_rate_cents, estimated_hours,
-          not_to_exceed_cents, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          started_on, ends_on, renews_on, retainer_basis, monthly_amount_cents, hours_included, contract_value_cents,
+          hourly_rate_cents, estimated_hours, not_to_exceed_cents, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     for (const engagement of engagementsFixture) {
       insertEngagement.run(
@@ -476,6 +476,8 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
         shiftDateOnly(engagement.startedOn, offsetDays),
         shiftDateOnlyOrNull(engagement.endsOn, offsetDays),
         null,
+        engagement.retainerBasis,
+        engagement.monthlyAmountCents,
         engagement.hoursIncluded,
         engagement.contractValueCents,
         engagement.hourlyRateCents,

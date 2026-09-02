@@ -14,12 +14,15 @@ import {
   type ListEngagementsFilter,
   listEngagementsFilterSchema,
   type Milestone,
+  type RetainerBasis,
   type UpdateEngagementInput,
   updateEngagementInputSchema
 } from '../../../shared/engagements'
 import { NotFoundError, RefusalError } from './errors'
 import { parseInput, type ParseInputOptions } from './input'
 import { type ConstraintHandler, NOT_NULL_HANDLER, PRIMARY_KEY_HANDLER, translateWriteError, UNIQUE_HANDLER } from './sqlite-errors'
+import type { DeletionImpact } from '../../../shared/deletion'
+import { impactOf, runCascade } from './cascade'
 import { refuseIfReferenced } from './referential-guard'
 
 /**
@@ -49,6 +52,7 @@ export type {
   EngagementWithOffering,
   ListEngagementsFilter,
   Milestone,
+  RetainerBasis,
   UpdateEngagementInput
 }
 
@@ -157,6 +161,8 @@ const ALL_WRITABLE_COLUMNS = [
   { key: 'startedOn', column: 'started_on' },
   { key: 'endsOn', column: 'ends_on' },
   { key: 'renewsOn', column: 'renews_on' },
+  { key: 'retainerBasis', column: 'retainer_basis' },
+  { key: 'monthlyAmountCents', column: 'monthly_amount_cents' },
   { key: 'hoursIncluded', column: 'hours_included' },
   { key: 'contractValueCents', column: 'contract_value_cents' },
   { key: 'hourlyRateCents', column: 'hourly_rate_cents' },
@@ -185,8 +191,25 @@ const UPDATE_COMMON_COLUMNS = [
   { key: 'notes', column: 'notes' }
 ] as const satisfies ReadonlyArray<ColumnSpec<EngagementPatchKey>>
 
-/** The five model-specific columns, written together (with the non-matching four reset to `NULL`) whenever a patch changes `billingModel`. */
+/**
+ * The model-specific columns, written together (with the ones the new model
+ * does not name reset to `NULL`) whenever a patch changes `billingModel`.
+ *
+ * `retainerBasis` and `monthlyAmountCents` join them at migration 0008.
+ * They belong here and not in `UPDATE_COMMON_COLUMNS` for the reason the
+ * reset exists at all: switching a retainer to `fixed` must not leave a
+ * monthly fee and a basis sitting on a row that is now a fixed scope, where
+ * the revenue generator would still read them.
+ *
+ * `hourlyRateCents` is now shared by two models — T&M's rate and a
+ * retainer's, which are the same fact. That changes nothing here: this list
+ * is about which columns get NULLed on a model switch, and the answer for a
+ * shared column is the same as for a private one. Switching T&M -> retainer
+ * carries the rate over only if the patch names it, exactly as before.
+ */
 const MODEL_SPECIFIC_COLUMNS = [
+  { key: 'retainerBasis', column: 'retainer_basis' },
+  { key: 'monthlyAmountCents', column: 'monthly_amount_cents' },
   { key: 'hoursIncluded', column: 'hours_included' },
   { key: 'contractValueCents', column: 'contract_value_cents' },
   { key: 'hourlyRateCents', column: 'hourly_rate_cents' },
@@ -233,6 +256,8 @@ interface EngagementRow {
   readonly started_on: string
   readonly ends_on: string | null
   readonly renews_on: string | null
+  readonly retainer_basis: string | null
+  readonly monthly_amount_cents: number | null
   readonly hours_included: number | null
   readonly contract_value_cents: number | null
   readonly hourly_rate_cents: number | null
@@ -256,6 +281,8 @@ function mapEngagementRow(row: EngagementRow): Engagement {
     startedOn: row.started_on,
     endsOn: row.ends_on,
     renewsOn: row.renews_on,
+    retainerBasis: row.retainer_basis as RetainerBasis | null,
+    monthlyAmountCents: row.monthly_amount_cents,
     hoursIncluded: row.hours_included,
     contractValueCents: row.contract_value_cents,
     hourlyRateCents: row.hourly_rate_cents,
@@ -489,11 +516,39 @@ export function updateEngagement(db: Database.Database, id: string, patch: unkno
  * `revenue_lines.engagement_id`, `time_entries.engagement_id`,
  * `tasks.engagement_id`, `activity.engagement_id`.
  */
-export function deleteEngagement(db: Database.Database, id: string): void {
+/**
+ * `cascade` is the operator's second, explicit confirmation (T-260902-09):
+ * they were shown exactly what would go — `engagementDeleteImpact` below, which
+ * derives its counts from the same declarations `runCascade` deletes by —
+ * and said yes. It defaults to false, so every caller that does not opt in
+ * keeps the refusing behaviour this function has always had.
+ */
+
+/**
+ * What deleting this engagement would take with it — the counts the renderer's
+ * confirmation shows before it asks again with `cascade: true`
+ * (T-260902-09). Read-only, and derived from the same step declarations
+ * `runCascade` deletes by, so the dialog cannot promise one thing and the
+ * delete do another (`cascade.ts`'s header).
+ */
+export function engagementDeleteImpact(db: Database.Database, id: string): DeletionImpact {
+  const row = getEngagementRow(db, id)
+  if (!row) {
+    throw new NotFoundError('Engagement', id)
+  }
+  return impactOf(db, 'engagement', id, row.name)
+}
+
+export function deleteEngagement(db: Database.Database, id: string, cascade = false): void {
   const run = db.transaction(() => {
     const engagement = getEngagementRow(db, id)
     if (!engagement) {
       throw new NotFoundError('Engagement', id)
+    }
+
+    if (cascade) {
+      runCascade(db, 'engagement', id)
+      return
     }
 
     refuseIfReferenced(db, id, [

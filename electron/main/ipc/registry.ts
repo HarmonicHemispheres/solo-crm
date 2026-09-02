@@ -8,6 +8,7 @@ import {
   addAffiliation,
   createPerson,
   deletePerson,
+  personDeleteImpact,
   endAffiliation,
   getPerson,
   listPeople,
@@ -15,10 +16,18 @@ import {
   updateAffiliation,
   updatePerson
 } from '../db/repositories/people'
-import { createCompany, deleteCompany, getCompany, listCompanies, updateCompany } from '../db/repositories/companies'
+import {
+  companyDeleteImpact,
+  createCompany,
+  deleteCompany,
+  getCompany,
+  listCompanies,
+  updateCompany
+} from '../db/repositories/companies'
 import {
   createEngagement,
   deleteEngagement,
+  engagementDeleteImpact,
   getEngagementWithOffering,
   listEngagements,
   updateEngagement
@@ -27,11 +36,13 @@ import {
   archiveOffering,
   createOffering,
   createOfferingCategory,
+  deleteOffering,
   deleteOfferingCategory,
   duplicateOffering,
   getOffering,
   listOfferingCategories,
   listOfferings,
+  offeringDeleteImpact,
   updateOffering,
   updateOfferingCategory
 } from '../db/repositories/offerings'
@@ -275,11 +286,15 @@ export const registry = {
     ...CHANNEL_CONTRACTS['companies:update'],
     handler: ({ id, patch }) => runMutation(() => updateCompany(getDatabase(), id, patch))
   }),
+  'companies:deleteImpact': defineChannel({
+    ...CHANNEL_CONTRACTS['companies:deleteImpact'],
+    handler: ({ id }) => companyDeleteImpact(getDatabase(), id)
+  }),
   'companies:delete': defineChannel({
     ...CHANNEL_CONTRACTS['companies:delete'],
-    handler: ({ id }) =>
+    handler: ({ id, cascade }) =>
       runMutation(() => {
-        deleteCompany(getDatabase(), id)
+        deleteCompany(getDatabase(), id, cascade ?? false)
         return { id }
       })
   }),
@@ -304,11 +319,15 @@ export const registry = {
     ...CHANNEL_CONTRACTS['people:update'],
     handler: ({ id, patch }) => runMutation(() => updatePerson(getDatabase(), id, patch))
   }),
+  'people:deleteImpact': defineChannel({
+    ...CHANNEL_CONTRACTS['people:deleteImpact'],
+    handler: ({ id }) => personDeleteImpact(getDatabase(), id)
+  }),
   'people:delete': defineChannel({
     ...CHANNEL_CONTRACTS['people:delete'],
-    handler: ({ id }) =>
+    handler: ({ id, cascade }) =>
       runMutation(() => {
-        deletePerson(getDatabase(), id)
+        deletePerson(getDatabase(), id, cascade ?? false)
         return { id }
       })
   }),
@@ -349,11 +368,15 @@ export const registry = {
     ...CHANNEL_CONTRACTS['engagements:update'],
     handler: ({ id, patch }) => runMutation(() => updateEngagement(getDatabase(), id, patch))
   }),
+  'engagements:deleteImpact': defineChannel({
+    ...CHANNEL_CONTRACTS['engagements:deleteImpact'],
+    handler: ({ id }) => engagementDeleteImpact(getDatabase(), id)
+  }),
   'engagements:delete': defineChannel({
     ...CHANNEL_CONTRACTS['engagements:delete'],
-    handler: ({ id }) =>
+    handler: ({ id, cascade }) =>
       runMutation(() => {
-        deleteEngagement(getDatabase(), id)
+        deleteEngagement(getDatabase(), id, cascade ?? false)
         return { id }
       })
   }),
@@ -461,6 +484,18 @@ export const registry = {
   'offerings:update': defineChannel({
     ...CHANNEL_CONTRACTS['offerings:update'],
     handler: ({ id, patch }) => runMutation(() => updateOffering(getDatabase(), id, patch))
+  }),
+  'offerings:deleteImpact': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:deleteImpact'],
+    handler: ({ id }) => offeringDeleteImpact(getDatabase(), id)
+  }),
+  'offerings:delete': defineChannel({
+    ...CHANNEL_CONTRACTS['offerings:delete'],
+    handler: ({ id, cascade }) =>
+      runMutation(() => {
+        deleteOffering(getDatabase(), id, cascade ?? false)
+        return { id }
+      })
   }),
   'offerings:archive': defineChannel({
     ...CHANNEL_CONTRACTS['offerings:archive'],

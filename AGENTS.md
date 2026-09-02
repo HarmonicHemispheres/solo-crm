@@ -83,6 +83,13 @@ Things that are silently wrong rather than loudly broken:
   arrays and per-model branching computed live off engagement columns. Porting
   that would undo the decision that every revenue question is one
   `SUM … GROUP BY` (task plan G5, the highest-risk carry-over in the project).
+  ADR-003 names two things this does *not* forbid, and the first is easy to
+  over-apply: **one engagement's own headline price**, read from its own
+  columns, is a statement of its terms and not an aggregation — the
+  engagement cards state one each (T-260902-10). The line is aggregation and
+  attribution. The moment a number sums across engagements, or attributes to
+  a month, a payer or a model, it comes from `revenue_lines`. An annualised
+  figure counts: `× 12` is an attribution to periods.
 - **Every table gets a UUID primary key and `created_at` / `updated_at`** —
   except tables keyed by natural identity (`settings` by key, `favicons` by
   host), see

@@ -28,6 +28,8 @@ const STUB_ENGAGEMENT_ROW: EngagementWithOffering = {
   startedOn: '2026-08-28',
   endsOn: null,
   renewsOn: null,
+  retainerBasis: null,
+  monthlyAmountCents: null,
   hoursIncluded: null,
   contractValueCents: null,
   hourlyRateCents: null,
@@ -165,7 +167,13 @@ function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: strin
   return { ...STUB_ENGAGEMENT_ROW, ...overrides }
 }
 
-/** A retainer with a value in every shared column, plus an `agreedRateCents` the form must never send back. */
+/**
+ * A retainer with a value in every shared column, plus an `agreedRateCents`
+ * the form must never send back. On the `'hours'` basis (migration 0008), so
+ * the edit tests below read a retainer that is actually priced — 12 hours at
+ * $150 — rather than one carrying an allowance and no rate, which is the
+ * state this whole change exists to make unreachable.
+ */
 const RETAINER = makeEngagement({
   id: 'eng-retainer',
   name: 'Advisory retainer',
@@ -175,8 +183,25 @@ const RETAINER = makeEngagement({
   status: 'pending',
   startedOn: '2026-02-01',
   endsOn: '2026-12-31',
+  retainerBasis: 'hours',
+  monthlyAmountCents: null,
   hoursIncluded: 12,
+  hourlyRateCents: 15_000,
   agreedRateCents: 15_000
+})
+
+/** The other basis: a flat monthly fee, with no hours and no rate at all. */
+const RETAINER_FLAT = makeEngagement({
+  id: 'eng-retainer-flat',
+  name: 'Monthly advisory',
+  billingCompanyId: 'billing-co',
+  clientCompanyId: 'client-co',
+  billingModel: 'retainer',
+  status: 'active',
+  startedOn: '2026-02-01',
+  endsOn: null,
+  retainerBasis: 'amount',
+  monthlyAmountCents: 350_000
 })
 
 /** The second billing model the acceptance list asks for, with all three of T&M's own columns populated. */
@@ -231,22 +256,37 @@ describe('EngagementSheet', () => {
     renderSheet(vi.fn(), { 'engagements:create': create })
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Fixed scope SOW' } })
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '12' } })
+    // A retainer's default basis is a flat monthly amount (migration 0008);
+    // the hours pair is behind the other chip.
+    fireEvent.click(screen.getByRole('button', { name: 'Hourly' }))
+    fireEvent.change(screen.getByLabelText('Hours per month'), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText('Hourly rate'), { target: { value: '150' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
     const payload = create.mock.calls[0][0] as Record<string, unknown>
     expect(payload.name).toBe('Fixed scope SOW')
     expect(payload.billingModel).toBe('retainer')
+    expect(payload.retainerBasis).toBe('hours')
     expect(payload.hoursIncluded).toBe(12)
+    expect(payload.hourlyRateCents).toBe(15_000)
+    // The other basis's column travels as null rather than being omitted —
+    // see `readModelPart`'s comment on why both pairs are sent.
+    expect(payload.monthlyAmountCents).toBeNull()
     expect(payload.status).toBe('active')
     expect(payload.billingCompanyId).toBeNull()
     expect(payload.clientCompanyId).toBeNull()
     expect(payload.endsOn).toBeNull()
     expect(typeof payload.startedOn).toBe('string')
     // Only this model's own columns — no stray fixed/tm keys.
+    //
+    // `hourlyRateCents` is deliberately absent from this list since
+    // migration 0008: it is no longer T&M's private column but the rate an
+    // hour bills at, which an hourly retainer has too. The keys below are
+    // the ones a retainer genuinely has no business carrying.
     expect(payload).not.toHaveProperty('contractValueCents')
-    expect(payload).not.toHaveProperty('hourlyRateCents')
+    expect(payload).not.toHaveProperty('estimatedHours')
+    expect(payload).not.toHaveProperty('notToExceedCents')
   })
 
   it('"Work is for" mirrors "Billed to" until edited, then holds its own value even when "Billed to" changes again', async () => {
@@ -269,7 +309,7 @@ describe('EngagementSheet', () => {
     expect(workIsFor.value).toBe('client-co')
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Split billing' } })
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '3500' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
@@ -289,7 +329,7 @@ describe('EngagementSheet', () => {
     fireEvent.change(billedTo, { target: { value: 'billing-co' } })
     fireEvent.change(workIsFor, { target: { value: 'client-co' } })
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Split billing' } })
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '3500' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
@@ -311,9 +351,11 @@ describe('EngagementSheet', () => {
     fireEvent.change(screen.getByLabelText('Starts'), { target: { value: '2026-03-01' } })
 
     // Retainer's field is visible by default; switch away from it.
-    expect(screen.getByLabelText('Hours included')).toBeTruthy()
+    expect(screen.getByLabelText('Amount per month')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Fixed scope' }))
-    expect(screen.queryByLabelText('Hours included')).toBeNull()
+    expect(screen.queryByLabelText('Amount per month')).toBeNull()
+    // The basis chips are the retainer's own control and go with it.
+    expect(screen.queryByRole('group', { name: 'Retainer basis' })).toBeNull()
     fireEvent.change(screen.getByLabelText('Contract value'), { target: { value: '28500' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'T&M' }))
@@ -352,7 +394,7 @@ describe('EngagementSheet', () => {
     renderSheet(vi.fn(), { 'engagements:create': create })
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Rolling retainer' } })
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '3500' } })
     // "Ends" is never touched — stays at its default empty value.
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
@@ -366,14 +408,14 @@ describe('EngagementSheet', () => {
     const create = vi.fn()
     const { onClose } = renderSheet(vi.fn(), { 'engagements:create': create })
 
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '3500' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toMatch(/name/i)
     expect(create).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
-    expect((screen.getByLabelText('Hours included') as HTMLInputElement).value).toBe('10')
+    expect((screen.getByLabelText('Amount per month') as HTMLInputElement).value).toBe('3500')
   })
 
   it('renders an invalid amount against the Contract value field, named as the user sees it', async () => {
@@ -416,7 +458,7 @@ describe('EngagementSheet', () => {
     renderSheet(vi.fn(), { 'engagements:create': create })
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Refused' } })
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '3500' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     const alert = await screen.findByRole('alert')
@@ -515,13 +557,49 @@ describe('EngagementSheet — edit mode (T-260901-10)', () => {
     expect(workIsFor.value).toBe('client-co')
     expect((screen.getByLabelText('Starts') as HTMLInputElement).value).toBe('2026-02-01')
     expect((screen.getByLabelText('Ends') as HTMLInputElement).value).toBe('2026-12-31')
-    expect((screen.getByLabelText('Hours included') as HTMLInputElement).value).toBe('12')
-    // The two chip groups carry their selection through aria-pressed.
+    expect((screen.getByLabelText('Hours per month') as HTMLInputElement).value).toBe('12')
+    expect((screen.getByLabelText('Hourly rate') as HTMLInputElement).value).toBe('150.00')
+    // The three chip groups carry their selection through aria-pressed —
+    // including the basis, which is read off the record rather than defaulted.
     expect(screen.getByRole('button', { name: 'Retainer', pressed: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Hourly', pressed: true })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Pending', pressed: true })).toBeTruthy()
-    // The other models' columns are not rendered at all for this model.
+    // The other models' columns are not rendered at all for this model, and
+    // neither is the basis this retainer is not on.
     expect(screen.queryByLabelText('Contract value')).toBeNull()
+    expect(screen.queryByLabelText('Amount per month')).toBeNull()
+  })
+
+  it('populates a flat-amount retainer from its own basis, showing the fee and not the hours pair', async () => {
+    await renderEditSheet(RETAINER_FLAT)
+    await companySelects()
+
+    expect(screen.getByRole('button', { name: 'Flat amount', pressed: true })).toBeTruthy()
+    expect((screen.getByLabelText('Amount per month') as HTMLInputElement).value).toBe('3500.00')
+    expect(screen.queryByLabelText('Hours per month')).toBeNull()
     expect(screen.queryByLabelText('Hourly rate')).toBeNull()
+  })
+
+  it('switching a retainer from hourly to a flat fee sends the basis, and keeps the hours it had', async () => {
+    // The reason both pairs travel: a basis switch is a change of which pair
+    // prices the retainer, not an instruction to forget the other one. An
+    // operator who flips to a flat fee and back must find their hours where
+    // they left them, which only holds if the unswitched pair is still sent.
+    const update = stubUpdate()
+    await renderEditSheet(RETAINER, { 'engagements:update': update })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Flat amount' }))
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '1800' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(patchFrom(update)).toEqual({
+      billingModel: 'retainer',
+      retainerBasis: 'amount',
+      monthlyAmountCents: 180_000,
+      hoursIncluded: 12,
+      hourlyRateCents: 15_000
+    })
   })
 
   it("populates a T&M record's three model-specific columns, amounts back in the form they were typed in", async () => {
@@ -591,14 +669,21 @@ describe('EngagementSheet — edit mode (T-260901-10)', () => {
     const update = stubUpdate()
     await renderEditSheet(RETAINER, { 'engagements:update': update })
 
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Hours per month'), { target: { value: '20' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
     // Without `billingModel`, `{ hoursIncluded: 20 }` matches no branch of
     // `updateEngagementInputSchema` — the common-patch branch is .strict()
-    // and holds no model-specific key.
-    expect(patchFrom(update)).toEqual({ billingModel: 'retainer', hoursIncluded: 20 })
+    // and holds no model-specific key. The retainer's other columns travel
+    // with it for the same reason they do on create.
+    expect(patchFrom(update)).toEqual({
+      billingModel: 'retainer',
+      retainerBasis: 'hours',
+      monthlyAmountCents: null,
+      hoursIncluded: 20,
+      hourlyRateCents: 15_000
+    })
   })
 
   it('clears a date to NULL rather than an empty string when the user empties it', async () => {

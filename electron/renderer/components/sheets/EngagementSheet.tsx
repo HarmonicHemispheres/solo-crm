@@ -12,11 +12,13 @@ import { centsToDecimalString, decimalStringToCents } from '../../../shared/form
 import {
   BILLING_MODELS,
   ENGAGEMENT_STATUSES,
+  RETAINER_BASES,
   type BillingModel,
   type CreateEngagementInput,
   type Engagement,
   type EngagementStatus,
   type EngagementWithOffering,
+  type RetainerBasis,
   type UpdateEngagementInput
 } from '../../../shared/engagements'
 import type { OfferingListItem, OfferingUnit } from '../../../shared/offerings'
@@ -30,6 +32,18 @@ const BILLING_MODEL_LABELS: Record<BillingModel, string> = {
   none: 'None'
 }
 const BILLING_MODEL_OPTIONS = BILLING_MODELS.map((model) => ({ value: model, label: BILLING_MODEL_LABELS[model] }))
+
+/**
+ * How a retainer is priced (migration 0008). Until then the retainer branch
+ * of this form offered one field - "Hours included" - and no way at all to
+ * say what the client is invoiced, which is most of what a retainer is.
+ * Reported by the user: "we can set the hours but not the rate."
+ */
+const RETAINER_BASIS_LABELS: Record<RetainerBasis, string> = {
+  amount: 'Flat amount',
+  hours: 'Hourly'
+}
+const RETAINER_BASIS_OPTIONS = RETAINER_BASES.map((basis) => ({ value: basis, label: RETAINER_BASIS_LABELS[basis] }))
 
 /** `lost` (G3) is deliberately present — `FORMS.engagement`'s own status `<select>` predates that decision and omits it (this task's Risks). */
 const STATUS_LABELS: Record<EngagementStatus, string> = {
@@ -62,6 +76,32 @@ function parseCents(raw: string, field: string): number | null {
   } catch {
     throw new Error(`${field}: "${raw}" is not a valid amount`)
   }
+}
+
+/**
+ * `10` hours at `165` reads back as the monthly figure they come to, and
+ * anything not yet a usable pair reads as a prompt rather than as `$NaN`.
+ *
+ * Display only. Nothing here is stored, and the forecast this implies is
+ * generated in main from the two columns themselves, never from this string
+ * - ADR-003 keeps every revenue figure in `revenue_lines`. It is on screen
+ * because a retainer priced this way is *agreed* as a monthly number, and
+ * the operator should not have to do the multiplication to check the two
+ * fields say what they meant.
+ */
+function retainerMonthlyPreview(hoursRaw: string, rateRaw: string): string {
+  const PROMPT = 'Enter hours and a rate to see the monthly amount.'
+  const hours = Number(hoursRaw.trim())
+  if (!hoursRaw.trim() || !rateRaw.trim() || !Number.isFinite(hours) || hours < 0) return PROMPT
+  let rateCents: number
+  try {
+    rateCents = decimalStringToCents(rateRaw.trim())
+  } catch {
+    return PROMPT
+  }
+  // Rounded to the cent: a fractional hour at an odd rate lands on a
+  // half-cent, and an invoice is a whole number of cents.
+  return `= ${'$'}${centsToDecimalString(Math.round(hours * rateCents))} / month`
 }
 
 /** The inverse of `parseHours` — a stored column back into what its input shows. `null` is an empty field, never a `"0"` the user did not type. */
@@ -114,7 +154,9 @@ const FIELD_LABELS = {
   clientCompanyId: 'Work is for',
   startedOn: 'Starts',
   endsOn: 'Ends',
-  hoursIncluded: 'Hours included',
+  retainerBasis: 'Retainer basis',
+  monthlyAmountCents: 'Amount per month',
+  hoursIncluded: 'Hours per month',
   contractValueCents: 'Contract value',
   hourlyRateCents: 'Hourly rate',
   estimatedHours: 'Estimated hours',
@@ -130,7 +172,13 @@ const FIELD_LABELS = {
  * carry a column without the model that explains it.
  */
 type ModelPart =
-  | { readonly billingModel: 'retainer'; readonly hoursIncluded: number | null }
+  | {
+      readonly billingModel: 'retainer'
+      readonly retainerBasis: RetainerBasis
+      readonly monthlyAmountCents: number | null
+      readonly hoursIncluded: number | null
+      readonly hourlyRateCents: number | null
+    }
   | { readonly billingModel: 'fixed'; readonly contractValueCents: number | null }
   | {
       readonly billingModel: 'tm'
@@ -168,7 +216,12 @@ type OfferingCreatePart = { readonly offeringVersionId: string; readonly agreedR
 function modelColumnsDiffer(part: ModelPart, engagement: Engagement): boolean {
   switch (part.billingModel) {
     case 'retainer':
-      return part.hoursIncluded !== engagement.hoursIncluded
+      return (
+        part.retainerBasis !== engagement.retainerBasis ||
+        part.monthlyAmountCents !== engagement.monthlyAmountCents ||
+        part.hoursIncluded !== engagement.hoursIncluded ||
+        part.hourlyRateCents !== engagement.hourlyRateCents
+      )
     case 'fixed':
       return part.contractValueCents !== engagement.contractValueCents
     case 'tm':
@@ -318,7 +371,17 @@ function EngagementForm({ engagement, onClose }: { engagement: EngagementWithOff
   const [status, setStatus] = useState<EngagementStatus>(engagement?.status ?? 'active')
   const [startedOn, setStartedOn] = useState(() => engagement?.startedOn ?? localToday())
   const [endsOn, setEndsOn] = useState(engagement?.endsOn ?? '')
+  // A retainer already on record keeps whatever basis it was given; one
+  // written before migration 0008 has none, and opening its form is the
+  // first chance anyone has had to say - so it starts on 'amount', the
+  // commoner shape, with an empty amount rather than a number nobody typed.
+  const [retainerBasis, setRetainerBasis] = useState<RetainerBasis>(engagement?.retainerBasis ?? 'amount')
+  const [monthlyAmount, setMonthlyAmount] = useState(() => centsToInput(engagement?.monthlyAmountCents ?? null))
   const [hoursIncluded, setHoursIncluded] = useState(() => hoursToInput(engagement?.hoursIncluded ?? null))
+  // The same column as T&M's rate below, and the same meaning, but its own
+  // piece of form state so switching billing model mid-edit cannot carry a
+  // retainer's rate into a T&M field or the other way.
+  const [retainerRate, setRetainerRate] = useState(() => centsToInput(engagement?.hourlyRateCents ?? null))
   const [contractValue, setContractValue] = useState(() => centsToInput(engagement?.contractValueCents ?? null))
   const [hourlyRate, setHourlyRate] = useState(() => centsToInput(engagement?.hourlyRateCents ?? null))
   const [estimatedHours, setEstimatedHours] = useState(() => hoursToInput(engagement?.estimatedHours ?? null))
@@ -378,7 +441,18 @@ function EngagementForm({ engagement, onClose }: { engagement: EngagementWithOff
   const readModelPart = (): ModelPart => {
     switch (billingModel) {
       case 'retainer':
-        return { billingModel, hoursIncluded: parseHours(hoursIncluded, 'hoursIncluded') }
+        // Both bases' fields travel, whichever one is selected. Only one pair
+        // is ever *shown*, but a retainer switched from hourly to a flat fee
+        // and back should still have its hours where it left them - the
+        // basis is what says which pair is live, which is exactly why it is
+        // stored rather than inferred from which columns are non-null.
+        return {
+          billingModel,
+          retainerBasis,
+          monthlyAmountCents: parseCents(monthlyAmount, 'monthlyAmountCents'),
+          hoursIncluded: parseHours(hoursIncluded, 'hoursIncluded'),
+          hourlyRateCents: parseCents(retainerRate, 'hourlyRateCents')
+        }
       case 'fixed':
         return { billingModel, contractValueCents: parseCents(contractValue, 'contractValueCents') }
       case 'tm':
@@ -561,14 +635,41 @@ function EngagementForm({ engagement, onClose }: { engagement: EngagementWithOff
         </div>
         <ChipField label="Billing model" value={billingModel} onChange={setBillingModel} options={BILLING_MODEL_OPTIONS} />
         {billingModel === 'retainer' && (
-          <Field label="Hours included" error={errorFor('hoursIncluded')}>
-            <input
-              className="inp"
-              value={hoursIncluded}
-              onChange={(event) => setHoursIncluded(event.target.value)}
-              placeholder="12"
-            />
-          </Field>
+          <>
+            <ChipField label="Retainer basis" value={retainerBasis} onChange={setRetainerBasis} options={RETAINER_BASIS_OPTIONS} />
+            {retainerBasis === 'amount' ? (
+              <Field label="Amount per month" error={errorFor('monthlyAmountCents')}>
+                <input
+                  className="inp"
+                  value={monthlyAmount}
+                  onChange={(event) => setMonthlyAmount(event.target.value)}
+                  placeholder="3500"
+                />
+              </Field>
+            ) : (
+              <>
+                <div className="two">
+                  <Field label="Hours per month" error={errorFor('hoursIncluded')}>
+                    <input
+                      className="inp"
+                      value={hoursIncluded}
+                      onChange={(event) => setHoursIncluded(event.target.value)}
+                      placeholder="10"
+                    />
+                  </Field>
+                  <Field label="Hourly rate" error={errorFor('hourlyRateCents')}>
+                    <input
+                      className="inp"
+                      value={retainerRate}
+                      onChange={(event) => setRetainerRate(event.target.value)}
+                      placeholder="165"
+                    />
+                  </Field>
+                </div>
+                <div className="meta">{retainerMonthlyPreview(hoursIncluded, retainerRate)}</div>
+              </>
+            )}
+          </>
         )}
         {billingModel === 'fixed' && (
           <Field label="Contract value" error={errorFor('contractValueCents')}>

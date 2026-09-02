@@ -1,12 +1,12 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { Card } from '../components/primitives/Card'
 import { ModelTag, type BillingModel as ModelTagBillingModel } from '../components/primitives/ModelTag'
-import { Tag } from '../components/primitives/Tag'
 import { Button } from '../components/primitives/Button'
 import { IconButton } from '../components/primitives/IconButton'
+import { ConfirmDelete } from '../components/primitives/ConfirmDelete'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
 import { useLayerManager } from '../components/shell/layer-manager-context'
@@ -150,91 +150,149 @@ function CompanyNameLink({ id, companiesById }: { id: string | null; companiesBy
   return <Link to={`/company/${id}`}>{companiesById.get(id)?.name ?? id}</Link>
 }
 
-/** `.tag` in its default (uncoloured) variant — a small, quiet marker rather
- * than a status-like colour, since it isn't reporting a problem, only that
- * this particular number isn't real yet. Text stays the single word
- * `"Provisional"` (this task's Acceptance: asserted by a test so a later
- * styling pass can't drop it) with the reason in `title` instead of more
- * on-card text — ui-design.md's "spend text sparingly". */
-function ProvisionalMark() {
-  return <Tag title="No time entries logged yet — hours become real once the timelog import (P4-05) lands">Provisional</Tag>
+/**
+ * What an engagement is worth, on its own card.
+ *
+ * This replaces the hours bars that stood here (T-260902-10). Those read
+ * "0 of 10 hrs this month" and "0 of ~18 hrs", with the 0 hardcoded and a
+ * "Provisional" tag explaining that real hours arrive with a timelog import
+ * (P4-05). The operator's verdict on that: "there's no way to book hours —
+ * that's also not the job of this app. We're supposed to track our
+ * engagements and forecast what revenue that will bring in." Which is right:
+ * a permanent 0 out of N is not a fact about the engagement, it is the app
+ * describing a feature it does not have, on every card, forever.
+ *
+ * **What is legal to show here, and what is not.** ADR-003 puts every
+ * revenue figure through `revenue_lines` — and names two explicit
+ * exceptions, of which the first is this one: "a single engagement's own
+ * headline price — §6.4's card rendering '$6,500 / mo', '$18,000' or
+ * '$175 / hr' ... It states the engagement's terms; it does not aggregate."
+ * That is exactly what these lines are, read from the engagement's own
+ * columns and no one else's.
+ *
+ * So there is deliberately **no annualised figure** here, and no total across
+ * engagements. "$3,500/mo × 12 = $42,000/yr" is a projection over months,
+ * which is an aggregation and an attribution to periods — the moment a
+ * number does that it belongs to `revenue_lines` and the generator that
+ * writes it (P3-05, scoped as T-260902-03). The Revenue view is where those
+ * live; this is a card stating terms.
+ *
+ * The hours × rate product for a retainer is the same species as the rest:
+ * one engagement's monthly price, from two of its own columns. The
+ * engagement sheet shows the identical figure while it is being typed.
+ */
+
+/** `$3,500` — money as this app writes it everywhere else (`centsToDecimalString`, no locale grouping; that is P2-01's). */
+function money(cents: number): string {
+  return `$${centsToDecimalString(cents)}`
 }
 
-// ---------------------------------------------------------------------------
-// Progress shapes — one per billing model, dispatched by
-// `EngagementProgress`. `equity` and `none` (and a null `billingModel`) fall
-// through to no shape at all.
-// ---------------------------------------------------------------------------
+/** A retainer's monthly price, from whichever pair its basis names. `null` when the terms are not complete enough to state one — an unpriced retainer says so rather than showing `$0.00`. */
+function retainerMonthly(engagement: Engagement): number | null {
+  if (engagement.retainerBasis === 'amount') return engagement.monthlyAmountCents
+  if (engagement.retainerBasis === 'hours') {
+    if (engagement.hoursIncluded == null || engagement.hourlyRateCents == null) return null
+    return Math.round(engagement.hoursIncluded * engagement.hourlyRateCents)
+  }
+  // No basis stated — every retainer written before migration 0008 (see its
+  // header). There is nothing true to put here.
+  return null
+}
 
-/** Shared shell for the two hours-derived shapes (retainer, T&M): a bar and
- * a meta line underneath it. The bar's fill is a flat CSS `width: 0` — see
- * this file's header — not a computed percentage, so there is no fictional
- * "in progress" width to un-notice once real hours land. */
-function HoursProgress({ children }: { children: ReactNode }) {
+/** The terms line: mono, quiet, no sentence — `.claude/rules/ui-design.md`'s "numbers take a unit, not a sentence". */
+function TermsLine({ children }: { children: ReactNode }) {
+  return <div className="meta eng-terms">{children}</div>
+}
+
+function RetainerTerms({ engagement }: { engagement: Engagement }) {
+  const monthly = retainerMonthly(engagement)
+  if (monthly == null) {
+    // Reachable two ways: a retainer from before the basis existed, and one
+    // whose basis is set but whose numbers are not. Both are the same thing
+    // to the operator — a retainer nobody has priced — and both are fixed in
+    // the same place.
+    return <TermsLine>No price set</TermsLine>
+  }
+  if (engagement.retainerBasis === 'hours') {
+    return (
+      <TermsLine>
+        <strong>{money(monthly)} / mo</strong>
+        <span className="eng-terms-basis">
+          {engagement.hoursIncluded} hrs × {money(engagement.hourlyRateCents ?? 0)}
+        </span>
+      </TermsLine>
+    )
+  }
   return (
-    <div>
-      <div className="bar">
-        <i />
-      </div>
-      <div className="meta prog-meta">{children}</div>
-    </div>
+    <TermsLine>
+      <strong>{money(monthly)} / mo</strong>
+    </TermsLine>
   )
 }
 
-function RetainerProgress({ hoursIncluded }: { hoursIncluded: number | null }) {
-  // No allowance on record — nothing to show a ratio against.
-  if (hoursIncluded == null) return null
-  return (
-    <HoursProgress>
-      <span>0 of {hoursIncluded} hrs this month</span>
-      <ProvisionalMark />
-    </HoursProgress>
-  )
-}
-
-function TmProgress({ estimatedHours, notToExceedCents }: { estimatedHours: number | null; notToExceedCents: number | null }) {
-  if (estimatedHours == null) return null
-  return (
-    <HoursProgress>
-      <span>0 of ~{estimatedHours} hrs</span>
-      <ProvisionalMark />
-      {notToExceedCents != null && <span>not to exceed ${centsToDecimalString(notToExceedCents)}</span>}
-    </HoursProgress>
-  )
-}
-
-/** Milestones aren't hours-derived — `completedAt` is set by hand on the
- * `milestones` table, not read from `time_entries` — so this shape carries
- * no `ProvisionalMark`. `milestones` comes back `[]` for every engagement
- * until the (out-of-scope, P3-09) milestone editor writes rows for it; that
- * renders as "0 of 0 milestones", a true count, not a placeholder. */
-function MilestoneProgress({ milestones }: { milestones: readonly Milestone[] }) {
-  const total = milestones.length
+function FixedTerms({ engagement, milestones }: { engagement: Engagement; milestones: readonly Milestone[] }) {
   const done = milestones.filter((milestone) => milestone.completedAt != null).length
   return (
     <div>
-      <div className="prog">
-        {milestones.map((milestone) => (
-          <i key={milestone.id} className={milestone.completedAt != null ? 'on' : undefined} title={milestone.name ?? undefined} />
-        ))}
-      </div>
-      <div className="meta prog-meta">
-        {done} of {total} milestone{total === 1 ? '' : 's'}
-      </div>
+      {/* The milestone pips stay — they are a true count of rows that exist,
+          not a stand-in for a feature (which is what the hours bar was). They
+          are simply absent when there are none, rather than drawing an empty
+          track and "0 of 0". */}
+      {milestones.length > 0 && (
+        <div className="prog">
+          {milestones.map((milestone) => (
+            <i key={milestone.id} className={milestone.completedAt != null ? 'on' : undefined} title={milestone.name ?? undefined} />
+          ))}
+        </div>
+      )}
+      <TermsLine>
+        {engagement.contractValueCents != null ? <strong>{money(engagement.contractValueCents)}</strong> : <span>No contract value set</span>}
+        {milestones.length > 0 && (
+          <span className="eng-terms-basis">
+            {done} of {milestones.length} milestone{milestones.length === 1 ? '' : 's'}
+          </span>
+        )}
+      </TermsLine>
     </div>
+  )
+}
+
+function TmTerms({ engagement }: { engagement: Engagement }) {
+  const { hourlyRateCents, estimatedHours, notToExceedCents } = engagement
+  if (hourlyRateCents == null && estimatedHours == null && notToExceedCents == null) {
+    return <TermsLine>No rate set</TermsLine>
+  }
+  // The estimate at the agreed rate — this engagement's own expected value,
+  // capped by its own not-to-exceed where it has one. Still one engagement's
+  // headline number (ADR-003), not a rollup.
+  const estimate = hourlyRateCents != null && estimatedHours != null ? Math.round(estimatedHours * hourlyRateCents) : null
+  const capped = estimate != null && notToExceedCents != null ? Math.min(estimate, notToExceedCents) : estimate
+  return (
+    <TermsLine>
+      {capped != null && <strong>{money(capped)}</strong>}
+      {hourlyRateCents != null && (
+        <span className="eng-terms-basis">
+          {estimatedHours != null ? `~${estimatedHours} hrs × ` : ''}
+          {money(hourlyRateCents)} / hr
+        </span>
+      )}
+      {notToExceedCents != null && <span className="eng-terms-basis">max {money(notToExceedCents)}</span>}
+    </TermsLine>
   )
 }
 
 function EngagementProgress({ engagement, milestones }: { engagement: Engagement; milestones: readonly Milestone[] }) {
   switch (engagement.billingModel) {
     case 'retainer':
-      return <RetainerProgress hoursIncluded={engagement.hoursIncluded} />
+      return <RetainerTerms engagement={engagement} />
     case 'fixed':
-      return <MilestoneProgress milestones={milestones} />
+      return <FixedTerms engagement={engagement} milestones={milestones} />
     case 'tm':
-      return <TmProgress estimatedHours={engagement.estimatedHours} notToExceedCents={engagement.notToExceedCents} />
+      return <TmTerms engagement={engagement} />
     default:
-      // 'equity', 'none', and a null billingModel all render nothing.
+      // 'equity', 'none', and a null billingModel all render nothing: there
+      // is no price to state, and inventing a line saying so on every equity
+      // deal is text spent for nothing.
       return null
   }
 }
@@ -246,18 +304,31 @@ function EngagementProgress({ engagement, milestones }: { engagement: Engagement
 const EMPTY_MILESTONES: readonly Milestone[] = []
 
 /** Opens the engagement sheet on an existing record. `trigger` is where focus returns when the sheet closes — the button that was clicked. */
+/** The delete affordance's glyph — a local copy for the same reason `PencilIcon` is one (this file's header on per-view visuals). */
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  )
+}
+
 type EditEngagement = (id: string, trigger: HTMLElement | null) => void
+/** Opens the delete confirmation on one engagement. The dialog itself is mounted once, by the view. */
+type DeleteEngagement = (engagement: { id: string; name: string }) => void
 
 function EngagementCardRow({
   engagement,
   companiesById,
   milestones,
-  onEdit
+  onEdit,
+  onDelete
 }: {
   engagement: EngagementWithOffering
   companiesById: Map<string, Company>
   milestones: readonly Milestone[]
   onEdit: EditEngagement
+  onDelete: DeleteEngagement
 }) {
   const showClient = engagement.clientCompanyId != null && engagement.clientCompanyId !== engagement.billingCompanyId
   return (
@@ -278,6 +349,12 @@ function EngagementCardRow({
         <div className="eng-actions">
           <IconButton aria-label={`Edit "${engagement.name}"`} onClick={(event) => onEdit(engagement.id, event.currentTarget)}>
             <PencilIcon />
+          </IconButton>
+          <IconButton
+            aria-label={`Delete "${engagement.name}"`}
+            onClick={() => onDelete({ id: engagement.id, name: engagement.name })}
+          >
+            <TrashIcon />
           </IconButton>
         </div>
       </div>
@@ -320,12 +397,14 @@ function StatusCard({
   group,
   companiesById,
   milestonesByEngagementId,
-  onEdit
+  onEdit,
+  onDelete
 }: {
   group: StatusGroup
   companiesById: Map<string, Company>
   milestonesByEngagementId: Map<string, readonly Milestone[]>
   onEdit: EditEngagement
+  onDelete: DeleteEngagement
 }) {
   return (
     <Card>
@@ -337,6 +416,7 @@ function StatusCard({
           companiesById={companiesById}
           milestones={engagement.billingModel === 'fixed' ? (milestonesByEngagementId.get(engagement.id) ?? EMPTY_MILESTONES) : EMPTY_MILESTONES}
           onEdit={onEdit}
+          onDelete={onDelete}
         />
       ))}
     </Card>
@@ -348,6 +428,10 @@ function StatusCard({
 export function Engagements() {
   const { openSheet, editSheet } = useLayerManager()
   const handleEdit: EditEngagement = (id, trigger) => editSheet('engagement', id, trigger)
+  // One dialog for the whole view, holding whichever engagement asked for
+  // it — rather than one mounted per row, which would put a modal's worth of
+  // state behind every card on the page.
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
 
   const engagementsQuery = useQuery({ queryKey: queryKeys.engagements.list(), queryFn: ipcQueryFn('engagements:list') })
   const companiesQuery = useQuery({ queryKey: queryKeys.companies.list(), queryFn: ipcQueryFn('companies:list') })
@@ -448,9 +532,17 @@ export function Engagements() {
             companiesById={companiesById}
             milestonesByEngagementId={milestonesByEngagementId}
             onEdit={handleEdit}
+            onDelete={setDeleting}
           />
         ))}
       </div>
+      {/* One dialog for the view, mounted only while a row has asked for it
+          — see `deleting`'s own comment. No `onDeleted`: this list is where
+          the operator already is, and the delete's invalidation removes the
+          card from under them. */}
+      {deleting && (
+        <ConfirmDelete entity="engagement" id={deleting.id} name={deleting.name} onClose={() => setDeleting(null)} />
+      )}
     </div>
   )
 }

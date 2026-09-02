@@ -39,6 +39,10 @@ a scan-and-fix pass.
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260902-11](T-260902-11-sheet-drag-close.md) | A press that starts inside a sheet and ends on the scrim must not close it | 🎨 ui | | — |
+| ● done | [T-260902-10](T-260902-10-engagement-terms.md) | An engagement card states what it is worth, instead of hours nobody can book | 🎨 ui | | — |
+| ● done | [T-260902-09](T-260902-09-deletes.md) | Delete a company, person, engagement or offering, after being shown what goes with it | 🗄 data | | — |
+| ● done | [T-260902-08](T-260902-08-retainer-basis.md) | A retainer says what it is worth per month — a flat amount, or hours at a rate | 🗄 data | | — |
 | ● done | [T-260902-07](T-260902-07-preload-carries-the-schema-layer.md) | Stop the sandboxed preload bundling zod and every entity schema to read a list of channel names | 📦 build | | — |
 | ● done | [T-260901-30](T-260901-30-shared-detail-header-styles.md) | Give the detail-page header one stylesheet instead of two copies that must be edited in step | 🎨 ui | | — |
 | ● done | [T-260901-27](T-260901-27-one-cadence-computation.md) | Compute a company's cadence state in one place, so the grid, the detail page and Today agree | 🎨 ui | | — |
@@ -121,3 +125,25 @@ oversights:
   ADR-008's codes are append-only, so adding one is legal — but it is a
   migration plus triggers plus a palette result kind, which is a task.
 - **T-260901-31**, above.
+
+## The 2026-09-02 report
+
+Four issues reported against the 0.6.2 build, all four closed the same day:
+the edit form vanishing (T-260902-11), no way to delete anything
+(T-260902-09), an engagement card claiming hours nobody can book
+(T-260902-10), and a retainer that could record an allowance but not a price
+(T-260902-08).
+
+Two of them turned out to be bigger than reported. The vanishing form was
+`Sheet` itself, not the engagement sheet — every form in the app lost unsaved
+edits to a text-selection drag. And "we can't delete" was not a missing
+button: three delete channels had existed since August with nothing calling
+them, and they refused against blockers the app gave no way to clear. That
+one needed a decision, ADR-017.
+
+**The forecast is deliberately not finished here.** T-260902-10 puts each
+engagement's own price on its card, which ADR-003 explicitly permits. An
+annualised figure or a total across engagements is an aggregation, which
+belongs to `revenue_lines` and the generator that writes it — T-260902-03,
+still open below, followed by -04 to -06. Building it there is also what
+fills the Revenue page, which is the same feature seen from the other end.

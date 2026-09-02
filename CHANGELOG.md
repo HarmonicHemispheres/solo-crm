@@ -5,6 +5,26 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.3
+
+- 🐛 **Forms stop vanishing while you edit them** — selecting the text in a
+  field and letting go outside the panel closed it and threw away everything
+  typed. It affected every form in the app and was worst when editing, which
+  is when you drag across a value to replace it.
+- ✨ **Delete a company, person, engagement or offering** — none of them could
+  be removed before. The confirmation lists exactly what goes with the record
+  and, separately, what is kept and merely unlinked: another company that
+  billed through this one stays a company, and an engagement sold from a
+  deleted offering keeps the rate it was signed at.
+- ✨ **Retainers have a price** — either a flat amount per month, or an
+  allowance of hours at an hourly rate, which the form totals for you as you
+  type. Until now a retainer could record its hours and nothing else.
+- ⚡ **Engagement cards say what the work is worth** — the retainer's monthly
+  figure, the fixed scope's contract value, the T&M estimate at its agreed
+  rate capped by its not-to-exceed. They previously read "0 of 10 hrs this
+  month" against a figure that was always zero, because nothing in this app
+  books hours and nothing is going to.
+
 ## 0.6.2
 
 - 🐛 **A company is the same number of days late everywhere** — the companies

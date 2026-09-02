@@ -102,6 +102,8 @@ function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: strin
     startedOn: '2026-01-01',
     endsOn: null,
     renewsOn: null,
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: null,
     hourlyRateCents: null,

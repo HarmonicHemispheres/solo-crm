@@ -22,6 +22,7 @@ import { Button } from '../components/primitives/Button'
 import { ModelTag, type BillingModel as ModelTagBillingModel } from '../components/primitives/ModelTag'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
+import { ConfirmDelete } from '../components/primitives/ConfirmDelete'
 import { DecayMeter } from '../components/primitives/DecayMeter'
 import { Toast } from '../components/primitives/Toast'
 import { QuickAdd } from '../components/primitives/QuickAdd'
@@ -924,7 +925,13 @@ function CompanyHeader({
   decay: Decay
 }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { editSheet } = useLayerManager()
+  // Local rather than a LayerManager layer: the confirmation is opened from
+  // this header, owns its own Escape (Sheet's default), and closing it
+  // returns here. Routing it through the layer stack would mean a new
+  // `LayerKind` and a `SheetKind` for a dialog that is not a form.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const accent = hue(company.name)
 
   // The one read that carries originals, one company at a time (ADR-015) —
@@ -1005,6 +1012,13 @@ function CompanyHeader({
           >
             Edit
           </Button>
+          {/* Ghost, not danger: this button only opens the question. The red
+              one is inside the dialog, on the control that actually deletes
+              — a destructive-looking button in a header is a button people
+              learn to click past. */}
+          <Button variant="ghost" aria-label={`Delete ${company.name}`} onClick={() => setConfirmingDelete(true)}>
+            Delete
+          </Button>
           {COMPANY_IMAGE_SLOTS.map((slot) => (
             <ImageSlotControls
               key={slot}
@@ -1016,6 +1030,18 @@ function CompanyHeader({
           ))}
         </div>
       </div>
+      {confirmingDelete && (
+        <ConfirmDelete
+          entity="company"
+          id={company.id}
+          name={company.name}
+          onClose={() => setConfirmingDelete(false)}
+          // The page is about a record that no longer exists, so it cannot
+          // stay open on it. Back to the list, which the delete's own
+          // invalidation has already refreshed.
+          onDeleted={() => navigate('/companies')}
+        />
+      )}
     </div>
   )
 }

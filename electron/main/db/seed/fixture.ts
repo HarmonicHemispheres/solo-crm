@@ -138,6 +138,14 @@ export interface EngagementSeed {
   readonly startedOn: string
   /** YYYY-MM-DD, mockup-relative, or null (rolling — no agreed finish). */
   readonly endsOn: string | null
+  /**
+   * retainer only: 'amount' | 'hours' | null (migration 0008). The seed
+   * deliberately carries one of each so both shapes are visible in the app
+   * on a fresh profile, and so the revenue generator has both branches to
+   * exercise against real rows.
+   */
+  readonly retainerBasis: string | null
+  readonly monthlyAmountCents: number | null
   readonly hoursIncluded: number | null
   readonly contractValueCents: number | null
   readonly hourlyRateCents: number | null
@@ -534,6 +542,10 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'active',
     startedOn: '2026-03-01',
     endsOn: null,
+    // Sold from a `/mo` offering at $6,500, so it is a flat fee; the 20
+    // hours are what that fee is understood to buy, not what prices it.
+    retainerBasis: 'amount',
+    monthlyAmountCents: 650_000,
     hoursIncluded: 20,
     contractValueCents: null,
     hourlyRateCents: null,
@@ -553,9 +565,14 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'active',
     startedOn: '2025-11-01',
     endsOn: null,
+    // The other basis: 12 hours a month at $150, which comes to the same
+    // $1,800 the offering quotes — deliberately, so the two shapes can be
+    // compared on screen without the numbers themselves being the difference.
+    retainerBasis: 'hours',
+    monthlyAmountCents: null,
     hoursIncluded: 12,
     contractValueCents: null,
-    hourlyRateCents: null,
+    hourlyRateCents: 15_000, // $150/hr x 12 hrs = $1,800/mo
     estimatedHours: null,
     notToExceedCents: null,
     notes: null
@@ -572,6 +589,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'held',
     startedOn: '2026-04-01',
     endsOn: null,
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: null,
     hourlyRateCents: null,
@@ -591,6 +610,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'active',
     startedOn: '2026-02-10',
     endsOn: '2026-10-15',
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: 1_800_000,
     hourlyRateCents: null,
@@ -610,6 +631,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'delivered',
     startedOn: '2026-04-01',
     endsOn: '2026-05-20',
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: 420_000,
     hourlyRateCents: null,
@@ -629,6 +652,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'active',
     startedOn: '2026-05-01',
     endsOn: null,
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: null,
     hourlyRateCents: 16_500,
@@ -648,6 +673,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'delivered',
     startedOn: '2025-09-01',
     endsOn: '2026-03-15',
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: 2_200_000,
     hourlyRateCents: null,
@@ -667,6 +694,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'delivered',
     startedOn: '2026-01-10',
     endsOn: '2026-04-30',
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: 750_000,
     hourlyRateCents: null,
@@ -686,6 +715,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'proposed',
     startedOn: '2026-09-15',
     endsOn: '2027-01-31',
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: 2_850_000,
     hourlyRateCents: null,
@@ -705,6 +736,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'pending',
     startedOn: '2026-05-01',
     endsOn: '2027-06-30',
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: null,
     hourlyRateCents: null,
@@ -724,6 +757,8 @@ export const engagements: readonly EngagementSeed[] = [
     status: 'proposed',
     startedOn: '2026-09-01',
     endsOn: '2026-10-15',
+    retainerBasis: null,
+    monthlyAmountCents: null,
     hoursIncluded: null,
     contractValueCents: 450_000,
     hourlyRateCents: null,

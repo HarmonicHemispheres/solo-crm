@@ -119,7 +119,12 @@ describe('EngagementSheet against a real migrated database', () => {
     await waitFor(() => expect(billedTo.textContent).toContain('Rinvii'))
     fireEvent.change(billedTo, { target: { value: client.id } })
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Rinvii retainer' } })
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '12' } })
+    // A retainer defaults to a flat monthly amount (migration 0008); this one
+    // is priced the other way, so the basis is chosen before the pair it
+    // reveals can be filled in.
+    fireEvent.click(screen.getByRole('button', { name: 'Hourly' }))
+    fireEvent.change(screen.getByLabelText('Hours per month'), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText('Hourly rate'), { target: { value: '150' } })
     fireEvent.change(screen.getByLabelText('Starts'), { target: { value: '2026-03-01' } })
     // "Ends" is deliberately left empty — rolling work.
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
@@ -131,7 +136,8 @@ describe('EngagementSheet against a real migrated database', () => {
     const row = db
       .prepare(
         `SELECT name, billing_company_id, client_company_id, billing_model, status,
-                started_on, ends_on, hours_included, contract_value_cents, hourly_rate_cents
+                started_on, ends_on, retainer_basis, monthly_amount_cents, hours_included,
+                contract_value_cents, hourly_rate_cents
          FROM engagements`
       )
       .get() as Record<string, unknown>
@@ -144,10 +150,15 @@ describe('EngagementSheet against a real migrated database', () => {
     expect(row.started_on).toBe('2026-03-01')
     // The point of the whole file: a real NULL, not '' and not a sentinel.
     expect(row.ends_on).toBeNull()
+    // The hours basis, and both of the columns that price it.
+    expect(row.retainer_basis).toBe('hours')
     expect(row.hours_included).toBe(12)
+    expect(row.hourly_rate_cents).toBe(15_000)
+    // The other basis's column stays NULL — the basis says which pair is
+    // live, and a row carrying both would forecast twice.
+    expect(row.monthly_amount_cents).toBeNull()
     // Columns belonging to the models this one is not.
     expect(row.contract_value_cents).toBeNull()
-    expect(row.hourly_rate_cents).toBeNull()
 
     // And field for field as a caller reads it back over IPC.
     const id = (db.prepare('SELECT id FROM engagements').get() as { id: string }).id
@@ -161,9 +172,11 @@ describe('EngagementSheet against a real migrated database', () => {
       status: 'active',
       startedOn: '2026-03-01',
       endsOn: null,
+      retainerBasis: 'hours',
+      monthlyAmountCents: null,
       hoursIncluded: 12,
+      hourlyRateCents: 15_000,
       contractValueCents: null,
-      hourlyRateCents: null,
       estimatedHours: null,
       notToExceedCents: null
     })
@@ -178,19 +191,25 @@ describe('EngagementSheet against a real migrated database', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Fixed scope SOW' } })
     // Typed under the retainer model first: switching models must not carry
     // the previous model's column into the row.
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '40' } })
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '4000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Fixed scope' }))
     fireEvent.change(screen.getByLabelText('Contract value'), { target: { value: '28500.50' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     const row = db
-      .prepare('SELECT billing_model, contract_value_cents, hours_included, ends_on FROM engagements')
+      .prepare(
+        'SELECT billing_model, contract_value_cents, retainer_basis, monthly_amount_cents, hours_included, ends_on FROM engagements'
+      )
       .get() as Record<string, unknown>
     expect(row.billing_model).toBe('fixed')
     // CONVENTIONS.md: money is integer cents in the column, never a float.
     expect(row.contract_value_cents).toBe(2_850_050)
     expect(row.hours_included).toBeNull()
+    // The retainer's own two columns go the same way as its hours — a fixed
+    // scope that remembered a monthly fee would forecast as both.
+    expect(row.retainer_basis).toBeNull()
+    expect(row.monthly_amount_cents).toBeNull()
     expect(row.ends_on).toBeNull()
   })
 
@@ -209,7 +228,11 @@ describe('EngagementSheet against a real migrated database', () => {
     expect(soldAs.textContent).toContain('$3500.00/mo')
     fireEvent.change(soldAs, { target: { value: offering.id } })
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Q4 advisory' } })
-    fireEvent.change(screen.getByLabelText('Hours included'), { target: { value: '12' } })
+    // Left on the default flat-amount basis: this test is about
+    // `agreed_rate_cents` being copied from the offering, and the retainer's
+    // own price is beside the point. They are different columns for a reason
+    // — see electron/shared/engagements.ts on the snapshot.
+    fireEvent.change(screen.getByLabelText('Amount per month'), { target: { value: '3500' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))

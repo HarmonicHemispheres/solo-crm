@@ -45,6 +45,22 @@
   background: var(--surface-3);
 }
 
+/* T-260902-09's third variant — see Button.tsx on why the union opened.
+   `--red` on the surface rather than as a fill: a solid red button is the
+   loudest thing this palette can draw and would out-shout the sentence above
+   it that says what is being deleted. The border and the label carry the
+   colour, and the hover fills. */
+.btn-danger {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--red) 22%, transparent);
+  border-color: var(--red);
+}
+
 .btn:disabled {
   opacity: .5;
   cursor: default;

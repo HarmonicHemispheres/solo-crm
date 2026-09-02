@@ -279,13 +279,22 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         // it to a checked-in migration, so an *undeclared* table or a drifted
         // column list fails exactly as before.
         //
-        // Nothing but those two: strip every CREATE TABLE block, every CREATE
-        // INDEX line, and drizzle's own statement separators, and what remains
-        // must be blank. A dropped column or a renamed table shows up here.
+        // T-260902-08 widened it again, to `ALTER TABLE … ADD`. 0008 is the
+        // first migration to add *columns* to a table that already existed —
+        // everything before it added whole tables and indexes — so the delta
+        // legitimately carries `ADD` statements now. They are pinned to a
+        // checked-in migration below exactly as the tables and indexes are,
+        // so a column added to schema.ts with no migration behind it still
+        // fails here.
+        //
+        // Nothing but those three: strip every CREATE TABLE block, every
+        // CREATE INDEX line, every ALTER TABLE … ADD line, and drizzle's own
+        // statement separators, and what remains must be blank. A dropped
+        // column or a renamed table shows up here.
         const withoutTables = delta.replace(/^CREATE TABLE [\s\S]*?^\);$/gm, '')
         const residue = withoutTables
           .split('\n')
-          .filter((line) => !isIndexStatement(line))
+          .filter((line) => !isIndexStatement(line) && !isAddColumnStatement(line))
           .join('\n')
           .replace(/--> statement-breakpoint/g, '')
           .trim()
@@ -298,9 +307,12 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         // `company_images` and its unique index (T-260901-08). A future
         // schema.ts-derived migration joins this list; one that does not is
         // exactly the drift this test exists to catch.
-        const checkedIn = ['0004_fk_indexes_polymorphic_cascade.sql', '0005_branding.sql', '0007_company_images.sql'].map(
-          (file) => readFileSync(join(migrationsDir, file), 'utf-8')
-        )
+        const checkedIn = [
+          '0004_fk_indexes_polymorphic_cascade.sql',
+          '0005_branding.sql',
+          '0007_company_images.sql',
+          '0008_retainer_basis.sql'
+        ].map((file) => readFileSync(join(migrationsDir, file), 'utf-8'))
 
         const checkedInIndexes = checkedIn.flatMap(createIndexStatements)
         expect(createIndexStatements(delta).sort()).toEqual(checkedInIndexes.sort())
@@ -311,6 +323,15 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
         const checkedInTables = checkedIn.flatMap(createTableStatements)
         expect(createTableStatements(delta).sort()).toEqual(checkedInTables.sort())
         expect(checkedInTables.length).toBeGreaterThan(0)
+
+        // The same pinning for added columns (T-260902-08). `retainer_basis`
+        // declared in schema.ts with no `ALTER TABLE … ADD` in a checked-in
+        // migration would appear in the delta and not in this list, and fail
+        // — which is the whole point of the file being hand-written: 0008 is,
+        // and this is what proves it says what schema.ts says.
+        const checkedInAdds = checkedIn.flatMap(addColumnStatements)
+        expect(addColumnStatements(delta).sort()).toEqual(checkedInAdds.sort())
+        expect(checkedInAdds.length).toBeGreaterThan(0)
       } finally {
         rmSync(outDir, { recursive: true, force: true })
       }
@@ -329,6 +350,20 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
     65_000
   )
 })
+
+/** One `ALTER TABLE … ADD` statement per line, normalised the way `createIndexStatements` normalises its own — see T-260902-08 and 0008, the first migration to add a column rather than a table. */
+function isAddColumnStatement(line: string): boolean {
+  return /^ALTER TABLE .* ADD /.test(line.trim())
+}
+
+function addColumnStatements(sql: string): string[] {
+  return sql
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/--> statement-breakpoint/g, '').trim())
+    .filter(isAddColumnStatement)
+    .map((line) => line.replace(/;$/, ''))
+}
 
 function column(columns: ColumnInfo[], name: string): ColumnInfo | undefined {
   return columns.find((c) => c.name === name)

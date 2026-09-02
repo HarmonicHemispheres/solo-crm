@@ -138,3 +138,32 @@
   flex-wrap: wrap;
   margin-top: 6px;
 }
+
+/* ── the terms line (T-260902-10) ──
+ *
+ * Replaces the hours bar and its "Provisional" tag. The price is the one
+ * thing on the card that is a *number about money*, so it takes the
+ * emphasis; the basis behind it ("10 hrs x $165", "3 of 4 milestones") is
+ * metadata and reads as metadata — mono, small, --faint, per
+ * .claude/rules/ui-design.md. Nothing here is a sentence.
+ */
+.eng-terms {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+}
+
+.eng-terms strong {
+  font-weight: 600;
+  color: var(--papyrus);
+  font-variant-numeric: tabular-nums;
+}
+
+.eng-terms-basis {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}

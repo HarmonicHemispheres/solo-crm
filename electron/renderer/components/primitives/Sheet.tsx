@@ -27,11 +27,11 @@ export interface SheetProps {
  * `.scrim` + `.sheet` from the mockup — the modal used for every create
  * form and the "Log a touch" panel. Closes on Escape (unless
  * `closeOnEscape={false}` hands that to a central manager) and on a scrim
- * click that isn't a click inside the sheet, matching the mockup's own
- * listeners (it has no focus trap either — Tab can still reach the page
- * behind it, which is a known gap carried over rather than one this task
- * introduces). Opening moves focus onto the sheet so keyboard users don't
- * have to hunt for it.
+ * click that both began and ended on the scrim (see `handleScrimMouseDown`
+ * below), matching the mockup's own listeners (it has no focus trap either
+ * — Tab can still reach the page behind it, which is a known gap carried
+ * over rather than one this task introduces). Opening moves focus onto the
+ * sheet so keyboard users don't have to hunt for it.
  */
 export function Sheet({ open, onClose, title, titleMeta, children, footer, footerNote, closeOnEscape = true, 'aria-label': ariaLabel }: SheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -57,13 +57,44 @@ export function Sheet({ open, onClose, title, titleMeta, children, footer, foote
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [open, closeOnEscape])
 
+  /**
+   * Where the press that might become a scrim click started.
+   *
+   * `onClick` alone is not enough, and the gap is not theoretical — it was
+   * the single most destructive bug in the app. A `click` event fires on the
+   * nearest common ancestor of where the mouse went *down* and where it came
+   * *up*, so pressing inside a field and releasing anywhere outside the
+   * sheet — which is exactly what selecting the text already in a field
+   * looks like — lands a click whose `target` is the scrim itself. The old
+   * `event.target === event.currentTarget` test could not tell that apart
+   * from a deliberate click on the backdrop, so the sheet closed and every
+   * unsaved edit went with it.
+   *
+   * That made *editing* far worse than creating: on a create form the
+   * fields start empty and there is nothing to select, while editing an
+   * existing record begins by dragging across a value to replace it. The
+   * user's report was "whenever I try to edit, the form disappears", and
+   * this was why.
+   *
+   * So the press is recorded and the click only counts when both ends of it
+   * were on the backdrop. Note this deliberately does not close on
+   * mousedown: a press on the scrim that drags back *into* the sheet is
+   * not a dismissal either, and waiting for the click is what lets both
+   * cases be judged on the same event.
+   */
+  const pressStartedOnScrim = useRef(false)
+
   if (!open) return null
 
   return (
     <div
       className="scrim open"
+      onMouseDown={(event) => {
+        pressStartedOnScrim.current = event.target === event.currentTarget
+      }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
+        if (event.target === event.currentTarget && pressStartedOnScrim.current) onClose()
+        pressStartedOnScrim.current = false
       }}
     >
       <div className="sheet" role="dialog" aria-label={ariaLabel} aria-modal="true" tabIndex={-1} ref={sheetRef}>

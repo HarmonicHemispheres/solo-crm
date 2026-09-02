@@ -37,6 +37,21 @@ export type EngagementStatus = (typeof ENGAGEMENT_STATUSES)[number]
 export const BILLING_MODELS = ['retainer', 'fixed', 'tm', 'equity', 'none'] as const
 export type BillingModel = (typeof BILLING_MODELS)[number]
 
+/**
+ * How a retainer is priced (migration 0008) — `'amount'` is a flat fee per
+ * month (`monthlyAmountCents`), `'hours'` is an allowance at a rate
+ * (`hoursIncluded` x `hourlyRateCents`).
+ *
+ * Nullable on the row, and that null is meaningful rather than a default
+ * waiting to be filled: it is what every retainer written before this
+ * existed carries, and it says "nobody has stated how this is priced". The
+ * revenue generator (P3-05) emits nothing for such an engagement instead of
+ * assuming one basis, because assuming would put a figure in a forecast that
+ * no one entered. See the migration's header.
+ */
+export const RETAINER_BASES = ['amount', 'hours'] as const
+export type RetainerBasis = (typeof RETAINER_BASES)[number]
+
 /** An `engagements` row, camelCased, as read back from the database — every mutation channel's response shape, and the base the two reads extend (ADR-007 rule 5). */
 export const engagementSchema = z.object({
   id: z.string(),
@@ -51,11 +66,15 @@ export const engagementSchema = z.object({
   /** `null` means rolling — see this file's header. Never defaulted or coalesced. */
   endsOn: dateOnlySchema.nullable(),
   renewsOn: dateOnlySchema.nullable(),
-  /** retainer only; `null` on every other billing model. */
+  /** retainer only. Which of the two shapes below carries this retainer's price; `null` on every other model, and on a retainer nobody has priced yet. */
+  retainerBasis: z.enum(RETAINER_BASES).nullable(),
+  /** retainer on the `'amount'` basis; `null` otherwise. The fee invoiced each month. */
+  monthlyAmountCents: centsSchema.nullable(),
+  /** retainer only; `null` on every other billing model. The allowance, which prices the retainer only on the `'hours'` basis. */
   hoursIncluded: hoursSchema.nullable(),
   /** fixed only; `null` on every other billing model. */
   contractValueCents: centsSchema.nullable(),
-  /** tm only; `null` on every other billing model. */
+  /** tm, and retainer on the `'hours'` basis — the rate one hour bills at, which means the same thing in both. */
   hourlyRateCents: centsSchema.nullable(),
   /** tm only; `null` on every other billing model. */
   estimatedHours: hoursSchema.nullable(),
@@ -187,15 +206,36 @@ const OPTIONAL_COMMON_KEYS_ON_UPDATE = {
 // `contractValueCents`, not a silently-accepted flat shape.
 // ---------------------------------------------------------------------------
 
+/**
+ * Retainer's four own columns (migration 0008). Both bases are accepted on
+ * one branch rather than split into two discriminated variants: `billingModel`
+ * is already this union's discriminant and zod's `discriminatedUnion` takes
+ * exactly one, so a second discriminant would mean nesting a union inside a
+ * branch — and the pairing that would buy ("`'amount'` may not carry
+ * `hoursIncluded`") is not a rule worth enforcing at the wire. Switching a
+ * retainer from hours to a flat fee and back should not throw away the
+ * numbers on the other side of the switch; the *basis* says which pair is
+ * live, which is the whole reason it is stored.
+ */
 const retainerCreateSchema = z
   .object({
     ...engagementCommonFields,
     agreedRateCents: centsSchema.nullable(),
     billingModel: z.literal('retainer'),
-    hoursIncluded: hoursSchema.nullable()
+    retainerBasis: z.enum(RETAINER_BASES).nullable(),
+    monthlyAmountCents: centsSchema.nullable(),
+    hoursIncluded: hoursSchema.nullable(),
+    hourlyRateCents: centsSchema.nullable()
   })
   .strict()
-  .partial({ ...OPTIONAL_COMMON_KEYS_ON_CREATE, agreedRateCents: true, hoursIncluded: true })
+  .partial({
+    ...OPTIONAL_COMMON_KEYS_ON_CREATE,
+    agreedRateCents: true,
+    retainerBasis: true,
+    monthlyAmountCents: true,
+    hoursIncluded: true,
+    hourlyRateCents: true
+  })
 
 const fixedCreateSchema = z
   .object({
@@ -280,10 +320,20 @@ const retainerUpdateSchema = z
     ...engagementCommonFields,
     agreedRateCents: centsSchema.nullable(),
     billingModel: z.literal('retainer'),
-    hoursIncluded: hoursSchema.nullable()
+    retainerBasis: z.enum(RETAINER_BASES).nullable(),
+    monthlyAmountCents: centsSchema.nullable(),
+    hoursIncluded: hoursSchema.nullable(),
+    hourlyRateCents: centsSchema.nullable()
   })
   .strict()
-  .partial({ ...OPTIONAL_COMMON_KEYS_ON_UPDATE, agreedRateCents: true, hoursIncluded: true })
+  .partial({
+    ...OPTIONAL_COMMON_KEYS_ON_UPDATE,
+    agreedRateCents: true,
+    retainerBasis: true,
+    monthlyAmountCents: true,
+    hoursIncluded: true,
+    hourlyRateCents: true
+  })
 
 const fixedUpdateSchema = z
   .object({

@@ -53,6 +53,7 @@ export const CHANNEL_NAMES = [
   'companies:create',
   'companies:update',
   'companies:delete',
+  'companies:deleteImpact',
 
   // -- people and affiliations -------------------------------------------
   'people:list',
@@ -60,6 +61,7 @@ export const CHANNEL_NAMES = [
   'people:create',
   'people:update',
   'people:delete',
+  'people:deleteImpact',
   'people:addAffiliation',
   'people:updateAffiliation',
   'people:endAffiliation',
@@ -71,6 +73,7 @@ export const CHANNEL_NAMES = [
   'engagements:create',
   'engagements:update',
   'engagements:delete',
+  'engagements:deleteImpact',
 
   // -- milestones --------------------------------------------------------
   'milestones:list',
@@ -92,6 +95,8 @@ export const CHANNEL_NAMES = [
   'offerings:create',
   'offerings:update',
   'offerings:archive',
+  'offerings:delete',
+  'offerings:deleteImpact',
   'offerings:duplicate',
 
   // -- tasks -------------------------------------------------------------

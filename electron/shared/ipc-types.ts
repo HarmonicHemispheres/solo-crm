@@ -56,6 +56,7 @@ import {
   updatePersonInputSchema
 } from './people'
 import type { CHANNEL_NAMES as CHANNEL_NAMES_LIST } from './channel-names'
+import { deleteRequestSchema, deletionImpactSchema } from './deletion'
 import { SEARCH_KINDS, searchQueryInputSchema } from './search'
 import { SETTINGS_KEYS, SETTINGS_REGISTRY } from './settings'
 import type { SettingKey, SettingsSnapshot, SettingValue } from './settings'
@@ -468,7 +469,15 @@ export const CHANNEL_CONTRACTS = {
     request: z.object({ id: z.string().min(1), patch: updateCompanyInputSchema }).strict(),
     response: mutationResultSchema(companySchema)
   },
-  'companies:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
+  /**
+   * Deleting a company. `deleteRequestSchema` widens the old bare id to
+   * `{ id, cascade? }` (T-260902-09): without `cascade` this refuses when
+   * anything still points at the row, exactly as before; with it, the rows
+   * `companies:deleteImpact` listed are removed too. The renderer only ever sets it after
+   * showing that list and being told yes a second time.
+   */
+  'companies:delete': { request: deleteRequestSchema, response: mutationResultSchema(idResultSchema) },
+  'companies:deleteImpact': { request: idRequestSchema, response: deletionImpactSchema },
 
   // -- people + affiliations ---------------------------------------------
 
@@ -479,7 +488,15 @@ export const CHANNEL_CONTRACTS = {
     request: z.object({ id: z.string().min(1), patch: updatePersonInputSchema }).strict(),
     response: mutationResultSchema(personSchema)
   },
-  'people:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
+  /**
+   * Deleting a person. `deleteRequestSchema` widens the old bare id to
+   * `{ id, cascade? }` (T-260902-09): without `cascade` this refuses when
+   * anything still points at the row, exactly as before; with it, the rows
+   * `people:deleteImpact` listed are removed too. The renderer only ever sets it after
+   * showing that list and being told yes a second time.
+   */
+  'people:delete': { request: deleteRequestSchema, response: mutationResultSchema(idResultSchema) },
+  'people:deleteImpact': { request: idRequestSchema, response: deletionImpactSchema },
   'people:addAffiliation': { request: createAffiliationInputSchema, response: mutationResultSchema(affiliationSchema) },
   'people:updateAffiliation': {
     request: z.object({ id: z.string().min(1), patch: updateAffiliationInputSchema }).strict(),
@@ -508,7 +525,15 @@ export const CHANNEL_CONTRACTS = {
     request: z.object({ id: z.string().min(1), patch: updateEngagementInputSchema }).strict(),
     response: mutationResultSchema(engagementSchema)
   },
-  'engagements:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
+  /**
+   * Deleting an engagement. `deleteRequestSchema` widens the old bare id to
+   * `{ id, cascade? }` (T-260902-09): without `cascade` this refuses when
+   * anything still points at the row, exactly as before; with it, the rows
+   * `engagements:deleteImpact` listed are removed too. The renderer only ever sets it after
+   * showing that list and being told yes a second time.
+   */
+  'engagements:delete': { request: deleteRequestSchema, response: mutationResultSchema(idResultSchema) },
+  'engagements:deleteImpact': { request: idRequestSchema, response: deletionImpactSchema },
 
   // -- milestones (T-260902-02, P3-04) -------------------------------------
   //
@@ -601,6 +626,14 @@ export const CHANNEL_CONTRACTS = {
   },
   /** Archiving sets `active = false`; nothing is deleted, so the response is the offering as it now reads, not an `{ id }`. */
   'offerings:archive': { request: idRequestSchema, response: mutationResultSchema(offeringWithVersionsSchema) },
+  /**
+   * Removing an offering outright, as distinct from archiving it above.
+   * An engagement sold from it is never deleted — it is unlinked and keeps
+   * the rate it snapshotted at signature. `offerings:deleteImpact` says so
+   * before this runs.
+   */
+  'offerings:delete': { request: deleteRequestSchema, response: mutationResultSchema(idResultSchema) },
+  'offerings:deleteImpact': { request: idRequestSchema, response: deletionImpactSchema },
   /** `overrides` carries the new name and nothing else (`duplicateOfferingInputSchema`); omitting it appends " (copy)". */
   'offerings:duplicate': {
     request: z.object({ id: z.string().min(1), overrides: duplicateOfferingInputSchema.optional() }).strict(),

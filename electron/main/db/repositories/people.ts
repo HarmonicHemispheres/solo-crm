@@ -21,6 +21,8 @@ import {
 } from '../../../shared/people'
 import { NotFoundError, RefusalError } from './errors'
 import { boolToSql, parseInput } from './input'
+import type { DeletionImpact } from '../../../shared/deletion'
+import { impactOf, runCascade } from './cascade'
 import { refuseIfReferenced } from './referential-guard'
 import { type ConstraintHandler, PRIMARY_KEY_HANDLER, translateWriteError } from './sqlite-errors'
 
@@ -232,11 +234,39 @@ export function updatePerson(db: Database.Database, id: string, patch: unknown):
  * and `tasks.person_id`. (`people` itself has no self-referencing column,
  * unlike `companies`.)
  */
-export function deletePerson(db: Database.Database, id: string): void {
+/**
+ * `cascade` is the operator's second, explicit confirmation (T-260902-09):
+ * they were shown exactly what would go — `personDeleteImpact` below, which
+ * derives its counts from the same declarations `runCascade` deletes by —
+ * and said yes. It defaults to false, so every caller that does not opt in
+ * keeps the refusing behaviour this function has always had.
+ */
+
+/**
+ * What deleting this person would take with it — the counts the renderer's
+ * confirmation shows before it asks again with `cascade: true`
+ * (T-260902-09). Read-only, and derived from the same step declarations
+ * `runCascade` deletes by, so the dialog cannot promise one thing and the
+ * delete do another (`cascade.ts`'s header).
+ */
+export function personDeleteImpact(db: Database.Database, id: string): DeletionImpact {
+  const row = getPersonRow(db, id)
+  if (!row) {
+    throw new NotFoundError('Person', id)
+  }
+  return impactOf(db, 'person', id, row.name)
+}
+
+export function deletePerson(db: Database.Database, id: string, cascade = false): void {
   const run = db.transaction(() => {
     const person = getPersonRow(db, id)
     if (!person) {
       throw new NotFoundError('Person', id)
+    }
+
+    if (cascade) {
+      runCascade(db, 'person', id)
+      return
     }
 
     refuseIfReferenced(db, id, [

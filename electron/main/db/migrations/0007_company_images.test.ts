@@ -68,10 +68,50 @@ function rowCounts(db: Database.Database): Record<string, number> {
 
 const T = '2026-09-01T10:00:00.000Z'
 
+/**
+ * A small database in the shape a real one has: companies, an engagement
+ * pointing at one, and an activity row pointing at both.
+ *
+ * Deliberately not `seedFixture`, and the two tests below used to call it.
+ * That loader is written against the *current* schema by definition, so
+ * calling it against a database deliberately held at version 6 breaks the
+ * moment any later migration adds a column it writes — which is what
+ * happened when 0008 added `retainer_basis`, and the failure ("table
+ * engagements has no column named retainer_basis") said nothing whatever
+ * about 0007. `0006_offerings_rename.test.ts` writes its own rows for the
+ * same reason, one version earlier.
+ *
+ * The last test in this file still uses `seedFixture`, correctly: it runs
+ * *after* `applyCompanyImages`, which applies the whole migration set, so
+ * the schema it seeds into is the current one.
+ *
+ * Only columns 0001 created are used here, so this fixture stays valid for
+ * every future migration rather than needing an edit per column. Volume is
+ * not the point: what 0007 introduces is the schema's first `ON DELETE
+ * cascade`, so what has to exist is a company with things referencing it.
+ */
+function seedPreImagesRows(db: Database.Database): void {
+  const insertCompany = db.prepare(
+    `INSERT INTO companies (id, name, kind, cadence_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+  )
+  insertCompany.run('co-1', 'EZDeploy', 'client', 10, T, T)
+  insertCompany.run('co-2', 'Rinvii', 'client', 7, T, T)
+
+  db.prepare(
+    `INSERT INTO engagements (id, name, billing_company_id, client_company_id, billing_model, status, started_on, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('eng-1', 'Platform advisory', 'co-1', 'co-1', 'tm', 'active', '2026-05-01', T, T)
+
+  db.prepare(
+    `INSERT INTO activity (id, occurred_at, kind, title, company_id, engagement_id, source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run('act-1', T, 'call', 'Kickoff', 'co-1', 'eng-1', 'manual', T, T)
+}
+
 describe('0007_company_images: a database with data survives it', () => {
   it('adds the table to a seeded database and moves not one existing row', () => {
     withPreMigrationDb((db) => {
-      seedFixture(db)
+      seedPreImagesRows(db)
       expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'company_images'").get()).toBeUndefined()
 
       const before = rowCounts(db)
@@ -91,7 +131,7 @@ describe('0007_company_images: a database with data survives it', () => {
 
   it('records itself once, and a second run of the whole set is a no-op', () => {
     withPreMigrationDb((db) => {
-      seedFixture(db)
+      seedPreImagesRows(db)
       applyCompanyImages(db)
       const appliedOnce = db.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all()
       expect(appliedOnce).toContainEqual({ version: COMPANY_IMAGES_VERSION, name: '0007_company_images' })

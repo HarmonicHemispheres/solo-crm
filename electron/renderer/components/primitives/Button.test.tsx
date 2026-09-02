@@ -68,11 +68,25 @@ describe('Button', () => {
     expect(ref.current).toBe(screen.getByRole('button', { name: 'New' }))
   })
 
+  it('variant="danger" renders exactly "btn btn-danger"', () => {
+    // T-260902-09's third variant. It exists for one control — the confirm
+    // button in `ConfirmDelete` — because `.claude/rules/ui-design.md` names
+    // destructive confirmation as a place a text label is required, and a
+    // delete-everything button that looks like Cancel is the one mistake in
+    // this app that cannot be undone.
+    render(<Button variant="danger">Delete all 4</Button>)
+    expect(screen.getByRole('button', { name: 'Delete all 4' }).className).toBe('btn btn-danger')
+  })
+
   it('does not compile with a variant the mockup does not have — the acceptance test for the closed union is a type error, not a renders-unstyled fallback', () => {
-    // @ts-expect-error 'danger' is not a member of ButtonVariant — if this
+    // The example used to be 'danger', which T-260902-09 made real. The
+    // property under test is unchanged and is not about any particular word:
+    // the union is closed, so a variant nobody declared is a compile error
+    // rather than a button that renders unstyled (T-260901-01's actual bug).
+    // @ts-expect-error 'subtle' is not a member of ButtonVariant — if this
     // stops erroring, npm run typecheck fails on the unused directive
     // instead of silently passing.
-    const bad: ButtonProps = { children: 'Delete', variant: 'danger' }
+    const bad: ButtonProps = { children: 'Maybe', variant: 'subtle' }
     expect(bad).toBeTruthy()
   })
 })

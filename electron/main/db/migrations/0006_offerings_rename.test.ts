@@ -243,7 +243,16 @@ describe('0006_offerings_rename: a database with data survives the rename', () =
       // point is that the loader's `INSERT INTO offerings …` finds the same
       // tables in a migrated database as in a freshly created one —
       // `seed/index.test.ts` covers the fresh case.
-      applyRename(db)
+      //
+      // The *whole* migration set, not `applyRename`'s prefix ending at 6.
+      // `seedFixture` is written against the current schema by definition, so
+      // running it at an arbitrary older version asserts nothing about the
+      // rename and breaks the moment any later migration adds a column the
+      // seed writes — which 0008 (`retainer_basis`) did. What this test is
+      // actually about is that the database *reached* today's schema through
+      // the rename rather than by being created fresh, and that is exactly
+      // what starting from `withPreRenameDb` and applying everything gives.
+      runMigrations(db, MIGRATIONS)
       expect(() => seedFixture(db)).not.toThrow()
       expect(count(db, 'offerings')).toBe(9)
       expect(count(db, 'offering_categories')).toBe(5)

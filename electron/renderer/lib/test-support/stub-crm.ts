@@ -66,12 +66,30 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     'companies:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_COMPANY } })),
     'companies:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_COMPANY } })),
     'companies:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
+    /**
+     * Nothing points at the stub record, which is the shape a confirmation
+     * dialog shows for the ordinary case: "delete this, it takes nothing
+     * with it". A test about the cascade overrides this with real entries.
+     */
+    'companies:deleteImpact': vi.fn(async ({ id }: { id: string }) => ({
+      ok: true as const,
+      data: { entity: 'company' as const, id, name: 'Stub company', entries: [] }
+    })),
 
     'people:list': vi.fn(async () => ({ ok: true as const, data: [] })),
     'people:get': vi.fn(async () => ({ ok: true as const, data: null })),
     'people:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_PERSON } })),
     'people:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_PERSON } })),
     'people:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
+    /**
+     * Nothing points at the stub record, which is the shape a confirmation
+     * dialog shows for the ordinary case: "delete this, it takes nothing
+     * with it". A test about the cascade overrides this with real entries.
+     */
+    'people:deleteImpact': vi.fn(async ({ id }: { id: string }) => ({
+      ok: true as const,
+      data: { entity: 'person' as const, id, name: 'Stub person', entries: [] }
+    })),
     'people:addAffiliation': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_AFFILIATION } })),
     'people:updateAffiliation': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_AFFILIATION } })),
     'people:endAffiliation': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_AFFILIATION } })),
@@ -82,6 +100,15 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     'engagements:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT } })),
     'engagements:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT } })),
     'engagements:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
+    /**
+     * Nothing points at the stub record, which is the shape a confirmation
+     * dialog shows for the ordinary case: "delete this, it takes nothing
+     * with it". A test about the cascade overrides this with real entries.
+     */
+    'engagements:deleteImpact': vi.fn(async ({ id }: { id: string }) => ({
+      ok: true as const,
+      data: { entity: 'engagement' as const, id, name: 'Stub engagement', entries: [] }
+    })),
     // T-260902-02's milestone writes. `STUB_MILESTONE` is a complete row so a
     // mutation's response passes `milestoneSchema` under the real bridge too.
     'milestones:list': vi.fn(async () => ({ ok: true as const, data: [] })),
@@ -116,6 +143,11 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     })),
     'offerings:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_OFFERING } })),
     'offerings:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_OFFERING } })),
+    'offerings:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
+    'offerings:deleteImpact': vi.fn(async ({ id }: { id: string }) => ({
+      ok: true as const,
+      data: { entity: 'offering' as const, id, name: 'Stub offering', entries: [] }
+    })),
     'offerings:archive': vi.fn(async () => ({
       ok: true as const,
       data: { ok: true as const, data: { ...STUB_OFFERING, active: false } }
@@ -281,6 +313,8 @@ const STUB_ENGAGEMENT = {
   startedOn: '2026-08-28',
   endsOn: null,
   renewsOn: null,
+  retainerBasis: null,
+  monthlyAmountCents: null,
   hoursIncluded: null,
   contractValueCents: null,
   hourlyRateCents: null,

@@ -1,0 +1,74 @@
+/*
+ * `ConfirmDelete`'s body (T-260902-09). It sits inside `Sheet`'s `.sheet-b`,
+ * so nothing here sets a width, a background or a border — the dialog chrome
+ * is the sheet's.
+ *
+ * No mockup source: the mockup has no destructive flow at all (there was no
+ * delete in the app until this task). Styled from the tokens the sheets
+ * already use rather than invented — `--red` only where the meaning is
+ * "these rows are going", `--faint`/`--mono` for counts, which is what
+ * `.claude/rules/ui-design.md` reserves that treatment for.
+ */
+
+.confirm-del {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The record's own name, given the weight of a heading without being one —
+   the dialog's `<h2>` already says what the action is, and a second heading
+   would compete with it in the accessibility tree. */
+.confirm-del-subject {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--papyrus);
+}
+
+.confirm-del-lead {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mute);
+}
+
+.confirm-del-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+}
+
+.confirm-del-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-9);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  color: var(--papyrus);
+}
+
+/* The kept-and-unlinked list is deliberately NOT red: these rows survive,
+   and giving them the same wash as the deletions would say the opposite of
+   what the sentence above them says. */
+.confirm-del-kept li {
+  background: var(--surface-2);
+  color: var(--mute);
+}
+
+.confirm-del-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--papyrus);
+  min-width: 2ch;
+  text-align: right;
+}
+
+.confirm-del-kept .confirm-del-count {
+  color: var(--mute);
+}
