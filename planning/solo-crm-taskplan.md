@@ -497,7 +497,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
 
 ## Phase 3 — Money
 
-- [ ] **P3-01 · Offerings repositories** — 🗄 data · M · after P0-05
+- [x] **P3-01 · Offerings repositories** — 🗄 data · M · after P0-05
   `offering_categories`, `offerings`, `offering_versions`.
   - [ ] An offering always has at least one version — creating one without a
         rate is refused
@@ -512,7 +512,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
         P3-08 can state it
   - [ ] Deleting a version is impossible while an engagement references it
 
-- [ ] **P3-03 · Rate snapshot on engagement create** — 🗄 data · S · after P3-01, P1-03
+- [x] **P3-03 · Rate snapshot on engagement create** — 🗄 data · S · after P3-01, P1-03
   The price list is read exactly once, when a proposal is created.
   - [ ] Deleting the `offering_version` an engagement was sold from changes
         nothing about that engagement's numbers
@@ -562,7 +562,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
   - [ ] Concentration is the largest payer's share of YTD, and is stable across
         rollup switches
 
-- [ ] **P3-07 · Offerings view** — 🎨 ui · L · after P3-01
+- [x] **P3-07 · Offerings view** — 🎨 ui · L · after P3-01
   A management surface, not an analytics surface (§6.5). Create, edit, duplicate,
   archive; categories; filter; quick-add parsing.
   - [ ] `Name, 4500`, `Name, 4500/mo` and `Name, 175/hr` each parse to the right

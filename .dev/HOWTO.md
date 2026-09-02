@@ -95,7 +95,7 @@ That is how the last process reached eleven thousand words.
 
 | Command | What it does |
 |---|---|
-| `npm run snap` | Build first, then screenshot every route at three widths into `shots/` |
+| `npm run build && npm run snap` | Screenshot every route at three widths into `shots/` — `snap` refuses to run without a build, but does not make one |
 | `npm run snap -- --routes company,person --widths 700` | Only those routes and widths |
 | `npm run check:index` | Task files and month indexes agree; LESSONS under twenty |
 | `npm run metrics` | Per release: tasks closed, follow-up fixes, user-reported, median elapsed |

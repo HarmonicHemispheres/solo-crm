@@ -6,7 +6,9 @@ typed IPC · SQLite FTS5. See [README](README.md) for the why.
 
 **Status: Phase 1 (the spine) is essentially complete.** The app opens a real
 database, creates and shows every entity, searches across all five indexed
-kinds and installs on Windows. Phase 2 onward is not started. Build
+kinds and installs on Windows. Phase 2 (cadence) is partly in, and Phase 3
+(money) has its offerings slice — the repositories, the view and selling an
+engagement from an offering (P3-01/03/07) — but no revenue lines. Build
 order is [planning/solo-crm-taskplan.md](planning/solo-crm-taskplan.md).
 
 ## How work happens

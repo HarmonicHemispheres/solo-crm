@@ -8,8 +8,9 @@ one-person consultancy — local-first, no account, no server, no telemetry.
 **Status:** the spine is in. Repositories over the real schema, typed IPC,
 FTS5 search, the create sheets and every list and detail view; a command
 palette, a quick log, a read-only SQL console channel, and a branded Windows
-installer. Not yet built: the integrations (P3/P4), revenue lines, and the
-timelog import that every hours-used figure depends on.
+installer; offerings, and engagements sold from them. Not yet built: the
+integrations (P4), revenue lines, and the timelog import that every
+hours-used figure depends on.
 
 ## Why
 
@@ -36,7 +37,7 @@ out to Notion, Drive and Stripe rather than becoming a fourth copy of them.
 
 | Layer | Choice |
 |---|---|
-| Shell | Electron (Ubuntu / macOS) |
+| Shell | Electron — Windows today (NSIS installer + portable); Ubuntu / macOS are the requirements' targets, not yet built |
 | Renderer | React + Vite + TypeScript |
 | Data | better-sqlite3 in the main process, WAL |
 | ORM / migrations | Drizzle |
@@ -52,7 +53,9 @@ rather than overwriting the last installer.
 
 1. Run the checks — `npm run typecheck`, `npm run lint`, `npm test`, and
    `npm run check:index` last. The `verify` skill in `.claude/skills/` runs
-   exactly these and reports what actually passed. `npm run dist` runs none of
+   these — plus migrations against a fresh and an existing database for a
+   `db/` diff, and `npm run snap` for a `renderer/` one — and reports what
+   actually passed. `npm run dist` runs none of
    them, so nothing else stops an unbuildable tree from being packaged, or a
    month `INDEX.md` that disagrees with its task files from shipping.
 2. Bump `version` in `package.json` and commit. Semver, three numeric parts —
