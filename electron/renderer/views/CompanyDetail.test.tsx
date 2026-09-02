@@ -809,6 +809,24 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       await waitFor(() => expect(within(activityCard).getByText('Left a voicemail')).toBeTruthy())
     })
 
+    // T-260901-23: `activity:log` moves `companies.last_touch_at`, and the
+    // header meter reads it from the companies cache at staleTime Infinity.
+    it('logging a touch from the card refetches the company, so the cadence meter moves with it', async () => {
+      const crm = buildFullCrm()
+      renderCompanyDetail('co-ezdeploy', crm)
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+      const companyReadsBefore = vi.mocked(crm['companies:get']).mock.calls.length
+
+      const input = screen.getByPlaceholderText('Log a touch for EZDeploy')
+      fireEvent.change(input, { target: { value: 'Left a voicemail' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      await waitFor(() => expect(crm['activity:log']).toHaveBeenCalled())
+      await waitFor(() =>
+        expect(vi.mocked(crm['companies:get']).mock.calls.length).toBeGreaterThan(companyReadsBefore)
+      )
+    })
+
     // Review fix (item 3): `relevantPersonIds` used to pull in EVERY
     // activity row tied to a person once they'd ever been affiliated with
     // this company — unbounded by the affiliation's own date range. Casey

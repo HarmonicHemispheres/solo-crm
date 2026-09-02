@@ -761,7 +761,15 @@ function ActivityCard({ companyId, companyName, items }: { companyId: string; co
         companyId,
         source: 'manual'
       }).then(unwrapMutationResult),
-    onSuccess: () => invalidate.activity(queryClient)
+    // T-260901-23: `activity:log` advances `companies.last_touch_at` in the
+    // same transaction (repositories/activity.ts), and this page's header
+    // meter, the grid and Today all read that column from the `companies`
+    // cache at `staleTime: Infinity` — so the company is stale too, not
+    // just the activity list. QuickLog invalidates the same pair for the
+    // same reason. Not awaited, for the reason QuickLog gives.
+    onSuccess: () => {
+      void Promise.all([invalidate.activity(queryClient), invalidate.companies(queryClient)])
+    }
   })
 
   return (
