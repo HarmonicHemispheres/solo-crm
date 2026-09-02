@@ -981,7 +981,7 @@ function CompanyHeader({
   const logo = images.logo
 
   return (
-    <>
+    <div className="dhero">
       {/* The banner keeps its `hue(name)` gradient exactly as it was until an
           image is actually stored. With one, `.dbanner.has-image` swaps the
           accent radial for a contrast scrim over the picture — see the CSS,
@@ -1030,7 +1030,7 @@ function CompanyHeader({
           ))}
         </div>
       </div>
-    </>
+    </div>
   )
 }
 

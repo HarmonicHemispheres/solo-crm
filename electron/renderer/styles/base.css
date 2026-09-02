@@ -80,8 +80,10 @@ a {
  * not been true since `/company/:id` and `/person/:id` started rendering a
  * bare `<h1>` inside `.dhead`. Those fell through to the user agent's `2em`
  * with a `.67em` margin, and that top margin cancelled most of `.dbanner`'s
- * `margin-bottom: -40px`, leaving the company name stranded below the banner
- * instead of riding up into its lower half (T-260901-02).
+ * then `margin-bottom: -40px`, leaving the company name stranded below the
+ * banner instead of riding up into its lower half (T-260901-02). The banner
+ * is the header's own background now (T-260901-29), so the overlap is gone,
+ * but `margin: 0` is still what a heading inside a padded band wants.
  *
  * A rule here closes that hole for the next `<h1>` too — `routes.tsx`'s
  * `ViewPlaceholder` is already one — rather than leaving each new view to

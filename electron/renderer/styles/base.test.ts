@@ -58,9 +58,11 @@ describe('base.css: the global h1 rule', () => {
     loadBaseStylesheet()
     const computed = getComputedStyle(renderHeading(DETAIL_HEADER))
 
-    // planning/solo-crm-mockup.html line 35, verbatim. The margin is the half
-    // that fixes the reported bug: `.dbanner`'s `margin-bottom: -40px` only
-    // lifts `.dhead` into the banner if the heading adds no margin of its own.
+    // planning/solo-crm-mockup.html line 35, verbatim. The margin was the half
+    // that fixed the reported bug: `.dbanner`'s then `margin-bottom: -40px`
+    // only lifted `.dhead` into the banner if the heading added no margin of
+    // its own. T-260901-29 removed the overlap; a zero margin is still what
+    // keeps the heading's box inside the padded band rather than pushing it.
     expect(computed.fontSize).toBe('27px')
     expect(computed.marginTop).toBe('0px')
     expect(computed.fontWeight).toBe('700')

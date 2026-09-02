@@ -1207,8 +1207,9 @@ describe('CompanyDetail — header images (T-260901-14)', () => {
     await screen.findByRole('heading', { name: longName })
 
     await waitFor(() => expect(container.querySelector('.dbanner-img')).not.toBeNull())
-    // A 3:1 original, fitted into the banner's fixed-height box by
-    // `object-fit: cover` rather than by anything this component computes.
+    // A 3:1 original, fitted into the band — sized by the header's content,
+    // not the image (T-260901-29) — by `object-fit: cover` rather than by
+    // anything this component computes.
     expect(container.querySelector('.dbanner-img')?.getAttribute('src')).toBe(BANNER_DATA_URL)
     expect(container.querySelector('.dhead .cmark')).not.toBeNull()
     const actions = container.querySelector('.dhead-actions') as HTMLElement

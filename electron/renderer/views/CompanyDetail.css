@@ -57,16 +57,29 @@
   color: var(--verdigris);
 }
 
+/* ── the header band (T-260901-29) ──
+ *
+ * The mockup draws `.dbanner` as a fixed 76px strip and pulls `.dhead` up
+ * over its bottom 40px, so the mark straddles the band's edge. That was
+ * sized for a header of mark + one-line heading + a row of tags. This app's
+ * header carries more — the decay meter, and the Edit / Logo / Banner
+ * cluster — and at 700px the heading wraps, so the content outgrew the
+ * strip: the mark sat below the band, the tags hung under it, the buttons
+ * crossed its edge. Now `.dhero` is the header's box, `.dbanner` is its
+ * background (absolute, full bleed) and `.dhead` sits inside with padding,
+ * so the band is exactly as tall as what it holds, at every width. */
+.dhero {
+  position: relative;
+  margin-bottom: 20px;
+}
 .dbanner {
-  height: 76px;
+  position: absolute;
+  inset: 0;
   border-radius: var(--radius-13);
-  margin-bottom: -40px;
   background:
     linear-gradient(115deg, color-mix(in srgb, var(--c) 26%, transparent), transparent 62%),
     linear-gradient(180deg, var(--surface-2), transparent);
   border: 1px solid var(--border);
-  border-bottom: 0;
-  position: relative;
   overflow: hidden;
 }
 
@@ -86,19 +99,19 @@
  * `img-src 'self' data:` covers it exactly as it covers every other image
  * that crosses IPC.
  *
- * The scrim is required rather than nice to have: `.dhead` overlaps the
- * banner's bottom 40px (that negative margin above), so an operator-supplied
- * image renders directly behind the mark and the top of the heading, and
- * nothing about an arbitrary photograph guarantees contrast. It replaces the
- * accent radial `::after` draws over the gradient — one pseudo-element, two
- * jobs, so the two can never paint at once.
+ * The scrim is required rather than nice to have: the whole header — mark,
+ * heading, tags, buttons — sits on the image (T-260901-29), and nothing
+ * about an arbitrary photograph guarantees contrast. It replaces the accent
+ * radial `::after` draws over the gradient — one pseudo-element, two jobs,
+ * so the two can never paint at once.
  *
- * It is a downward ramp of `--obsidian`, the page's darkest surface, ending
- * at 82% where the header text sits. That works in both directions the risk
- * names: over a white banner the bottom is dark enough for `--papyrus` text,
- * and over a black one the ramp is nearly invisible — it can only ever make
- * the area behind the text darker, never lighter, so there is no image for
- * which it makes contrast worse. */
+ * It is a ramp of `--obsidian`, the page's darkest surface, from 45% at the
+ * top to 82% at the bottom — heavier than the strip-era version because the
+ * text now starts near the top rather than at the bottom edge. That works in
+ * both directions the risk names: over a white banner it is dark enough for
+ * `--papyrus` text, and over a black one the ramp is nearly invisible — it
+ * can only ever make the area behind the text darker, never lighter, so
+ * there is no image for which it makes contrast worse. */
 .dbanner.has-image {
   background: var(--surface-2);
 }
@@ -116,8 +129,8 @@
 .dbanner.has-image::after {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--obsidian) 18%, transparent) 0%,
-    color-mix(in srgb, var(--obsidian) 55%, transparent) 55%,
+    color-mix(in srgb, var(--obsidian) 45%, transparent) 0%,
+    color-mix(in srgb, var(--obsidian) 65%, transparent) 55%,
     color-mix(in srgb, var(--obsidian) 82%, transparent) 100%
   );
 }
@@ -125,12 +138,11 @@
 .dhead {
   position: relative;
   z-index: 1;
-  padding: 0 4px;
+  padding: 18px 20px;
   display: flex;
   align-items: center;
   gap: 15px;
   flex-wrap: wrap;
-  margin-bottom: 20px;
 }
 
 .dmeta {

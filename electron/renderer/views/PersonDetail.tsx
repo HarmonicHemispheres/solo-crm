@@ -566,15 +566,17 @@ export function PersonDetail() {
       <Link className="back" to="/people">
         ← People
       </Link>
-      <div className="dbanner" style={{ '--c': accent } as StyleWithAccent} />
-      <div className="dhead">
-        <Mark name={person.name} size={50} color={accent} />
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <h1>{person.name}</h1>
-          <div className="dmeta">
-            <KindTag kind={currentCompany?.kind} />
-            <Tag>{currentCompany?.name ?? '—'}</Tag>
-            <Tag>{contactTagLabel(person, now)}</Tag>
+      <div className="dhero">
+        <div className="dbanner" style={{ '--c': accent } as StyleWithAccent} />
+        <div className="dhead">
+          <Mark name={person.name} size={50} color={accent} />
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <h1>{person.name}</h1>
+            <div className="dmeta">
+              <KindTag kind={currentCompany?.kind} />
+              <Tag>{currentCompany?.name ?? '—'}</Tag>
+              <Tag>{contactTagLabel(person, now)}</Tag>
+            </div>
           </div>
         </div>
       </div>
