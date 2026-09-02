@@ -2,9 +2,16 @@ import * as esbuild from 'esbuild'
 
 /**
  * Bundles `entrySourcePath` (electron/preload/index.ts) into a single,
- * self-contained CommonJS file — everything it imports inlined, including
- * `zod` — for the real-Electron sandboxed-preload proof (T-260828-09's
- * bridge.test.ts).
+ * self-contained CommonJS file — everything it imports inlined — for the
+ * real-Electron sandboxed-preload proof (T-260828-09's bridge.test.ts), and
+ * for `preload-weight.test.ts`, which measures the result.
+ *
+ * "Everything it imports" is, deliberately, now very little: the preload
+ * reads `../shared/channel-names`, which imports nothing, so this produces
+ * a couple of kilobytes rather than the 204 KB it produced while the names
+ * came from `ipc-types.ts` and dragged zod behind them. The single-file
+ * requirement below is unchanged and is why this function still exists —
+ * it was never about size.
  *
  * This is deliberately a *different* technique from
  * `compile-to-cjs.ts`'s per-file transpile-and-require-graph, and the

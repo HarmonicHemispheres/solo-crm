@@ -12,6 +12,8 @@ import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
 import { useLayerManager, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
 import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
+import { decayForCompany, type Decay, type DecayBand } from '../lib/decay'
+import { identityColor, initials } from '../lib/identity'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import type { Company, CompanyKind } from '../../shared/companies'
 import type { CompanyImageThumbnails } from '../../shared/company-images'
@@ -36,30 +38,7 @@ import './Companies.css'
 // for the view that uses them.
 // ---------------------------------------------------------------------------
 
-const IDENTITY_PALETTE = [
-  'var(--verdigris)',
-  'var(--lapis)',
-  'var(--verdigris-dim)',
-  'var(--slate)',
-  'var(--lapis-deep)'
-] as const
 
-function identityColor(name: string): string {
-  let sum = 0
-  for (const char of name) sum += char.charCodeAt(0)
-  return IDENTITY_PALETTE[sum % IDENTITY_PALETTE.length]
-}
-
-function initials(name: string): string {
-  return name
-    .replace(/[^A-Za-z ]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase()
-}
 
 /**
  * The mark, now image-aware (T-260901-15). `logo` is the **derivative**
@@ -87,7 +66,7 @@ function CompanyMark({ name, size, logo }: { name: string; size: number; logo?: 
     // itself — hidden rather than announced redundantly. The logo is
     // decorative for the same reason, and carries `alt=""` on top of the
     // wrapper's `aria-hidden` so it is never announced as an unnamed image.
-    <span className={logo ? 'cmark has-logo' : 'cmark'} style={style} aria-hidden="true">
+    <span className={logo ? 'cmark has-image' : 'cmark'} style={style} aria-hidden="true">
       {logo ? <img className="cmark-img" src={logo} alt="" /> : <span>{initials(name)}</span>}
     </span>
   )
@@ -122,37 +101,34 @@ function KindTag({ kind }: { kind: CompanyKind | null }) {
 }
 
 // ---------------------------------------------------------------------------
-// Decay — cadence health is P2-03's computation (this task's Risks: "Decay
-// bands themselves are P2-03, not this task"). What's here is only enough to
-// hand `Ring`/`DecayMeter` a number: days since `lastTouchAt` over
-// `cadenceDays`, non-finite whenever either is missing. Both primitives
-// already carry ADR-001's rule that a non-finite pct renders as maximally
-// stale (Ring: an empty track, no false-healthy full arc; DecayMeter: `late`,
-// never `ok`) — this view leans on that rather than re-deriving it.
-// `decayColor` mirrors DecayMeter's own ok/warn/late thresholds only to keep
-// the ring's stroke colour agreeing with the bar beside it; it invents no
-// new banding of its own.
+// Decay — `lib/decay.ts`'s `decayForCompany`, the same function Today.tsx
+// and CompanyDetail.tsx call (T-260901-27).
+//
+// This view carried its own copy until then, and the copies had diverged in
+// both of the ways two implementations of one rule diverge:
+//
+//   - **Rounding.** This one rounded elapsed days, `decay.ts` floors. A
+//     company touched 49 days and 14 hours ago read "50d" on this grid and
+//     "49d" on Today and on its own detail page, at the same moment, on the
+//     seeded database.
+//   - **The missing cadence.** This one required the company's *own*
+//     `cadenceDays` and gave up (`NaN`) without it. `decay.ts` falls back to
+//     the kind's default from settings (P2-03), which is the decision — a
+//     company on the sheet's "Not set" cadence chip showed a full red bar
+//     here while Today listed it as perfectly current.
+//
+// `decayColor` also had a bug of its own that routing through the shared
+// function removes rather than fixes: `!Number.isFinite(pct)` returned
+// verdigris — a *green* ring beside the red bar `DecayMeter` draws for the
+// same company, on exactly ADR-001 rule 5's case (never touched, no cadence
+// resolvable). It now switches on `decay.band`, which is one answer for both
+// primitives by construction.
 // ---------------------------------------------------------------------------
-function daysSince(timestamp: string): number {
-  return Math.round((Date.now() - new Date(timestamp).getTime()) / 86_400_000)
-}
 
-function decayPct(company: Company): number {
-  if (company.lastTouchAt == null || company.cadenceDays == null || company.cadenceDays <= 0) return Number.NaN
-  return daysSince(company.lastTouchAt) / company.cadenceDays
-}
-
-function decayLabel(company: Company): string {
-  if (company.lastTouchAt == null) return 'never'
-  const days = daysSince(company.lastTouchAt)
-  return days <= 0 ? 'today' : `${days}d`
-}
-
-function decayColor(pct: number): string {
-  if (!Number.isFinite(pct)) return 'var(--verdigris)'
-  if (pct >= 1) return 'var(--red)'
-  if (pct >= 0.7) return 'var(--orange)'
-  return 'var(--verdigris)'
+const BAND_COLOR: Record<DecayBand, string> = {
+  ok: 'var(--verdigris)',
+  warn: 'var(--orange)',
+  late: 'var(--red)'
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +141,14 @@ interface CompanyRow {
   company: Company
   activeEngagements: number
   endClients: number
+  /**
+   * Computed once per row, in the same memo as the counts and for the same
+   * reason: the card and the table row are two presentations of one company,
+   * and a `decayForCompany` call in each would give them two `now`s and two
+   * chances to drift. It also keeps the cadence *sort* below reading the
+   * same number the meter draws.
+   */
+  decay: Decay
 }
 
 /**
@@ -195,7 +179,11 @@ function compareRows(a: CompanyRow, b: CompanyRow, column: SortColumn): number {
     case 'engagements':
       return a.activeEngagements - b.activeEngagements
     case 'cadence':
-      return (a.company.cadenceDays ?? -Infinity) - (b.company.cadenceDays ?? -Infinity)
+      // `decay.cadenceDays`, not `company.cadenceDays`: the column now shows
+      // the effective cadence (the company's own, or its kind's default), so
+      // sorting on the raw nullable column would order the table by a number
+      // it is not displaying.
+      return a.decay.cadenceDays - b.decay.cadenceDays
     case 'lastTouch': {
       // ADR-001 rule 5: a null last_touch_at is maximally stale, so it sorts
       // as the oldest possible value rather than being pushed to either end
@@ -226,8 +214,18 @@ export function Companies() {
   const { openSheet } = useLayerManager()
   const [sort, setSort] = useState<SortState | null>(null)
 
+  // Read once per mount, not per render — the same reasoning Today.tsx and
+  // CompanyDetail.tsx state for their own clocks: an inline `new Date()`
+  // makes every render a fresh memo dependency, and lets two cards on one
+  // screen disagree about what "now" is.
+  const now = useMemo(() => new Date(), [])
+
   const companiesQuery = useQuery({ queryKey: queryKeys.companies.list(), queryFn: ipcQueryFn('companies:list') })
   const engagementsQuery = useQuery({ queryKey: queryKeys.engagements.list(), queryFn: ipcQueryFn('engagements:list') })
+  // The snapshot `decayForCompany` needs for its kind-default cadence. The
+  // same key Shell.tsx, Rail.tsx and Today.tsx already hold, so this issues
+  // no second `settings:getAll`.
+  const settingsQuery = useQuery({ queryKey: queryKeys.settings.list(), queryFn: ipcQueryFn('settings:getAll') })
   const modeQuery = useQuery({
     queryKey: queryKeys.settings.detail(MODE_SETTING_KEY),
     queryFn: ipcQueryFn('settings:get', { key: MODE_SETTING_KEY })
@@ -280,6 +278,15 @@ export function Companies() {
   const rows = useMemo<CompanyRow[]>(() => {
     const companies: readonly Company[] = companiesQuery.data ?? []
     const engagements: readonly Engagement[] = engagementsQuery.data ?? []
+    const settings = settingsQuery.data
+    // `decayForCompany` needs the snapshot for its kind-default cadence, and
+    // the view already blocks on `settingsQuery.isPending` below — so this
+    // is the un-rendered window, not a state anything paints. Returning []
+    // rather than falling back to some stand-in snapshot: a guessed default
+    // would put a wrong band on screen for one frame, which is the exact
+    // class of thing this task exists to stop. Today.tsx's `quiet` memo does
+    // the same on the same query.
+    if (!settings) return []
 
     const activeByBiller = new Map<string, number>()
     for (const engagement of engagements) {
@@ -299,9 +306,10 @@ export function Companies() {
       .map((company) => ({
         company,
         activeEngagements: activeByBiller.get(company.id) ?? 0,
-        endClients: endClientsByParent.get(company.id) ?? 0
+        endClients: endClientsByParent.get(company.id) ?? 0,
+        decay: decayForCompany(company, settings, now)
       }))
-  }, [companiesQuery.data, engagementsQuery.data])
+  }, [companiesQuery.data, engagementsQuery.data, settingsQuery.data, now])
 
   const sortedRows = useMemo(() => {
     if (!sort) return rows
@@ -318,8 +326,9 @@ export function Companies() {
     })
   }
 
-  const isLoading = companiesQuery.isPending || engagementsQuery.isPending || modeQuery.isPending
-  const loadError = companiesQuery.error ?? engagementsQuery.error ?? modeQuery.error
+  const isLoading =
+    companiesQuery.isPending || engagementsQuery.isPending || modeQuery.isPending || settingsQuery.isPending
+  const loadError = companiesQuery.error ?? engagementsQuery.error ?? modeQuery.error ?? settingsQuery.error
   const images = thumbnailsQuery.data ?? NO_IMAGES
 
   const header = (
@@ -494,8 +503,7 @@ function CompanyCard({
   images: CompanyImages
   onOpen: (id: string) => void
 }) {
-  const { company, activeEngagements, endClients } = row
-  const pct = decayPct(company)
+  const { company, activeEngagements, endClients, decay } = row
   const banner = images?.banner?.dataUrl ?? null
   return (
     // `.has-banner` is what carries every rule the wash needs — the stacking
@@ -530,7 +538,7 @@ function CompanyCard({
           <div className="nm trunc">{company.name}</div>
           <div className="meta">{company.website ?? '—'}</div>
         </div>
-        <Ring pct={pct} size={30} color={decayColor(pct)} />
+        <Ring pct={decay.pct} size={30} color={BAND_COLOR[decay.band]} />
       </div>
       <div className="tags">
         <KindTag kind={company.kind} />
@@ -542,8 +550,13 @@ function CompanyCard({
         )}
       </div>
       <div className="foot">
-        <DecayMeter pct={pct} label={decayLabel(company)} />
-        <span className="n">{company.cadenceDays != null ? `every ${company.cadenceDays}d` : 'no cadence set'}</span>
+        <DecayMeter pct={decay.pct} label={decay.label} />
+        {/* `decay.cadenceDays` — the cadence actually used, so a company
+            with none of its own reads its kind's inherited default here
+            rather than "no cadence set" beside a bar measured against that
+            very default. 0 is the one case nothing resolved (no cadence, no
+            kind), and it still says so. */}
+        <span className="n">{decay.cadenceDays > 0 ? `every ${decay.cadenceDays}d` : 'no cadence set'}</span>
       </div>
     </button>
   )
@@ -624,8 +637,7 @@ function CompanyTableRow({
   images: CompanyImages
   onOpen: (id: string) => void
 }) {
-  const { company, activeEngagements, endClients } = row
-  const pct = decayPct(company)
+  const { company, activeEngagements, endClients, decay } = row
   const activate = () => onOpen(company.id)
   const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -656,9 +668,9 @@ function CompanyTableRow({
         <KindTag kind={company.kind} />
       </td>
       <td className="mono eng">{activeEngagements} active</td>
-      <td className="num">{company.cadenceDays != null ? `${company.cadenceDays}d` : '—'}</td>
+      <td className="num">{decay.cadenceDays > 0 ? `${decay.cadenceDays}d` : '—'}</td>
       <td className="last-touch">
-        <DecayMeter pct={pct} label={decayLabel(company)} />
+        <DecayMeter pct={decay.pct} label={decay.label} />
       </td>
     </tr>
   )

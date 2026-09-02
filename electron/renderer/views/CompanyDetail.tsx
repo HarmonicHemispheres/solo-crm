@@ -14,6 +14,8 @@ import type { Task } from '../../shared/tasks'
 import type { Activity, ActivityKind } from '../../shared/activity'
 import type { Person, PersonAffiliation, PersonWithAffiliations } from '../../shared/people'
 import { ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
+import { decayForCompany, type Decay } from '../lib/decay'
+import { identityColor as hue, initials } from '../lib/identity'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { Card } from '../components/primitives/Card'
 import { Button } from '../components/primitives/Button'
@@ -27,6 +29,7 @@ import { Row } from '../components/primitives/Row'
 import { IconButton } from '../components/primitives/IconButton'
 import { LinksCard } from '../components/links/LinksCard'
 import { useLayerManager } from '../components/shell/layer-manager-context'
+import './detail-header.css'
 import './CompanyDetail.css'
 
 /**
@@ -58,24 +61,7 @@ import './CompanyDetail.css'
 // concurrent branch — see this task's worktree notes.
 // ---------------------------------------------------------------------------
 
-const MARK_PALETTE = ['var(--verdigris)', 'var(--lapis)', 'var(--verdigris-dim)', 'var(--slate)', 'var(--lapis-deep)'] as const
 
-function hue(name: string): string {
-  let sum = 0
-  for (const char of name) sum += char.charCodeAt(0)
-  return MARK_PALETTE[sum % MARK_PALETTE.length]
-}
-
-function initials(name: string): string {
-  return name
-    .replace(/[^A-Za-z ]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0] ?? '')
-    .join('')
-    .toUpperCase()
-}
 
 type StyleWithAccent = CSSProperties & { '--c': string }
 
@@ -263,25 +249,25 @@ function formatRange(startedOn: string, endsOn: string | null): string {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** Cadence state for the header's `DecayMeter` — same thresholds as the
- * mockup's own `decay()` (>=1 late, >=.7 warn, else ok), reproduced by
- * `DecayMeter` itself; this only computes the raw fraction and label.
- * Missing `lastTouchAt` or a zero/`null` `cadenceDays` reads as maximally
- * stale (ADR-001), matching `DecayMeter`'s own non-finite handling. */
-function cadenceState(lastTouchAt: string | null, cadenceDays: number | null, now: number): { pct: number; label: string } {
-  // ADR-001's never-contacted guard, and the reason it is worth a comment:
-  // returning a finite `pct` here — 0, say — renders a company nobody has
-  // ever contacted as a green "ok" bar, which is the single most misleading
-  // thing this page can say. T-260828-53 found that no test noticed the
-  // substitution (its item 7, left open here because it did not own this
-  // file); `CompanyDetail.test.tsx` now asserts the meter's own `late` class
-  // for a null `lastTouchAt`, so the mutant fails rather than passing
-  // silently. `POSITIVE_INFINITY` is what `DecayMeter` maps to `late`.
-  if (lastTouchAt == null) return { pct: Number.POSITIVE_INFINITY, label: 'no contact logged' }
-  const days = Math.floor((now - new Date(lastTouchAt).getTime()) / DAY_MS)
-  const pct = cadenceDays ? days / cadenceDays : Number.POSITIVE_INFINITY
-  return { pct, label: days <= 0 ? 'today' : `${days}d` }
-}
+// Cadence state for the header's `DecayMeter` is `lib/decay.ts`'s
+// `decayForCompany` — the same call Today.tsx and Companies.tsx make
+// (T-260901-27). This page kept its own `cadenceState` until then, and while
+// it agreed with `decay.ts` on flooring, it did not agree on the two things
+// that matter:
+//
+//   - It read the company's own `cadenceDays` and nothing else, so a company
+//     with none — the "Not set" chip the company sheet deliberately offers —
+//     drew a full red bar here while Today, which falls back to the kind's
+//     default cadence from settings (P2-03), called the same company current.
+//   - Its never-touched label was "no contact logged" against `decay.ts`'s
+//     "never". Both are honest; two of them for one state is the problem.
+//
+// The ADR-001 guard the old function carried a paragraph about is not lost —
+// it moved into `decayForCompany`, which returns `POSITIVE_INFINITY` for a
+// null `lastTouchAt` for exactly the same stated reason, and `decay.test.ts`
+// holds it there. `CompanyDetail.test.tsx`'s assertion on the meter's `late`
+// class for an untouched company is unchanged and still passes, which is the
+// evidence that the guard survived the move rather than the claim that it did.
 
 // ---------------------------------------------------------------------------
 // Todos — due-date / waiting-since formatting, mockup's `dueInfo()`
@@ -935,7 +921,7 @@ function CompanyHeader({
 }: {
   company: Company
   companiesById: Map<string, Company>
-  decay: { pct: number; label: string }
+  decay: Decay
 }) {
   const queryClient = useQueryClient()
   const { editSheet } = useLayerManager()
@@ -1045,6 +1031,11 @@ export function CompanyDetail() {
   // an impure call react-hooks/purity refuses inline; a detail page's
   // cadence state doesn't need to tick while it's open.
   const [now] = useState(() => Date.now())
+  // The same instant as `now`, as the `Date` `decayForCompany` takes. Two
+  // shapes rather than one because `now` is a number in seven other places
+  // on this page (`taskDueInfo`, `daysSinceTimestamp`, …) and converting
+  // those is not this change; deriving it here keeps the page on one clock.
+  const [nowDate] = useState(() => new Date(now))
 
   const companyQuery = useQuery({
     queryKey: queryKeys.companies.detail(companyId),
@@ -1055,6 +1046,10 @@ export function CompanyDetail() {
     queryKey: queryKeys.companies.list(),
     queryFn: ipcQueryFn('companies:list')
   })
+  // `decayForCompany`'s kind-default cadence. The same key Shell.tsx and
+  // Rail.tsx already hold, so opening this page issues no extra
+  // `settings:getAll`.
+  const settingsQuery = useQuery({ queryKey: queryKeys.settings.list(), queryFn: ipcQueryFn('settings:getAll') })
   const billedHereQuery = useQuery({
     queryKey: queryKeys.engagements.byBillingCompany(companyId),
     queryFn: ipcQueryFn('engagements:list', { billingCompanyId: companyId }),
@@ -1155,9 +1150,19 @@ export function CompanyDetail() {
   // on the list an actual precondition rather than a race it usually wins.
   // The two run in parallel — this waits for the slower one, it does not
   // serialise them.
-  if (companyQuery.isPending || companiesListQuery.isPending) return <div className="empty">Loading…</div>
+  //
+  // `settingsQuery` joins them for the same class of reason, one step
+  // narrower: `decayForCompany` reads the kind-default cadence out of the
+  // snapshot, so rendering the header before it arrives would paint a band
+  // computed against a cadence the workspace may not use, then correct it.
+  if (companyQuery.isPending || companiesListQuery.isPending || settingsQuery.isPending) {
+    return <div className="empty">Loading…</div>
+  }
   if (companyQuery.isError) return <div className="empty">{companyQuery.error.message}</div>
   if (companiesListQuery.isError) return <div className="empty">{companiesListQuery.error.message}</div>
+  if (settingsQuery.isError) return <div className="empty">{settingsQuery.error.message}</div>
+
+  const settings = settingsQuery.data
 
   const company = companyQuery.data
   if (company == null) return <EmptyState>Company not found.</EmptyState>
@@ -1208,7 +1213,9 @@ export function CompanyDetail() {
   for (const result of engagementActivityQueries) for (const activity of result.data ?? []) activityById.set(activity.id, activity)
   const activityItems = Array.from(activityById.values()).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
 
-  const decay = cadenceState(company.lastTouchAt, company.cadenceDays, now)
+  // `settingsQuery.data` is non-null here: the early return above waits on
+  // it, for the reason stated there.
+  const decay = decayForCompany(company, settings, nowDate)
 
   return (
     <div>

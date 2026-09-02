@@ -72,12 +72,18 @@ export default tseslint.config(
     // to do the WCAG arithmetic on the banner wash's own gradient stops —
     // the only form of that check that can exist, since Vitest runs with
     // `css: false` and an imported stylesheet is an empty module in jsdom.
+    // views/cadence-single-source.test.ts (T-260901-27) is the fifth, and
+    // the first to read .tsx rather than .css: it scans every view for the
+    // day arithmetic that must live only in lib/decay.ts, which is a claim
+    // about the source and so can only be checked against the source.
     ignores: [
       'electron/renderer/styles/tokens.test.ts',
       'electron/renderer/styles/base.test.ts',
       'electron/renderer/components/sheets/fields.test.ts',
       'electron/renderer/components/shell/Rail.test.ts',
-      'electron/renderer/views/Companies.css.test.ts'
+      'electron/renderer/views/Companies.css.test.ts',
+      'electron/renderer/views/cadence-single-source.test.ts',
+      'electron/renderer/views/detail-header.css.test.ts'
     ],
     languageOptions: {
       globals: globals.browser

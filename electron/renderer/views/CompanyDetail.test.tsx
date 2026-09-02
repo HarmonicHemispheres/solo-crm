@@ -986,10 +986,16 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
 
   it('a company nobody has ever contacted reads as late, never as ok (ADR-001)', async () => {
     // Lonely Co has `lastTouchAt: null`. Asserting the *label* alone is what
-    // let this hole survive: replacing `cadenceState`'s null branch with
-    // `{ pct: 0, label: 'no contact logged' }` keeps every word on screen
-    // identical and turns the bar green. The meter's own class is the only
-    // thing that distinguishes the two.
+    // let this hole survive: a null branch returning `{ pct: 0 }` with the
+    // same words on screen keeps everything readable and turns the bar
+    // green. The meter's own class is the only thing that distinguishes the
+    // two, and it is the assertion that matters here.
+    //
+    // The label is "never" rather than "no contact logged" since
+    // T-260901-27: this page reads `lib/decay.ts` like Today and the
+    // companies grid do, and `decayForCompany` has one word for this state.
+    // That the three `className` assertions below still pass, unchanged, is
+    // the evidence ADR-001's guard survived that move.
     renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'Lonely Co' })
 
@@ -997,7 +1003,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     expect(meter.className).toContain('late')
     expect(meter.className).not.toContain('ok')
     expect(meter.className).not.toContain('warn')
-    expect(meter.textContent).toContain('no contact logged')
+    expect(meter.textContent).toContain('never')
   })
 
   it('does not render the body against a half-loaded companies list', async () => {

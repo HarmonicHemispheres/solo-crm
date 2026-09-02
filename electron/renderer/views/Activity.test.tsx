@@ -252,7 +252,16 @@ describe('Activity', () => {
     expect(screen.getByText('Late touch')).toBeTruthy()
     // Actually reached the IPC boundary with occurredFrom set — proves this
     // is server-side narrowing, not a client-side re-filter of a fixed list.
-    expect(activityList).toHaveBeenLastCalledWith(expect.objectContaining({ occurredFrom: '2026-08-20T00:00:00.000Z' }))
+    //
+    // The expected instant is built here rather than written as a literal
+    // (it was `'2026-08-20T00:00:00.000Z'` until T-260901-26). The bound is
+    // local midnight of the picked day, so its UTC spelling depends on the
+    // machine's timezone — a literal would be an assertion about where the
+    // test happens to run. `new Date(y, m, d)` is the same local-midnight
+    // construction the view makes, which is the claim under test.
+    expect(activityList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ occurredFrom: new Date(2026, 7, 20, 0, 0, 0, 0).toISOString() })
+    )
 
     // Two "Clear filters" buttons exist while the filtered set is empty —
     // the filter bar's own and the "no matches" empty state's action, same
@@ -260,6 +269,53 @@ describe('Activity', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0])
     await waitFor(() => expect(screen.getByText('Early touch')).toBeTruthy())
     expect(screen.getByText('Late touch')).toBeTruthy()
+  })
+
+  it('a row displayed on the picked day is included by that day — the filter reads the same calendar the rows print (T-260901-26)', async () => {
+    // LESSONS.md line 12, made concrete. The bounds used to be UTC midnight
+    // (`parseDateOnly`) while every row renders its `occurredAt` in local
+    // time, so west of UTC an evening touch showed "Sep 1" on its own row
+    // and was excluded by From=Sep 1 / To=Sep 1 — it only appeared under
+    // Sep 2.
+    //
+    // The fixture is built *from* the local timezone rather than as a fixed
+    // UTC literal, so this states the same property wherever it runs: 18:00
+    // local on 2026-09-01 is the row, 2026-09-01 is the filter. In UTC the
+    // two frames coincide and it passes trivially; anywhere west of it —
+    // including the machine this was written on — it is the regression, and
+    // it fails against the old bounds.
+    const sixPmLocal = new Date(2026, 8, 1, 18, 0, 0, 0)
+    const occurredAt = sixPmLocal.toISOString()
+    const { activityList } = renderActivity({
+      activity: [makeActivity({ id: 'evening', title: 'Evening touch', occurredAt })]
+    })
+
+    await waitFor(() => expect(screen.getByText('Evening touch')).toBeTruthy())
+    // The row prints the day the filter is about to be set to. Half the
+    // point: the inclusion asserted below is only meaningful because this
+    // is what the operator sees on the row.
+    expect(screen.getByText(/Sep 1, 2026/)).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-01' } })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-09-01' } })
+
+    // Asserted on the bounds that crossed the boundary, not on what is
+    // painted. `placeholderData: keepPreviousData` deliberately holds the
+    // previous rows on screen through the refetch, so a `getByText` here
+    // finds the row whether or not the new filter would have excluded it —
+    // which is exactly how a first draft of this test passed against the
+    // unfixed view. The bounds are the thing the repository's SQL compares,
+    // so they are the thing to check.
+    await waitFor(() =>
+      expect(activityList).toHaveBeenLastCalledWith(
+        expect.objectContaining({ occurredFrom: expect.any(String), occurredTo: expect.any(String) })
+      )
+    )
+    const filters = activityList.mock.lastCall?.[0] as ActivityFilters
+    expect(
+      occurredAt >= filters.occurredFrom! && occurredAt <= filters.occurredTo!,
+      `${occurredAt} (shown as Sep 1) must fall inside [${filters.occurredFrom}, ${filters.occurredTo}]`
+    ).toBe(true)
   })
 
   it('every entity link navigates to the right page — company, person, and an engagement (routed to its billing company, since no engagement detail route exists)', async () => {

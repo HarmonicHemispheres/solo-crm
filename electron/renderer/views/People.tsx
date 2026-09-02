@@ -9,7 +9,8 @@ import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { PlusIcon } from '../components/icons'
 import { useLayerManager, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
-import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
+import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
+import { identityColor, initials } from '../lib/identity'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import type { Company, CompanyKind } from '../../shared/companies'
 import type { Person, PersonAffiliation } from '../../shared/people'
@@ -39,30 +40,7 @@ import './People.css'
 // primitive list has no `.cmark`).
 // ---------------------------------------------------------------------------
 
-const IDENTITY_PALETTE = [
-  'var(--verdigris)',
-  'var(--lapis)',
-  'var(--verdigris-dim)',
-  'var(--slate)',
-  'var(--lapis-deep)'
-] as const
 
-function identityColor(name: string): string {
-  let sum = 0
-  for (const char of name) sum += char.charCodeAt(0)
-  return IDENTITY_PALETTE[sum % IDENTITY_PALETTE.length]
-}
-
-function initials(name: string): string {
-  return name
-    .replace(/[^A-Za-z ]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase()
-}
 
 function PersonMark({ name, size }: { name: string; size: number }) {
   const color = identityColor(name)
@@ -223,19 +201,24 @@ export function People() {
     }))
   })
 
+  // Companies.tsx's identical handler, now including its rollback
+  // (T-260901-28): the bare `setQueryData` this used to do had no `onError`,
+  // so a failed `settings:set` left the toggle showing a preference main
+  // never stored. See that file's comment for the full reasoning.
   const setModeMutation = useMutation({
     mutationFn: (value: ViewPresentationMode) =>
       callCrm('settings:set', { key: MODE_SETTING_KEY, value }).then(unwrapMutationResult),
-    onSuccess: () => invalidate.settings(queryClient)
+    ...optimisticUpdate<SettingEntry, ViewPresentationMode>(
+      queryClient,
+      queryKeys.settings.detail(MODE_SETTING_KEY),
+      (_current, value) => ({ key: MODE_SETTING_KEY, value }),
+      invalidate.settings
+    )
   })
 
   const mode = modeFromEntry(modeQuery.data)
 
   function handleModeChange(next: ViewPresentationMode) {
-    // Written to the cache immediately, same reasoning as Companies.tsx's
-    // identical handler: the toggle feels instant, and the mutation's
-    // onSuccess invalidation reconciles this key with whatever main stored.
-    queryClient.setQueryData(queryKeys.settings.detail(MODE_SETTING_KEY), { key: MODE_SETTING_KEY, value: next })
     setModeMutation.mutate(next)
   }
 

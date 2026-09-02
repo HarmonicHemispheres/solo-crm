@@ -55,6 +55,7 @@ import {
   updateAffiliationInputSchema,
   updatePersonInputSchema
 } from './people'
+import type { CHANNEL_NAMES as CHANNEL_NAMES_LIST } from './channel-names'
 import { SEARCH_KINDS, searchQueryInputSchema } from './search'
 import { SETTINGS_KEYS, SETTINGS_REGISTRY } from './settings'
 import type { SettingKey, SettingsSnapshot, SettingValue } from './settings'
@@ -737,8 +738,27 @@ export const CHANNEL_CONTRACTS = {
 
 export type ChannelName = keyof typeof CHANNEL_CONTRACTS
 
-/** Mechanically derived from `CHANNEL_CONTRACTS`'s own keys — nothing to keep in sync by hand. */
-export const CHANNEL_NAMES = Object.keys(CHANNEL_CONTRACTS) as ChannelName[]
+/**
+ * Re-exported from `./channel-names`, which declares the list and imports
+ * nothing. It used to be `Object.keys(CHANNEL_CONTRACTS)` right here, and
+ * that cost the sandboxed preload — the one importer that needs the names
+ * and none of the schemas — 204 KB of zod evaluated on every window
+ * creation. That module's header has the whole reasoning, and the two
+ * checks that replace `Object.keys`: the pair of `extends` assertions below
+ * (set equality, at compile time) and `ipc-types.test.ts` (order too).
+ */
+export { CHANNEL_NAMES } from './channel-names'
+
+/**
+ * `CHANNEL_NAMES` and `CHANNEL_CONTRACTS` name the same set — asserted in
+ * both directions so neither a contract without a name nor a name without a
+ * contract compiles. `never` on either line is the failure: a name missing
+ * from the array, or an array entry that is not a contract key.
+ */
+type ChannelNameFromList = (typeof CHANNEL_NAMES_LIST)[number]
+type _EveryContractIsNamed = ChannelName extends ChannelNameFromList ? true : never
+type _EveryNameIsAContract = ChannelNameFromList extends ChannelName ? true : never
+export type _ChannelNameCrossCheck = [_EveryContractIsNamed, _EveryNameIsAContract]
 
 export type ChannelRequest<K extends ChannelName> = z.infer<(typeof CHANNEL_CONTRACTS)[K]['request']>
 export type ChannelResponse<K extends ChannelName> = z.infer<(typeof CHANNEL_CONTRACTS)[K]['response']>

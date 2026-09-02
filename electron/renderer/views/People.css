@@ -20,30 +20,8 @@
 }
 
 /* ── identity mark ── */
-.cmark {
-  border-radius: var(--radius-9);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  border: 1px solid var(--border);
-  position: relative;
-  overflow: hidden;
-  flex: none;
-}
 
-.cmark span {
-  position: relative;
-  z-index: 1;
-}
 
-.cmark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: 0.16;
-  background: currentColor;
-}
 
 /* ── person card ── */
 .ccard {

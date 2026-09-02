@@ -1,10 +1,10 @@
 /*
- * `/company/:id` (T-260828-29, extended by T-260828-30). `.back`, `.dbanner`,
- * `.dhead`, `.dmeta`, `.cmark`, `.field`, `.eng`, `.eng-t`, `.via`, `.endrow`
- * are transcribed from planning/solo-crm-mockup.html — the
- * detail-page classes that view shares with the future person-detail route
- * (T-260828-32), ported once here since neither primitive nor shared file
- * for them exists yet. T-260828-30 adds `.todo`/`.check`/`.due`/`.nextbadge`
+ * `/company/:id` (T-260828-29, extended by T-260828-30). `.field`, `.eng`,
+ * `.eng-t`, `.via`, `.endrow` are transcribed from
+ * planning/solo-crm-mockup.html. The header classes this page shares with
+ * `/person/:id` — `.back`, `.dhero`, `.dbanner`, `.dhead`, `.dmeta`,
+ * `.cmark` — moved to `detail-header.css` in T-260901-30, after living in
+ * duplicate here and in PersonDetail.css. T-260828-30 adds `.todo`/`.check`/`.due`/`.nextbadge`
  * (mockup's todo list, lines ~324-345) and `.tl`/`.tli` (mockup's timeline,
  * lines ~173-182) the same way, for the same reason — no shared home for
  * either yet, and this is their first consumer. `.company-detail-grid` and
@@ -35,60 +35,15 @@
   align-items: start;
 }
 
-/* ── detail header ───────────────────── */
-
-.back {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--faint);
-  background: none;
-  border: 0;
-  padding: 0;
-  margin-bottom: 14px;
-}
-
-.back:hover,
-.back:focus-visible {
-  color: var(--verdigris);
-}
-
-/* ── the header band (T-260901-29) ──
+/* ── detail header ─────────────────────
  *
- * The mockup draws `.dbanner` as a fixed 76px strip and pulls `.dhead` up
- * over its bottom 40px, so the mark straddles the band's edge. That was
- * sized for a header of mark + one-line heading + a row of tags. This app's
- * header carries more — the decay meter, and the Edit / Logo / Banner
- * cluster — and at 700px the heading wraps, so the content outgrew the
- * strip: the mark sat below the band, the tags hung under it, the buttons
- * crossed its edge. Now `.dhero` is the header's box, `.dbanner` is its
- * background (absolute, full bleed) and `.dhead` sits inside with padding,
- * so the band is exactly as tall as what it holds, at every width. */
-.dhero {
-  position: relative;
-  margin-bottom: 20px;
-}
-.dbanner {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-13);
-  background:
-    linear-gradient(115deg, color-mix(in srgb, var(--c) 26%, transparent), transparent 62%),
-    linear-gradient(180deg, var(--surface-2), transparent);
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.dbanner::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(60% 120% at 88% 0%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
-}
+ * `.back`, `.dhero`, `.dbanner`, `.dhead`, `.dmeta` and `.cmark` moved to
+ * `detail-header.css` (T-260901-30) — they are the header this page and
+ * `/person/:id` share, and they were declared identically in both
+ * stylesheets. What stays below is what only a *company* header has: its
+ * banner image and scrim, its logo in the mark, and its action cluster.
+ * Every one of them is a modifier or an addition on a rule that file owns,
+ * never a redefinition of one. */
 
 /* ── the company's own banner (T-260901-14, ADR-015) ──
  *
@@ -135,70 +90,7 @@
   );
 }
 
-.dhead {
-  position: relative;
-  z-index: 1;
-  padding: 18px 20px;
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  flex-wrap: wrap;
-}
 
-.dmeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 8px;
-  align-items: center;
-}
-
-.cmark {
-  border-radius: var(--radius-9);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  border: 1px solid var(--border);
-  position: relative;
-  overflow: hidden;
-  flex: none;
-}
-
-.cmark span {
-  position: relative;
-  z-index: 1;
-}
-
-.cmark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: 0.16;
-  background: currentColor;
-}
-
-/* ── the company's own logo in the mark (T-260901-14) ──
- *
- * `contain`, not `cover`: this is a mark, and cropping someone's logo to fill
- * a square is a worse answer than letting it sit inside one. The accent wash
- * `::after` paints is switched off with an image present — it would tint the
- * logo — and a solid surface takes its place so a PNG with transparency has
- * something to sit on rather than showing the page through it. */
-.cmark.has-image {
-  background: var(--surface-2);
-}
-
-.cmark.has-image::after {
-  content: none;
-}
-
-.cmark-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
 
 /* ── header actions (T-260901-14) ──
  *

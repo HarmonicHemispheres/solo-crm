@@ -28,6 +28,15 @@ import { describe, expect, it } from 'vitest'
 
 const companiesCss = readFileSync(join(import.meta.dirname, 'Companies.css'), 'utf8')
 const tokensCss = readFileSync(join(import.meta.dirname, '../styles/tokens.css'), 'utf8')
+/**
+ * The identity mark's own rules — `.cmark`, its image variant and
+ * `.cmark-img` — moved out of this stylesheet in T-260901-30, into a global
+ * one loaded from `main.tsx`. They were declared in four view stylesheets at
+ * once, all unscoped, so only one copy was ever governing anything. The card
+ * still renders the mark, so the assertions about it stay here and read the
+ * file that now owns them.
+ */
+const identityMarkCss = readFileSync(join(import.meta.dirname, '../styles/identity-mark.css'), 'utf8')
 
 interface CssRule {
   selector: string
@@ -52,9 +61,15 @@ function parseRules(css: string): CssRule[] {
 }
 
 const RULES = parseRules(companiesCss)
+const IDENTITY_MARK_RULES = parseRules(identityMarkCss)
 
 function ruleFor(selector: string): CssRule | undefined {
   return RULES.find((rule) => rule.selector === selector)
+}
+
+/** The same lookup against the shared identity-mark stylesheet. */
+function markRuleFor(selector: string): CssRule | undefined {
+  return IDENTITY_MARK_RULES.find((rule) => rule.selector === selector)
 }
 
 /** Every rule in the file whose body declares the given property. */
@@ -205,7 +220,14 @@ describe('Companies.css — the banner wash', () => {
     // coloured wash across their logo, so it is switched off — and the image
     // is `contain`, not `cover`, because a wordmark cropped through its own
     // letters is worse than a letterboxed one.
-    expect(ruleFor('.cmark.has-logo::after')?.body).toContain('content: none')
-    expect(ruleFor('.cmark-img')?.body).toContain('object-fit: contain')
+    //
+    // The class is `has-image`, not the `has-logo` this stylesheet used
+    // until T-260901-30: the company *detail* page's mark called the same
+    // state `has-image` and additionally gave it a `--surface-2` ground, so
+    // the same transparent PNG sat on a surface there and on the page itself
+    // here. One class now, with the detail page's behaviour, in one file.
+    expect(markRuleFor('.cmark.has-image::after')?.body).toContain('content: none')
+    expect(markRuleFor('.cmark.has-image')?.body).toContain('background: var(--surface-2)')
+    expect(markRuleFor('.cmark-img')?.body).toContain('object-fit: contain')
   })
 })

@@ -7,7 +7,7 @@ import { InfoPopover } from '../components/primitives/InfoPopover'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { SoloCrmMark, SoloCrmWordmark } from '../components/shell/BrandMarks'
-import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
+import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { useLayerManager } from '../components/shell/layer-manager-context'
 import { GLOBAL_SHORTCUTS } from '../hooks/useGlobalShortcuts'
@@ -105,19 +105,30 @@ function useSettingsSnapshot() {
 
 function useSetSetting() {
   const queryClient = useQueryClient()
+  // Through `optimisticUpdate` (T-260901-28), not a bare `setQueryData`
+  // beside the mutate call. Every switch, select and stepper on this page
+  // still writes the cache before the round trip so it feels instant, but a
+  // failed `settings:set` now restores the previous snapshot instead of
+  // leaving the control showing a preference main never stored — on the
+  // *settings* page above all, where "it did not save" is the one thing a
+  // control here must never get wrong.
+  //
+  // The optimistic value merges into the whole `settings:getAll` snapshot
+  // rather than replacing it, which is the shape this page reads: one key
+  // changes, the other thirty are untouched. `undefined` (no snapshot
+  // cached yet) passes through unchanged for the same reason it did before
+  // — there is nothing to merge into, and the invalidation will fetch it.
   const mutation = useMutation({
     mutationFn: (entry: SettingEntry) => callCrm('settings:set', entry).then(unwrapMutationResult),
-    onSuccess: () => invalidate.settings(queryClient)
+    ...optimisticUpdate<SettingsSnapshot | undefined, SettingEntry>(
+      queryClient,
+      queryKeys.settings.list(),
+      (current, entry) => (current ? { ...current, [entry.key]: entry.value } : current),
+      invalidate.settings
+    )
   })
 
   return function setSetting<K extends SettingKey>(key: K, value: SettingValue<K>) {
-    // Written to the cache immediately (Companies.tsx's own
-    // `handleModeChange` pattern) so every switch/select/stepper here feels
-    // instant; the mutation's `onSuccess` invalidation reconciles this key
-    // with whatever main actually stored.
-    queryClient.setQueryData(queryKeys.settings.list(), (current: SettingsSnapshot | undefined) =>
-      current ? { ...current, [key]: value } : current
-    )
     mutation.mutate(settingEntry(key, value))
   }
 }

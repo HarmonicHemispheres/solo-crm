@@ -365,6 +365,34 @@ describe('Todos', () => {
     await waitFor(() => expect(screen.getByTestId('person-detail').textContent).toBe('ben'))
   })
 
+  it('rolls the grouping back to the stored value when settings:set fails (T-260901-28)', async () => {
+    // The rollback half of the optimistic write. Modelled on Companies.tsx's
+    // own test, including the trick that makes it real: `settings:get`
+    // answers 'date' once and then never resolves, so the reconciling
+    // refetch cannot paper over a missing `onError` — the only thing that
+    // can put "By date" back on screen is the rollback itself.
+    let getCalls = 0
+    const settingsGet = vi.fn(async () => {
+      getCalls += 1
+      if (getCalls === 1) return { ok: true as const, data: { key: 'view.todos.groupBy' as const, value: 'date' as const } }
+      return new Promise<never>(() => {})
+    })
+    const settingsSet = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'handler-error' as const, message: 'disk is read-only' }
+    }))
+    renderTodos({ crmOverrides: { 'settings:get': settingsGet, 'settings:set': settingsSet } })
+    await waitFor(() => expect(screen.getByText('Send the countersigned SOW')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'By client' }))
+
+    // The click really did ask main to store 'client' — the toggle is back
+    // on "By date" because the write failed, not because nothing happened.
+    await waitFor(() => expect(settingsSet).toHaveBeenCalledWith({ key: 'view.todos.groupBy', value: 'client' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'By date' }).getAttribute('aria-pressed')).toBe('true'))
+    expect(screen.getByRole('button', { name: 'By client' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('persists the grouping choice through settings:set', async () => {
     const settingsSet = vi.fn(async (entry: SettingEntry) => ({ ok: true as const, data: { ok: true as const, data: entry } }))
     renderTodos({ crmOverrides: { 'settings:set': settingsSet } })

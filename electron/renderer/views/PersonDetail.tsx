@@ -12,6 +12,8 @@ import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { Button } from '../components/primitives/Button'
 import { Toast } from '../components/primitives/Toast'
+import './detail-header.css'
+import { identityColor as hue, initials } from '../lib/identity'
 import './PersonDetail.css'
 import { localToday } from './todo-urgency'
 
@@ -39,24 +41,7 @@ import { localToday } from './todo-urgency'
 // its own subject (a person) and every company an affiliation row links to.
 // ---------------------------------------------------------------------------
 
-const MARK_PALETTE = ['var(--verdigris)', 'var(--lapis)', 'var(--verdigris-dim)', 'var(--slate)', 'var(--lapis-deep)'] as const
 
-function hue(name: string): string {
-  let sum = 0
-  for (const char of name) sum += char.charCodeAt(0)
-  return MARK_PALETTE[sum % MARK_PALETTE.length]
-}
-
-function initials(name: string): string {
-  return name
-    .replace(/[^A-Za-z ]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0] ?? '')
-    .join('')
-    .toUpperCase()
-}
 
 type StyleWithAccent = CSSProperties & { '--c': string }
 

@@ -1,0 +1,88 @@
+/*
+ * `.cmark` — the identity mark, ported from planning/solo-crm-mockup.html's
+ * own `mark()` (lines ~928-934). A rounded square holding either two derived
+ * initials over a tint of the name's colour, or an image (a company's logo)
+ * where one is stored.
+ *
+ * **Loaded once from `main.tsx`, never per view** — the third global sheet
+ * beside `tokens.css` and `base.css`, and for the same reason they are
+ * global: `.cmark` is an unscoped class name used by five views, so a
+ * per-view copy is not encapsulation, it is the same global rule written
+ * five times and only one of them winning.
+ *
+ * It was written five times: `Companies.css`, `People.css`, `Today.css`,
+ * `CompanyDetail.css` and `PersonDetail.css` each declared `.cmark`,
+ * `.cmark span` and `.cmark::after` identically — bar a `.4px` here and a
+ * `0.4px` there — and whichever the bundler emitted last governed every
+ * page. T-260828-15 found "three stylesheets fighting over one unscoped
+ * selector" once already; this is the same shape, discovered by
+ * `detail-header.css.test.ts` while extracting the detail header
+ * (T-260901-30), which found four owners where it expected two.
+ *
+ * The mark's *markup* is still per view — Companies renders a logo, Today
+ * renders initials, CompanyDetail renders a 50px version with an accent —
+ * and that is fine; what they share is this look, and `lib/identity.ts`
+ * shares the colour and the initials that feed it.
+ */
+
+.cmark {
+  border-radius: var(--radius-9);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+/* Above the `::after` tint, which is painted over the whole mark. */
+.cmark span {
+  position: relative;
+  z-index: 1;
+}
+
+/* The name's colour, at 16%, as a ground the derived initials read against.
+   `currentColor` because the mark's `color` is what each view sets from
+   `identityColor(name)` — one inline property, not a class per hue. */
+.cmark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+  background: currentColor;
+}
+
+/* ── with an image ──────────────────────
+ *
+ * `contain`, not `cover`: this is a mark, and cropping someone's logo to
+ * fill a square is a worse answer than letting it sit inside one. A wordmark
+ * wider than it is tall letterboxes rather than being cut through its own
+ * letters.
+ *
+ * The tint goes — over a real logo it is a coloured film across someone
+ * else's mark — and a solid surface takes its place so a PNG with
+ * transparency has something to sit on rather than showing the page through
+ * it. The border still holds the shape.
+ *
+ * One class, `has-image`. The company *card* called this `has-logo` and the
+ * company *detail page* called it `has-image`, and only the detail page's
+ * copy set the background — so the same transparent logo sat on a surface on
+ * one page and on the page itself on the other. Unified here on the detail
+ * page's behaviour, which is the correct one (T-260901-30).
+ */
+.cmark.has-image {
+  background: var(--surface-2);
+}
+
+.cmark.has-image::after {
+  content: none;
+}
+
+.cmark-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}

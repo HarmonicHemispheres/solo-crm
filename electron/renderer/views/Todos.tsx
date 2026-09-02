@@ -7,7 +7,7 @@ import { Card } from '../components/primitives/Card'
 import { Stat } from '../components/primitives/Stat'
 import { QuickAdd } from '../components/primitives/QuickAdd'
 import { EmptyState } from '../components/primitives/EmptyState'
-import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
+import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 // The date arithmetic, the buckets and the urgency ordering live in their
 // own module so the Today view can import them instead of restating them
@@ -140,18 +140,27 @@ export function Todos() {
     queryFn: ipcQueryFn('settings:get', { key: GROUP_BY_SETTING_KEY })
   })
 
+  // Through `optimisticUpdate` rather than a bare `setQueryData` beside the
+  // mutate call (T-260901-28). The cache is still written before the round
+  // trip so the toggle feels instant (§6.13), but a failed `settings:set`
+  // now puts the previous value back instead of leaving the control
+  // claiming a preference the app never stored — a lie that survived until
+  // the next restart. Companies.tsx's own presentation toggle is the model;
+  // these four sites were converted to look like it rather than like each
+  // other.
   const setGroupByMutation = useMutation({
     mutationFn: (value: TodoGroupByMode) => callCrm('settings:set', { key: GROUP_BY_SETTING_KEY, value }).then(unwrapMutationResult),
-    onSuccess: () => invalidate.settings(queryClient)
+    ...optimisticUpdate<SettingEntry, TodoGroupByMode>(
+      queryClient,
+      queryKeys.settings.detail(GROUP_BY_SETTING_KEY),
+      (_current, value) => ({ key: GROUP_BY_SETTING_KEY, value }),
+      invalidate.settings
+    )
   })
 
   const groupBy = groupByFromEntry(groupByQuery.data)
 
   function handleGroupByChange(next: TodoGroupByMode) {
-    // Written to the cache immediately, same pattern as Companies.tsx's
-    // presentation toggle — the mutation below still round-trips through
-    // settings:set so the choice survives a restart (§6.13).
-    queryClient.setQueryData(queryKeys.settings.detail(GROUP_BY_SETTING_KEY), { key: GROUP_BY_SETTING_KEY, value: next })
     setGroupByMutation.mutate(next)
   }
 

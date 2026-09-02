@@ -21,6 +21,7 @@ import {
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { decayForCompany, type Decay } from '../lib/decay'
+import { identityColor, initials } from '../lib/identity'
 // Imported, never restated — see this file's header and T-260829-14's Risks.
 import { localToday, dueMeta, sortByDue } from './todo-urgency'
 import { TodoRow } from './Todos'
@@ -87,30 +88,7 @@ import './Today.css'
 // change and is not this task's diff.
 // ---------------------------------------------------------------------------
 
-const IDENTITY_PALETTE = [
-  'var(--verdigris)',
-  'var(--lapis)',
-  'var(--verdigris-dim)',
-  'var(--slate)',
-  'var(--lapis-deep)'
-] as const
 
-function identityColor(name: string): string {
-  let sum = 0
-  for (const char of name) sum += char.charCodeAt(0)
-  return IDENTITY_PALETTE[sum % IDENTITY_PALETTE.length]
-}
-
-function initials(name: string): string {
-  return name
-    .replace(/[^A-Za-z ]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase()
-}
 
 function CompanyMark({ name, size }: { name: string; size: number }) {
   const color = identityColor(name)

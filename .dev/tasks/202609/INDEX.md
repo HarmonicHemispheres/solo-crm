@@ -13,13 +13,19 @@ Each of those three needed a decision written down before code, which is what
 the two 📄 docs tasks and the settings ADR are for.
 
 T-260901-19 to -28 came out of a whole-repository review on 2026-09-01 (main,
-renderer, tooling and docs, each by a fresh reader). The seven that were small
-and mechanical were built in the same session; the three still open here are
-scoped and waiting for a decision.
+renderer, tooling and docs, each by a fresh reader). The three defects among
+them closed on 2026-09-02.
 
 T-260902-02 to -06 are the Revenue slice of Phase 3 (P3-04/05/06/10/11),
 scoped on 2026-09-02 after the user found the Revenue page empty. They are
 in build order; -03 is the generator ADR-003 exists for and is the large one.
+**They are the whole of what is left open here**, apart from T-260901-31,
+which is a design decision rather than a defect: the company header's
+`Edit / LOGO Upload… / BANNER Upload…` cluster fits at 700px (no overflow in
+`shots/metrics.json`) but is dense, and whether it stays a row of buttons,
+collapses to one control, or moves into the Edit sheet is product direction,
+not a fix. It was deliberately left for the user rather than decided inside
+a scan-and-fix pass.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
@@ -27,16 +33,17 @@ in build order; -03 is the generator ADR-003 exists for and is the large one.
 | ○ open | [T-260902-04](T-260902-04-revenue-rollups-ipc.md) | Revenue rollup queries and their IPC channel — three attributions, four metrics, one SUM | 🗄 data | P3-06 |
 | ○ open | [T-260902-05](T-260902-05-revenue-view.md) | Build the Revenue view — rollup toggle, four metrics, the by-month table | 🎨 ui | P3-10 |
 | ○ open | [T-260902-06](T-260902-06-stacked-monthly-chart.md) | The stacked monthly revenue chart, on Revenue and Today, from revenue_lines | 🎨 ui | P3-11 |
-| ○ open | [T-260901-30](T-260901-30-shared-detail-header-styles.md) | Give the detail-page header one stylesheet instead of two copies that must be edited in step | 🎨 ui | |
 | ○ open | [T-260901-31](T-260901-31-header-image-controls-narrow.md) | Decide where the logo and banner controls live when the header is narrow | 🎨 ui | |
-| ○ open | [T-260901-26](T-260901-26-activity-filter-local-day.md) | Make the Activity view's date-range filter use the same calendar day the rows display | 🎨 ui | |
-| ○ open | [T-260901-27](T-260901-27-one-cadence-computation.md) | Compute a company's cadence state in one place, so the grid, the detail page and Today agree | 🎨 ui | |
-| ○ open | [T-260901-28](T-260901-28-optimistic-settings-rollback.md) | Roll back the optimistic settings writes that have no onError | 🎨 ui | |
 
 ## Closed this month
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260902-07](T-260902-07-preload-carries-the-schema-layer.md) | Stop the sandboxed preload bundling zod and every entity schema to read a list of channel names | 📦 build | | — |
+| ● done | [T-260901-30](T-260901-30-shared-detail-header-styles.md) | Give the detail-page header one stylesheet instead of two copies that must be edited in step | 🎨 ui | | — |
+| ● done | [T-260901-27](T-260901-27-one-cadence-computation.md) | Compute a company's cadence state in one place, so the grid, the detail page and Today agree | 🎨 ui | | — |
+| ● done | [T-260901-28](T-260901-28-optimistic-settings-rollback.md) | Roll back the optimistic settings writes that have no onError | 🎨 ui | | — |
+| ● done | [T-260901-26](T-260901-26-activity-filter-local-day.md) | Make the Activity view's date-range filter use the same calendar day the rows display | 🎨 ui | | — |
 | ● done | [T-260902-02](T-260902-02-milestones-repository.md) | Build the milestones repository — the fixed-scope half of revenue has nowhere to come from without it | 🗄 data | P3-04 | — |
 | ● done | [T-260902-01](T-260902-01-revenue-page-says-what-it-is.md) | Give the Revenue route a real header and an honest empty body instead of a bare heading | 🎨 ui | | — |
 | ● done | [T-260901-29](T-260901-29-detail-header-band-contains-content.md) | Make the detail-page header band contain its content instead of a fixed strip the content straddles | 🎨 ui | | — |
@@ -89,3 +96,28 @@ the same header) and T-260901-10 (for the edit affordance). T-260901-12 is
 the riskiest task in the batch: it widens the one channel in the app that
 touches the filesystem for the renderer, and it carries a `security-review`
 gate alongside T-260901-07's.
+
+## The 2026-09-02 scan
+
+A full pass over the app — every route screenshotted at three widths, the
+main process and the build read, the whole suite run — on the user's ask to
+"fix anything off, broken, missing or could be improved" and cut a release.
+
+The four defects it closed (T-260901-26, -27, -28 and the -30 refactor) were
+already scoped from the 2026-09-01 review; the scan's own contribution was
+T-260902-07, which nothing had reported and no check measured, and the two
+discoveries recorded inside T-260901-30's outcome: `.cmark` declared in four
+unscoped stylesheets at once, and the identity helpers duplicated across five
+views. Each of the five now leaves a check behind.
+
+**Deliberately not built**, and named here so they are not mistaken for
+oversights:
+
+- **Milestones have a repository and an IPC namespace (T-260902-02) but no
+  UI.** Every fixed-scope engagement reads "0 of 0 milestones" for good, and
+  T-260902-03's generator has nothing to read. That is a task, not a fix.
+- **Offerings are not searchable.** `SEARCH_KINDS` indexes five source
+  tables and offerings is not one of them (`nav.ts` records the absence).
+  ADR-008's codes are append-only, so adding one is legal — but it is a
+  migration plus triggers plus a palette result kind, which is a task.
+- **T-260901-31**, above.

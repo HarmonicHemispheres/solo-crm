@@ -11,7 +11,8 @@ import { PlusIcon } from '../components/icons'
 import { useLayerManager } from '../components/shell/layer-manager-context'
 import { ipcQueryFn } from '../lib/ipc'
 import { queryKeys } from '../lib/query-keys'
-import { formatTimestamp, parseDateOnly, parseTimestamp } from '../../shared/format'
+import { formatTimestamp, parseTimestamp } from '../../shared/format'
+import { dateOnlySchema } from '../../shared/types'
 import { ACTIVITY_KINDS, type Activity, type ActivityFilters, type ActivityKind } from '../../shared/activity'
 import type { Company } from '../../shared/companies'
 import type { Person } from '../../shared/people'
@@ -73,7 +74,6 @@ const KIND_VARIANT: Record<ActivityKind, TagVariant> = {
 
 const PAGE_SIZE = 50
 const EXCERPT_LIMIT = 140
-const DAY_MS = 24 * 60 * 60 * 1000
 
 /** Trims and truncates a body to a one-line excerpt — `null`/blank collapses to `null` so the caller can skip the `.note` line entirely rather than rendering an empty one. */
 function excerptOf(body: string | null): string | null {
@@ -95,12 +95,51 @@ function formatOccurred(occurredAt: string): string {
   return OCCURRED_FORMAT.format(parseTimestamp(occurredAt))
 }
 
-/** Inclusive day bounds for the date-range filter's two `<input type="date">` values — a `dateOnlySchema` day, widened to the full `timestampSchema` instant range `occurredFrom`/`occurredTo` compare against. */
+/**
+ * Inclusive day bounds for the date-range filter's two `<input type="date">`
+ * values — a `dateOnlySchema` day, widened to the full `timestampSchema`
+ * instant range `occurredFrom`/`occurredTo` compare against.
+ *
+ * **The bounds are the picked day in the operator's own timezone, not in
+ * UTC** (T-260901-26). This used to be `parseDateOnly(dateOnly)`, which is
+ * UTC midnight by construction (`shared/format.ts`, and correctly so — that
+ * helper exists for date-only *values*, which carry no timezone to get
+ * wrong). But `occurred_at` is an instant, and `formatOccurred` above
+ * renders every row of it in **local** time. The two frames disagreed by the
+ * UTC offset, and west of UTC that is a whole calendar day for part of every
+ * evening: a touch logged at 18:00 Pacific on Sep 1 stores as
+ * `2026-09-02T01:00Z`, displays "Sep 1, 6:00 PM" on its row, and was
+ * *excluded* by From=Sep 1 / To=Sep 1 while being included by Sep 2. The
+ * filter and the list were reading the same rows through two different
+ * calendars — LESSONS.md line 12.
+ *
+ * So the day is constructed with the local `Date` constructor and converted
+ * to the wire's UTC instant on the way out, which is what makes "the rows
+ * that say that day on them" the rows the filter selects. `parseDateOnly`
+ * is still the right helper everywhere a date-only value is compared to
+ * another date-only value; it is the wrong one here, where a date-only value
+ * bounds an instant.
+ */
+function localDayBounds(dateOnly: string): { start: Date; end: Date } {
+  // Parsed field by field rather than through `new Date(dateOnly)`, which
+  // the spec defines as *UTC* for the bare `YYYY-MM-DD` form — the exact
+  // trap this function exists to avoid, one line further in.
+  const [year, month, day] = dateOnlySchema.parse(dateOnly).split('-').map(Number)
+  return {
+    start: new Date(year, month - 1, day, 0, 0, 0, 0),
+    // 23:59:59.999 local, built by field rather than by adding DAY_MS - 1:
+    // a day is not always 86,400,000 ms long. On a spring-forward date it is
+    // an hour shorter, and the arithmetic version would have run the range
+    // an hour into the next day.
+    end: new Date(year, month - 1, day, 23, 59, 59, 999)
+  }
+}
+
 function dayStartTimestamp(dateOnly: string): string {
-  return formatTimestamp(parseDateOnly(dateOnly))
+  return formatTimestamp(localDayBounds(dateOnly).start)
 }
 function dayEndTimestamp(dateOnly: string): string {
-  return formatTimestamp(new Date(parseDateOnly(dateOnly).getTime() + DAY_MS - 1))
+  return formatTimestamp(localDayBounds(dateOnly).end)
 }
 
 type EntityFilterKeys = 'companyId' | 'personId' | 'engagementId'

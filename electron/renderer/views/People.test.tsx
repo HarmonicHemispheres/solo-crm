@@ -252,6 +252,32 @@ describe('People', () => {
     await waitFor(() => expect(screen.getByRole('columnheader', { name: /name/i })).toBeTruthy())
   })
 
+  it('rolls the presentation back to the stored value when settings:set fails (T-260901-28)', async () => {
+    // See Companies.test.tsx's twin for the reasoning, and Todos'. The
+    // never-resolving second `settings:get` is what makes this test about
+    // the rollback rather than about the refetch that follows it.
+    let getCalls = 0
+    const settingsGet = vi.fn(async () => {
+      getCalls += 1
+      if (getCalls === 1) return { ok: true as const, data: { key: 'view.people.mode' as const, value: 'card' as const } }
+      return new Promise<never>(() => {})
+    })
+    const settingsSet = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: 'handler-error' as const, message: 'disk is read-only' }
+    }))
+    renderPeople({ mode: 'card', crmOverrides: { 'settings:get': settingsGet, 'settings:set': settingsSet } })
+    await waitFor(() => expect(screen.getByText('Ana Silva')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'List' }))
+
+    await waitFor(() => expect(settingsSet).toHaveBeenCalledWith({ key: 'view.people.mode', value: 'list' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Card' }).getAttribute('aria-pressed')).toBe('true'))
+    expect(screen.getByRole('button', { name: 'List' }).getAttribute('aria-pressed')).toBe('false')
+    // And the cards, not the table, are what is actually on screen.
+    expect(screen.queryByRole('columnheader', { name: /name/i })).toBeNull()
+  })
+
   it('every card is a real button, and activating one navigates to its detail route', async () => {
     renderPeople({ mode: 'card' })
     await waitFor(() => expect(screen.getByText('Ana Silva')).toBeTruthy())

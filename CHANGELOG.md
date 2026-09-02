@@ -5,6 +5,30 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.2
+
+- 🐛 **A company is the same number of days late everywhere** — the companies
+  grid rounded where Today and the company's own page floored, so the same
+  company read "50d" on one screen and "49d" on the other; and a company with
+  no cadence of its own now inherits its kind's default in all three places
+  instead of showing a full red bar on two of them and "current" on the
+  third. Its ring can no longer be green while its bar is red.
+- 🐛 **Filtering Activity to a day shows the rows that say that day** — an
+  evening touch was filed under tomorrow, so From and To set to today
+  excluded it. The filter now reads the same calendar the rows print.
+- 🐛 **A setting that could not be saved goes back** — toggles on Todos,
+  People, Workspace Settings and the tour flag kept showing a preference the
+  app had refused to store, until the next restart. They snap back now.
+- ⚡ **The window opens faster** — the app was building its entire data-
+  validation layer inside the window's security bridge before every launch,
+  to read a list of channel names. That bridge went from 205 KB to 3 KB.
+- ♻️ **One definition of the things drawn in several places** — the identity
+  mark's styling was written into four stylesheets at once and its colour and
+  initials into five view files, so a change had to be made five times and
+  only one copy of the CSS was ever taking effect. Each now has one home,
+  with a check that keeps it there. No visual change: every page renders
+  pixel for pixel as before.
+
 ## 0.6.1
 
 - 🐛 **Person pages open on a seeded workspace** — every seeded person with a

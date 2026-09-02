@@ -1,12 +1,13 @@
 /*
- * `/person/:id` (T-260828-31). `.back`, `.dbanner`, `.dhead`, `.dmeta`,
- * `.cmark`, `.field`, `.chiprow` are the same detail-page classes
- * CompanyDetail.css already ports from planning/solo-crm-mockup.html —
- * CompanyDetail.css's own header names this route as the page they're
- * meant to be shared with, and duplicates them here for the identical
- * reason that file gives: no shared/primitive home for them exists yet.
- * `.person-detail-grid` mirrors `.company-detail-grid` exactly (same rule,
- * new name so each view's stylesheet stays self-contained).
+ * `/person/:id` (T-260828-31). The header classes this page shares with
+ * `/company/:id` — `.back`, `.dhero`, `.dbanner`, `.dhead`, `.dmeta`,
+ * `.cmark` — live in `detail-header.css` since T-260901-30; they were
+ * duplicated here and in CompanyDetail.css until then, both files saying no
+ * shared home existed yet. `.field` is still declared here (this page's
+ * Details card is editable in place, unlike the company one) and `.chiprow`
+ * is `components/sheets/fields.css`'s. `.person-detail-grid` mirrors
+ * `.company-detail-grid` exactly (same rule, new name so each view's
+ * stylesheet stays self-contained).
  *
  * `.tl`/`.tli`/`.bul`/`.d`/`.note` (the activity timeline) are lifted
  * verbatim from the mockup's own `.tl`/`.tli` rules (lines ~174-182) — the
@@ -28,103 +29,14 @@
   align-items: start;
 }
 
-/* ── detail header ───────────────────── */
-
-.back {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--faint);
-  background: none;
-  border: 0;
-  padding: 0;
-  margin-bottom: 14px;
-}
-
-.back:hover,
-.back:focus-visible {
-  color: var(--verdigris);
-}
-
-/* ── the header band (T-260901-29, the same change as CompanyDetail.css) ──
+/* ── detail header ─────────────────────
  *
- * The mockup draws `.dbanner` as a fixed 76px strip and pulls `.dhead` up
- * over its bottom 40px, so the mark straddles the band's edge. That was
- * sized for a header of mark + one-line heading + a row of tags. This app's
- * header carries more — the decay meter, and the Edit / Logo / Banner
- * cluster — and at 700px the heading wraps, so the content outgrew the
- * strip: the mark sat below the band, the tags hung under it, the buttons
- * crossed its edge. Now `.dhero` is the header's box, `.dbanner` is its
- * background (absolute, full bleed) and `.dhead` sits inside with padding,
- * so the band is exactly as tall as what it holds, at every width. */
-.dhero {
-  position: relative;
-  margin-bottom: 20px;
-}
-.dbanner {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-13);
-  background:
-    linear-gradient(115deg, color-mix(in srgb, var(--c) 26%, transparent), transparent 62%),
-    linear-gradient(180deg, var(--surface-2), transparent);
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.dbanner::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(60% 120% at 88% 0%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
-}
-
-.dhead {
-  position: relative;
-  z-index: 1;
-  padding: 18px 20px;
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  flex-wrap: wrap;
-}
-
-.dmeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 8px;
-  align-items: center;
-}
-
-.cmark {
-  border-radius: var(--radius-9);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  border: 1px solid var(--border);
-  position: relative;
-  overflow: hidden;
-  flex: none;
-}
-
-.cmark span {
-  position: relative;
-  z-index: 1;
-}
-
-.cmark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: 0.16;
-  background: currentColor;
-}
+ * `.back`, `.dhero`, `.dbanner`, `.dhead`, `.dmeta` and `.cmark` are in
+ * `detail-header.css` (T-260901-30). This page declared its own identical
+ * copies of all six until then; the two files had to be edited in step, and
+ * T-260901-29 is the change that proved it. Nothing person-specific was ever
+ * added to them, so this page's share of that stylesheet is the whole of it
+ * and there is nothing to keep here. */
 
 /* ── details card ────────────────────── */
 

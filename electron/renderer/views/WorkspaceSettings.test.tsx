@@ -611,6 +611,69 @@ describe('WorkspaceSettings', () => {
     await waitFor(() => expect(document.documentElement.hasAttribute('data-motion')).toBe(false))
   })
 
+  it('a switch that could not be saved goes back to what it was (T-260901-28)', async () => {
+    // `renderSettings` above stubs a *succeeding* `settings:set`, which is
+    // what every other test here wants. This one fails the write and holds
+    // it open until this test says so, and freezes `settings:getAll` after
+    // its first answer so the reconciling refetch cannot supply the correct
+    // value — the only thing that can put the switch back is
+    // `optimisticUpdate`'s own `onError`.
+    //
+    // The held-open write is what makes the assertions deterministic rather
+    // than a race. Asserting the final state alone passes against no fix at
+    // all (LESSONS.md line 14's species): `waitFor`'s first poll runs before
+    // React has re-rendered the optimistic value, so "still unchecked" is
+    // true for a moment whether or not a rollback exists. Watching the
+    // switch go *on* and then come back off is the assertion that cannot be
+    // satisfied by nothing happening.
+    //
+    // Before T-260901-28 this page wrote the snapshot with a bare
+    // `setQueryData` and had no `onError`: the switch stayed on, claiming a
+    // preference main had refused, until the next relaunch. On the settings
+    // page of all places.
+    let failTheWrite!: () => void
+    const writeFailed = new Promise<void>((resolve) => {
+      failTheWrite = resolve
+    })
+    let getCalls = 0
+    window.crm = stubCrm({
+      'settings:getAll': vi.fn(async () => {
+        getCalls += 1
+        if (getCalls === 1) return { ok: true as const, data: { ...DEFAULT_SNAPSHOT } }
+        return new Promise<never>(() => {})
+      }),
+      'settings:set': vi.fn(async () => {
+        await writeFailed
+        return { ok: false as const, error: { code: 'handler-error' as const, message: 'disk is read-only' } }
+      })
+    })
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <SettingsHost />
+      </QueryClientProvider>
+    )
+
+    await openSection('Integrations')
+    // DEFAULT_SNAPSHOT has Gmail off.
+    expect(screen.getByRole('switch', { name: 'Gmail' }).getAttribute('aria-checked')).toBe('false')
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Gmail' }))
+
+    // On, optimistically, while the write is still in flight — the half that
+    // makes the toggle feel instant, and that must survive this change.
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Gmail' }).getAttribute('aria-checked')).toBe('true'))
+
+    failTheWrite()
+
+    // And back off, because it could not be stored.
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Gmail' }).getAttribute('aria-checked')).toBe('false'))
+    // The neighbouring switch is untouched — the rollback restored the
+    // snapshot, it did not clear the page's settings out from under it.
+    expect(screen.getByRole('switch', { name: 'Stripe' }).getAttribute('aria-checked')).toBe(
+      String(DEFAULT_SNAPSHOT['integrations.stripe.enabled'])
+    )
+  })
+
   it('the shortcut reference is generated from useGlobalShortcuts.ts — every bound combo appears, none invented', async () => {
     renderSettings()
     await openSection('Help')

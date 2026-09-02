@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CHANNEL_NAMES } from '../shared/ipc-types'
+import { CHANNEL_NAMES } from '../shared/channel-names'
 import type { CrmApi } from '../shared/ipc-types'
 
 /**
@@ -14,13 +14,24 @@ import type { CrmApi } from '../shared/ipc-types'
  * string — see T-260828-09's Risks note on why that would undo the
  * boundary this file exists to hold.
  *
- * `CHANNEL_NAMES` (electron/shared/ipc-types.ts) is a plain array of string
- * literals with no runtime dependency beyond itself — it is the one file
- * this preload may safely import besides `electron` itself, since
- * registry.ts (the real channel definitions) reaches `getDatabase()`, which
- * eagerly loads the `better-sqlite3` native addon the moment it is
- * imported, something sandbox: true means this file can never do (T-260828-04's
- * outcome).
+ * `CHANNEL_NAMES` comes from `electron/shared/channel-names.ts` — a module
+ * that imports nothing, so this preload's bundle is this preload. The
+ * `CrmApi` import beside it is `import type`, erased at compile time, and
+ * so costs the bundle nothing either.
+ *
+ * **Import nothing else from `electron/shared/`, and `../shared/ipc-types`
+ * least of all.** Two separate reasons, and only the first is obvious:
+ *
+ * - `registry.ts` (the real channel definitions) reaches `getDatabase()`,
+ *   which eagerly loads the `better-sqlite3` native addon the moment it is
+ *   imported — something `sandbox: true` means this file can never do
+ *   (T-260828-04's outcome).
+ * - `ipc-types.ts` is harmless to *security* here but not to weight: it
+ *   builds `CHANNEL_CONTRACTS` out of every entity schema in
+ *   `electron/shared/`, so a value import of it drags zod and all of them
+ *   into this bundle. It did, for a while — 204 KB, constructed in the
+ *   sandboxed preload before every window load, to produce a list of
+ *   strings. `preload-weight.test.ts` now fails if that comes back.
  */
 function buildCrmApi(): CrmApi {
   const api: Record<string, (payload?: unknown) => Promise<unknown>> = {}

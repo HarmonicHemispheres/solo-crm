@@ -25,6 +25,8 @@
     "electron/renderer/components/sheets/fields.test.ts",
     "electron/renderer/components/shell/Rail.test.ts",
     "electron/renderer/views/Companies.css.test.ts",
+    "electron/renderer/views/cadence-single-source.test.ts",
+    "electron/renderer/views/detail-header.css.test.ts",
     "scripts/**/*.ts",
     "eslint-rules/**/*.ts",
     "vitest-pools.test.ts"

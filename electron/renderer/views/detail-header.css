@@ -1,0 +1,109 @@
+/*
+ * The detail-page header band — `/company/:id` and `/person/:id` (T-260901-30).
+ *
+ * `.back`, `.dhero`, `.dbanner`, `.dhead`, `.dmeta` and `.cmark` are
+ * transcribed from planning/solo-crm-mockup.html and are the *same* header on
+ * both routes. They were declared twice, in `CompanyDetail.css` and
+ * `PersonDetail.css`, each file's header explaining that no shared home
+ * existed yet — true when the first was written, and less true with every
+ * change since. T-260901-29 had to make one change in both files in step, and
+ * the copies had already begun to diverge: the image and scrim rules
+ * (T-260901-14) exist only in the company one, which is correct, but nothing
+ * distinguished "only the company has this" from "someone edited one copy".
+ *
+ * Now there is one copy, and the split is explicit: what is here is the header
+ * both pages have, and what remains in `CompanyDetail.css` is what only the
+ * company page has — its logo and banner (`.dbanner.has-image`,
+ * `.dbanner-img`, `.cmark.has-image`, `.cmark-img`) and its action cluster
+ * (`.dhead-*`). Each of those is a modifier or an addition, never a
+ * redefinition of a rule here, so load order between the two files does not
+ * matter.
+ *
+ * A stylesheet rather than a `DetailHeader` component, deliberately. The two
+ * headers share their *look* completely and their *markup* only in outline —
+ * the company's carries a decay meter, three tags and four buttons; the
+ * person's carries a role line and a company link. A component that spanned
+ * both would be a prop bag with two disjoint halves, which is a worse
+ * abstraction than the CSS both files were already sharing in spirit. If the
+ * markup ever converges, this file is what such a component would own.
+ *
+ * Loaded by both views' `.tsx` (`import './detail-header.css'`), like every
+ * other stylesheet in this directory — not `@import`ed from the two view
+ * stylesheets, which would make the dependency invisible from the component
+ * that actually needs it.
+ */
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.back:hover,
+.back:focus-visible {
+  color: var(--verdigris);
+}
+
+/* ── the header band (T-260901-29) ──
+ *
+ * The mockup draws `.dbanner` as a fixed 76px strip and pulls `.dhead` up
+ * over its bottom 40px, so the mark straddles the band's edge. That was
+ * sized for a header of mark + one-line heading + a row of tags. This app's
+ * header carries more — the decay meter, and the Edit / Logo / Banner
+ * cluster — and at 700px the heading wraps, so the content outgrew the
+ * strip: the mark sat below the band, the tags hung under it, the buttons
+ * crossed its edge. Now `.dhero` is the header's box, `.dbanner` is its
+ * background (absolute, full bleed) and `.dhead` sits inside with padding,
+ * so the band is exactly as tall as what it holds, at every width. */
+.dhero {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.dbanner {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-13);
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--c) 26%, transparent), transparent 62%),
+    linear-gradient(180deg, var(--surface-2), transparent);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.dbanner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 120% at 88% 0%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%);
+}
+
+.dhead {
+  position: relative;
+  z-index: 1;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.dmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+
+

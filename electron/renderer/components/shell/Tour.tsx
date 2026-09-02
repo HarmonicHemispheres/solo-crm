@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '../primitives/Button'
 import { useLayerManager } from './layer-manager-context'
 import { TOUR_STEPS } from './tour-steps'
-import { callCrm, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
+import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../../lib/ipc'
 import { invalidate, queryKeys } from '../../lib/query-keys'
 import type { SettingsSnapshot } from '../../../shared/settings'
 import './Tour.css'
@@ -83,10 +83,22 @@ export function Tour() {
     openLayer('tour')
   }, [tourSeen, workspaceIsEmpty, openLayer])
 
+  // Through `optimisticUpdate` (T-260901-28). The flag is written into the
+  // cached snapshot immediately — the mutation's invalidation is a round
+  // trip, and until it lands the snapshot still says the tour is unseen, so
+  // the auto-open effect above would fire again — and rolled back if
+  // `settings:set` fails, which is the half that was missing: the tour would
+  // then read as seen for the rest of the session and reappear on the next
+  // launch, with no way for the operator to tell which state was real.
   const markSeen = useMutation({
     mutationFn: () =>
       callCrm('settings:set', { key: 'onboarding.tourSeen', value: true }).then(unwrapMutationResult),
-    onSuccess: () => invalidate.settings(queryClient)
+    ...optimisticUpdate<SettingsSnapshot | undefined, void>(
+      queryClient,
+      queryKeys.settings.list(),
+      (current) => (current ? { ...current, 'onboarding.tourSeen': true } : current),
+      invalidate.settings
+    )
   })
 
   // Held in a ref so the close effect below depends on `open` alone — the
@@ -119,16 +131,11 @@ export function Tour() {
     }
     if (!wasOpenRef.current) return
     wasOpenRef.current = false
+    // The cache write that used to sit here moved into the mutation's own
+    // `onMutate` (see `markSeen` above) — same instant effect, and now with
+    // the rollback it never had.
     markSeenRef.current.mutate()
-
-    // Written straight into the cache as well, the same way
-    // WorkspaceSettings' own `setSetting` does: the mutation's invalidation
-    // is a round-trip, and until it lands the snapshot still says the tour
-    // is unseen.
-    queryClient.setQueryData(queryKeys.settings.list(), (current: SettingsSnapshot | undefined) =>
-      current ? { ...current, 'onboarding.tourSeen': true } : current
-    )
-  }, [open, queryClient])
+  }, [open])
 
   if (!open) return null
   return <TourCard onClose={() => closeLayer('tour')} />
