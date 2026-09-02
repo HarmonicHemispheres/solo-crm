@@ -3,157 +3,86 @@
 Everything an agent writes while developing Solo CRM lands here, so the working
 tree stays source code and the record of *why* stays queryable. This file is the
 contract; the skills in `.claude/skills/` execute it.
-
-## Layout
+[ADR-016](decisions/ADR-016-factory-slimming.md) records why it is this shape.
 
 ```
 .dev/
   tasks/YYYYMM/       INDEX.md + one file per task — scope in, outcome appended
-  summaries/YYYYMM/   INDEX.md + one file per orchestrated run
   decisions/          ADRs — durable architecture decisions, not month-scoped
-  templates/          task.md · summary.md · adr.md
+  LESSONS.md          at most twenty one-line lessons no check can enforce
+  summaries/          historical run summaries, no longer written
+  templates/          task.md · adr.md
 ```
-
-Monthly folders keep any single index short. The current month answers "what is
-open right now"; an old month answers "what shipped then". Nothing accumulates
-into one ever-growing file.
-
-Decisions are deliberately **not** month-scoped — an ADR from March still binds
-in December, so filing it by month would bury it.
 
 ## The pipeline
 
 | # | Step | Who | Skill |
 |---|---|---|---|
-| 1 | Request | you | — |
-| 2 | Gather context, write task scopes | Claude | `scope-task` |
-| 3 | Pick the tasks to run | you | — |
-| 4 | Plan and fan out to worktree subagents | orchestrator | `run-tasks` |
-| 5 | Implement against the scope | subagent | — |
-| 6 | Tests, typecheck, lint | subagent | `verify` |
-| 7 | Review the diff | subagent | `code-review` (built-in) |
-| 8 | Merge, append outcome to the task file | orchestrator | `run-tasks` |
-| 9 | Write the run summary | orchestrator | `run-tasks` |
+| 1 | Interview: what, for whom, what must be true after | Claude asks, you answer | `scope-task` |
+| 2 | Research the code, write task files, propose an order | Claude | `scope-task` |
+| 3 | Approve, cut or edit the tasks | you | — |
+| 4 | Build one task in a fresh session: implement, verify, screenshot, review, close | Claude | `build-task` |
+| 5 | Look at the screenshots and the outcome | you | — |
+| 6 | Did anything go wrong that a check could catch? | Claude | `retro` |
 
-Steps 2 and 4 are the two places a human decides. Everything between them is
-mechanical, which is the point — `scope-task` produces something you can approve
-or cut before any code is written.
+Two human checkpoints: before code exists, and after it runs.
 
-`changelog` sits downstream of all of it and is not part of every run: summaries
-here record how the work went, [CHANGELOG.md](../CHANGELOG.md) records what the
-app can now do. Write it when a batch of work adds up to something a user would
-notice, not once per merge.
+**A scope is a brief, not a contract.** The builder reads the code with the
+scope beside it and is expected to find what the scope missed. Deviating is
+fine; deviating silently is not. Every departure goes in the Outcome.
 
-`security-review` and `architecture-review` are not in the default path. Pull
-them in when the diff touches IPC, the preload bridge, integration credentials,
-the filesystem, or the data model.
+**One task fits one fresh session.** If it cannot be built, verified and
+closed in one context, it is two tasks.
 
-**`security-review` runs in its own session, over the accumulated surface —
-not inside a run, per diff.** A per-diff security pass sees one channel at a
-time and cannot see the thing that actually matters: what the whole boundary now
-permits. The URL-scheme gap on `companies.website` was found that way, by a
-reviewer looking at one field and naming both its sinks; the same reviewer could
-not have told you whether every other string crossing IPC had the same gap.
-Batch it, give it the whole `electron/main/ipc/` and `preload/` surface plus
-every integration, and run it when a wave has landed rather than while it is
-still moving.
+**Sequential by default.** Worktrees and parallel subagents are for
+independent mechanical work you explicitly ask for, and `cleanup-worktrees`
+runs the same day.
 
-## Where a task's record lives
+A one-line fix skips all of this. The process is for work worth a record.
 
-**One task, one file, whole lifecycle.** The scope is written up front and the
-outcome is appended at close — findings, files touched, what got deferred. Do
-not copy per-task detail into a summary; the summary links to the task.
+## Gates
 
-Summaries are **run-level**: what a single orchestrated run changed across all
-its tasks, in the aggregate. That is the document you read a month later.
-
-## Naming
-
-| Kind | Pattern | Example |
+| Gate | When | What |
 |---|---|---|
-| Task | `T-YYMMDD-NN-slug.md` | `T-260828-01-fts5-palette.md` |
-| Run summary | `R-YYMMDD-NN.md` | `R-260828-01.md` |
-| Decision | `ADR-NNN-slug.md` | `ADR-001-ipc-boundary.md` |
+| Stop hook | any turn that leaves source dirty | typecheck, lint, `check:index`; blocks on failure |
+| `verify` | before closing | covering tests, then the full suite once; `npm run snap` for `renderer/` |
+| Adherence review | before closing | a fresh subagent reads the diff against the acceptance list, gaps only |
+| `code-review` | before closing | correctness, at `medium` |
+| Retry budget | always | two verify-fix cycles, then stop and report |
 
-`NN` is a same-day counter. Task IDs are permanent — reference them in commits
-(`T-260828-01: add FTS5 index`) so `git log` and `.dev/` stay joinable.
+`architecture-review` on a diff touching `db/`, `ipc/`, `preload/`, `sync/`.
+`security-review` in its own session over the accumulated IPC surface once a
+batch has landed, never per diff.
 
-Where a task implements a step from
-[the task plan](../planning/solo-crm-taskplan.md), record its ID (`P1-01`) in
-the `plan_ref` field rather than restating the plan's content.
+## Task record
 
-## Status and category
+One task, one file, whole lifecycle: scope up front, a short Outcome at close
+(changed, departed from scope, not verified, elapsed). Name tasks
+`T-YYMMDD-NN-slug.md`, decisions `ADR-NNN-slug.md`, and put the task ID in
+commit subjects so `git log` and `.dev/` stay joinable.
 
-Two fixed vocabularies. Frontmatter carries the **word alone** so it stays
-greppable (`grep -r "status: blocked" .dev/tasks/`); rendered prose — indexes,
-tables, anything reported to the user — carries **icon and word together**.
+| | Status | | Category | Lands in | Extra gate |
+|---|---|---|---|---|---|
+| ○ | `open` | 🗄 | `data` | `main/db/` | `architecture-review` |
+| ◐ | `in-progress` | 🔌 | `ipc` | `main/ipc/`, `preload/` | batched `security-review` |
+| ● | `done` | 🎨 | `ui` | `renderer/` | `npm run snap`, screenshots read |
+| ⛔ | `blocked` | 🔗 | `integration` | `main/sync/`, `main/favicons/` | batched `security-review` |
+| ✕ | `dropped` | 📦 | `build` | packaging, tooling, config | — |
+| | | 📄 | `docs` | `planning/`, `.dev/`, `README` | — |
 
-The icon never appears alone. It speeds up scanning a column of thirty rows; it
-is not a replacement for the label, exactly as
-[the UI rules](../.claude/rules/ui-design.md) require of status colour in the app.
+Frontmatter carries the bare word; indexes carry icon and word. A dropped
+task keeps its file, with the reason. An index is a projection of the task
+files beside it, updated in the same commit; `check:index` enforces it.
 
-### Status
+## Lessons
 
-| | Status | Meaning |
-|---|---|---|
-| ○ | `open` | Scoped and approved, not started |
-| ◐ | `in-progress` | Claimed by a subagent or a worktree |
-| ● | `done` | Merged, verified on the merged tree, outcome written |
-| ⛔ | `blocked` | Waiting on a decision or another task — record which |
-| ✕ | `dropped` | Not building it. The file stays, with the reason |
+Something went wrong that the next session would repeat. In order of
+preference: make it a check; or one line in [LESSONS.md](LESSONS.md), capped
+at twenty; or let it go. Never a new paragraph in a skill or README because of
+one incident. `retro` is the skill.
 
-`○ → ◐ → ●` is a filling ring, the same motif the app uses for cadence. A
-dropped task keeps its file; deleting it loses the reason it was considered, and
-that reason is why the question stops being re-asked.
+## Measuring
 
-### Category
-
-One per task, matching the directory the work lands in — so the category is a
-fact about the change, not a label someone chose.
-
-| | Category | Lands in | Default extra gate |
-|---|---|---|---|
-| 🗄 | `data` | `main/db/` — schema, migrations, repositories | `architecture-review` |
-| 🔌 | `ipc` | `main/ipc/`, `preload/` | `security-review` |
-| 🎨 | `ui` | `renderer/` | — (`ui-design.md` loads automatically) |
-| 🔗 | `integration` | `main/sync/`, `main/favicons/` | `security-review` |
-| 📦 | `build` | packaging, tooling, config | — |
-| 📄 | `docs` | `planning/`, `.dev/`, `README` | — |
-
-The right-hand column is what makes the category load-bearing rather than
-decorative: it decides which review runs beyond the default `code-review`. A
-task spanning two categories takes the stricter gate — or, more often, is two
-tasks.
-
-## The tools
-
-Each is usable on its own; the pipeline is what happens when they run in order.
-None of them is a wrapper around the others, so a one-off use costs nothing.
-
-| Command | Answers |
-|---|---|
-| `npm run check:index` | Does the record match what actually shipped? |
-| `npm run report:run -- <runId> --markdown` | When did a run happen, on what model and platform, at what token cost, and where did its wall clock go? |
-
-`report:run` reads the agent transcripts a run leaves behind, so its numbers are
-observations rather than estimates, and it is the only correct way to fill in a
-summary's metadata block. With no run ID it reports every workflow in the
-current session; with several, it sums them. `CLAUDE_TRANSCRIPT_DIR` points it
-at a different session or machine.
-
-## Keeping indexes true
-
-An index is a projection of the files beside it, so it can be rebuilt and is
-never the source of truth. Update it in the same commit as the status change.
-When they disagree, the task files win.
-
-`npm run check:index` enforces that. It is a checker, not a generator — the
-indexes carry hand-written groupings and prose a generator would flatten. It
-fails on a missing row, a duplicate left behind by a status move, an icon that
-disagrees with its word, an orphan row, a `done` task with no `closed:` date or
-no `## Outcome`, and a task named by a `Merge T-…` commit whose file still says
-`in-progress`. That last one is the case prose kept missing: the file and the
-index agree with each other and are both wrong.
-
-Run it after every status change. `verify` runs it as its final step, so a
-stale index fails the same gate the tests do.
+`npm run metrics`: per release, tasks closed, follow-up fixes among them,
+median elapsed. Those and the issues you report against a release judge the
+process. Token counts do not.

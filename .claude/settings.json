@@ -1,13 +1,12 @@
 {
   "hooks": {
-    "PostToolUse": [
+    "Stop": [
       {
-        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/hooks/index-gate.mjs",
-            "timeout": 30
+            "command": "node scripts/hooks/stop-gate.mjs",
+            "timeout": 120
           }
         ]
       }

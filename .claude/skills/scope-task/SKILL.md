@@ -1,70 +1,69 @@
 ---
 name: scope-task
-description: Turn a request into reviewable task files under .dev/tasks/YYYYMM/ — gather the codebase and planning context first, then split the work into independently buildable tasks. Use when the user asks for a feature, fix, or change that is not a one-line edit, or says "scope this", "break this down", or "write tasks for". Produces scopes for a human to approve or cut before any code is written; it does not implement.
+description: Turn a request into task files under .dev/tasks/YYYYMM/ — interview the user first, then research the code, then write short briefs (why, story, constraints, acceptance, related files) for the user to approve or cut. Use when the user asks for a feature, fix or change that is not a one-line edit, or says "scope this", "break this down", "write tasks for". Does not implement.
 ---
 
 # Scope a request into tasks
 
-You are producing the input another agent will build from, with none of this
-conversation in its context. A scope that only makes sense to someone who was
-here has failed.
+The output is read by a fresh session with none of this conversation in it. A
+scope that only makes sense to someone who was here has failed. A scope that
+tells the builder which line to edit has also failed: the builder reads the
+code, you describe the outcome.
 
-## 1. Gather context first
+## 1. Interview
 
-Do not scope from the request alone. Read what already constrains the answer:
+Before reading any file, ask the user with `AskUserQuestion`. Three to six
+questions, only the ones whose answer changes the work:
+
+- Who does this and what is true afterwards that is not true now?
+- What must not change? What is explicitly out?
+- What does "done" look like on screen, or at the command line?
+- Anything they have already decided, so you do not re-decide it.
+
+Do not ask what the code can answer. Do not ask obvious questions. Stop when
+the story and acceptance can be written from the answers.
+
+## 2. Research
+
+Now read what constrains the answer:
 
 - [planning/solo-crm-requirements.md](../../../planning/solo-crm-requirements.md)
-  — is this in scope, and does it contradict a stated non-goal?
-- [planning/solo-crm-taskplan.md](../../../planning/solo-crm-taskplan.md) — does
-  a task already exist for this? If so, carry its ID into `plan_ref` rather than
-  writing a competing scope.
-- [AGENTS.md](../../../AGENTS.md) — which gotchas does this come near?
-- `.dev/tasks/<current month>/INDEX.md` and the month before — is this already
-  open, or was it dropped once and why?
-- The code the change touches, if it exists yet.
+  and [planning/solo-crm-taskplan.md](../../../planning/solo-crm-taskplan.md):
+  is there a plan item for this? Carry its ID into `plan_ref`.
+- [AGENTS.md](../../../AGENTS.md) gotchas and any ADR this comes near.
+- The current month's `INDEX.md`: is it already open, or dropped once and why?
+- The code. **Run the thing, do not infer it.** If the scope depends on what a
+  tool or module does, execute it and read the output. Every scope this
+  project recorded as wrong was written from an assumption about a tool.
 
-Search broadly before concluding something is absent. "There is no X" is a claim
-you have to earn.
+Search broadly before claiming something is absent.
 
-## 2. Split
+## 3. Split
 
-One task is one independently buildable, independently reviewable change. Split
-where the seams already are — a migration is not the repository that uses it is
-not the view that renders it.
+One task is one change a single fresh session can build, verify and close.
+If it cannot, it is two tasks. Split where the seams are: a migration, the
+repository over it, the view over that. Two tasks that must land in one commit
+are one task. Prefer three sharp tasks to one vague one; do not shard so
+finely that the coordination costs more than the work.
 
-Two tasks that must land together in one commit are one task. A task that cannot
-be described without "and then also" is two.
-
-Prefer three sharp tasks to one vague one, but do not shard work so finely that
-the coordination costs more than the work. If tasks must run in order, say so in
-`Why` — the orchestrator reads that to build its dependency graph.
-
-## 3. Write
+## 4. Write
 
 Copy [.dev/templates/task.md](../../../.dev/templates/task.md) per task into
-`.dev/tasks/<YYYYMM>/`, creating the month folder and its `INDEX.md` if this is
-the month's first task. Fill every section; an empty `Risks` means you have not
-looked.
+`.dev/tasks/<YYYYMM>/`. Keep each under about 300 words.
 
-Set `category` from the vocabulary in
-[.dev/README.md](../../../.dev/README.md) — it decides which review gate the
-task gets, so it is a routing decision, not a label. A task you cannot assign
-one category to is usually two tasks; split it rather than picking the closest.
+- **Why** and **Story** come from the interview, in the user's words.
+- **Constraints** are requirements and gotchas, not steps.
+- **Acceptance** is observable. The last item is always end-to-end: "open the
+  app, do X, see Y." For `ui` tasks name the routes `npm run snap` should show.
+- **Related** lists what research found. It is a starting point, not a list
+  of files to edit.
 
-Frontmatter takes the bare word (`status: open`, `category: ui`) because it is
-grepped. Icons belong in the index tables and in what you report back.
+Set `category` from [.dev/README.md](../../../.dev/README.md); it decides the
+extra gate.
 
-Acceptance criteria are the part that decides whether this works. Write them so
-failure is observable — a command that exits non-zero, a number that must match,
-a view that must render. "Works correctly" is not acceptance.
+## 5. Hand back
 
-## 4. Hand back
-
-Add each task to the month's `INDEX.md` as `○ open`, then show the user the list
-with a one-line summary each and your recommended order — status and category
-icons alongside their words, so the shape of the batch reads at a glance. Say
-plainly which you would cut. They choose what runs; do not start building.
-
-If scoping surfaced something that changes the plan — a requirement that is now
-wrong, a dependency nobody had noticed — say that before the task list rather
-than burying it in a task file.
+Add each task to the month's `INDEX.md` as `○ open`. Show the user the list
+with a one-line summary each and your recommended order. Say which you would
+cut. If research changed the picture, say that first. They choose; do not
+build.

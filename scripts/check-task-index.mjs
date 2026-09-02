@@ -156,7 +156,7 @@ for (const month of months) {
 // T-260828-51 did exactly this in run R-260828-03.
 //
 // Checked here rather than in a new script because this one already runs at
-// every merge (the index-gate hook), in `verify`, and in `run-tasks`.
+// every turn that leaves the tree dirty (the Stop hook) and in `verify`.
 
 // Every run id a closed task points at must have a summary to point at.
 //
@@ -168,8 +168,7 @@ for (const month of months) {
 // because every other gate was green.
 //
 // Checked here for the same reason as the ADR collision above: this script
-// already runs at every merge (the index-gate hook), in `verify`, and in
-// `run-tasks`.
+// already runs from the Stop hook and in `verify`.
 const SUMMARIES_DIR = '.dev/summaries'
 for (const month of months) {
   const indexPath = join(TASKS_DIR, month, 'INDEX.md')
@@ -221,6 +220,18 @@ if (existsSync(DECISIONS_DIR)) {
         `${id}: claimed by ${names.length} files (${names.join(', ')}) — two decisions with one number, so every citation of ${id} is ambiguous. Renumber the later one and update its references.`
       )
     }
+  }
+}
+
+// LESSONS.md holds at most twenty lines (ADR-016). The cap is the mechanism:
+// a lesson that cannot displace an old one was not worth keeping, and one that
+// can be a check should have become one instead of a line here.
+const LESSONS = '.dev/LESSONS.md'
+const LESSONS_CAP = 20
+if (existsSync(LESSONS)) {
+  const count = readFileSync(LESSONS, 'utf8').split('\n').filter((l) => /^\d+\.\s/.test(l)).length
+  if (count > LESSONS_CAP) {
+    problems.push(`${LESSONS}: ${count} lessons, cap is ${LESSONS_CAP} — turn one into a check or displace the least useful`)
   }
 }
 

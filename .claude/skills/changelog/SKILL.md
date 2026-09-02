@@ -1,6 +1,6 @@
 ---
 name: changelog
-description: Write or extend CHANGELOG.md from work that has landed — one icon-led bullet per change, never paragraphs. Use after a run merges, when cutting a release, or when the user asks "what changed" or for a changelog. Draws from .dev/ run summaries, task outcomes and git log; writes for someone using the app, not someone reading the diff.
+description: Write or extend CHANGELOG.md from work that has landed — one icon-led bullet per change, never paragraphs. Use when cutting a release, after a batch of tasks closes, or when the user asks "what changed" or for a changelog. Draws from task outcomes and git log; writes for someone using the app, not someone reading the diff.
 ---
 
 # Changelog
@@ -43,9 +43,14 @@ pick the type from what the user experiences, not the directory touched.
 
 ## Where entries come from
 
-Run summaries in `.dev/summaries/`, the `Outcome` sections of tasks closed since
-the last release, and `git log`. Prefer the task outcomes — they already say
-what actually changed, as opposed to what was planned.
+The `Outcome` sections of tasks closed since the last release, and `git log`.
+Prefer the task outcomes — they already say what actually changed, as opposed
+to what was planned.
+
+On a release, run `npm run metrics` and put its last row under the version
+heading as one line: tasks closed, follow-up fixes, median elapsed. Those are
+the numbers the process is judged by (ADR-016), and the changelog is where
+they are read next to what shipped.
 
 ## What not to log
 

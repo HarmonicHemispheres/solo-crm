@@ -8,43 +8,46 @@ created: YYYY-MM-DD
 closed:
 ---
 
-<!-- Words only in frontmatter — it is grepped. Icons go in prose and tables. -->
-<!-- Vocabulary and the review gate each category triggers: .dev/README.md -->
+<!-- Words only in frontmatter — it is grepped. Icons go in the index. -->
+<!-- Keep the whole file under about 300 words. This is a brief, not a spec. -->
 
 ## Why
 
-What breaks or stays impossible without this. One short paragraph.
+What breaks or stays impossible without this. Two sentences.
 
-## Scope
+## Story
 
-**In:** the change itself, concretely enough that someone with no memory of the
-conversation could build it.
+As the operator, I <do what> so that <what is true afterwards>. Written from
+the interview, in the user's words where possible.
 
-**Out:** the adjacent things a reasonable person would otherwise fold in.
+## Constraints
 
-## Touches
-
-Files and modules expected to change. A prediction, not a contract — the outcome
-records what actually moved.
+Requirements the build must respect, and any gotcha from
+[AGENTS.md](../../../AGENTS.md) or ADR this comes near. Not implementation
+steps — the builder reads the code and decides those.
 
 ## Acceptance
 
-- [ ] Checkable statements, not aspirations. "`SUM` over `revenue_lines` matches
-      the engagement rollup to the cent", not "revenue works".
+- [ ] Observable statements. A command that exits non-zero, a number that must
+      match, a view that must render.
+- [ ] The last one is always end-to-end: "open the app, do X, see Y."
 
-## Risks
+## Related
 
-Where this could quietly go wrong, and any gotcha from
-[AGENTS.md](../../../AGENTS.md) it comes near.
+Files and modules research found relevant. A starting point for the builder,
+not a list of what to edit.
 
 ---
 
 ## Outcome
 
-*Appended at close. Delete this heading if the task is dropped.*
+*Appended at close.*
 
-**Changed:** files that actually moved, one line each.
+**Changed:** files that moved, one line.
 
-**Review:** what `code-review` found and what was done about each finding.
+**Departed from scope:** what the builder did differently and why. "Nothing"
+is a fine answer.
 
-**Deferred:** anything cut, and where it went (new task ID, or nowhere and why).
+**Not verified:** anything acceptance names that was not actually exercised.
+
+**Elapsed:** minutes from start to close.

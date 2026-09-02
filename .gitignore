@@ -18,3 +18,6 @@ electron/**/*.compiled.*.cjs
 # single-file bundle, not a per-file transpile.
 electron/**/*.bundled.*.cjs
 .claude/worktrees/
+
+# npm run snap writes screenshots here
+shots/

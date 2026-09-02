@@ -11,22 +11,21 @@ order is [planning/solo-crm-taskplan.md](planning/solo-crm-taskplan.md).
 
 ## How work happens
 
-New behaviour starts with `scope-task`, not with an edit — it writes scopes to
-`.dev/tasks/` for the user to approve or cut before any code exists. `run-tasks`
-builds the approved ones. **It never starts on its own**; fanning out subagents
-and merging into the working branch needs an explicit go. `verify` and the
-built-in `code-review` are the gates, and neither is optional.
+New behaviour starts with `scope-task`, which interviews the user and then
+writes short briefs to `.dev/tasks/` for them to approve or cut. `build-task`
+builds one approved task in the current session: implement, verify, screenshot
+UI work, adherence review, `code-review`, close. A scope is a best-effort
+brief, not a contract; departing from it is expected, departing silently is
+not. A Stop hook runs typecheck, lint and `check:index` whenever a turn ends
+with source dirty, so those cannot be skipped.
 
 A one-line fix skips all of this. The process is for work worth a record.
 
-A status change is not done until the month `INDEX.md` says so. `npm run
-check:index` is the gate — `verify` runs it last, and `run-tasks` runs it at
-every merge. The index is what the user reads to know what is happening, so a
-stale one is a false report, not untidiness.
-
-[.dev/README.md](.dev/README.md) is the full procedure — pipeline, status and
-category vocabulary, which review each category triggers. Development context is
-written there, never into the working tree.
+[.dev/README.md](.dev/README.md) is the full procedure and
+[ADR-016](.dev/decisions/ADR-016-factory-slimming.md) is why it is this shape.
+Lessons go in `.dev/LESSONS.md`, capped at twenty, or become checks; never a
+new paragraph here because of one incident. Development context is written
+in `.dev/`, never into the working tree.
 
 ## References
 
