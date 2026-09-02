@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useMemo, useState, useRef, type CSSProperties, type KeyboardEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { Toggle } from '../components/primitives/Toggle'
@@ -593,14 +593,26 @@ function CategoryRenameInput({
   onCancel: () => void
 }) {
   const [value, setValue] = useState(label)
+  // T-260901-25: Enter and Escape both unmount this input, and the blur
+  // that unmounting fires used to reach `commit` — Escape after typing
+  // renamed the category, and Enter renamed it twice. First outcome wins.
+  const settled = useRef(false)
 
   const commit = () => {
+    if (settled.current) return
+    settled.current = true
     const trimmed = value.trim()
     // An empty or unchanged name is a cancel, not a write: `name` is
     // `.min(1)` on the wire, so an empty one would be a ValidationError with
     // nothing useful to say about a rename the user had already abandoned.
     if (!trimmed || trimmed === label) onCancel()
     else onCommit(trimmed)
+  }
+
+  const cancel = () => {
+    if (settled.current) return
+    settled.current = true
+    onCancel()
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -611,7 +623,7 @@ function CategoryRenameInput({
     }
     if (event.key === 'Escape') {
       event.preventDefault()
-      onCancel()
+      cancel()
     }
   }
 

@@ -8,6 +8,7 @@ import { FAVICON_FALLBACK_ICONS } from '../../../shared/favicons'
 import type { Link } from '../../../shared/links'
 import { LinksCard } from './LinksCard'
 import { normaliseLinkInput } from './link-input'
+import { keyDownWithUnmountBlur } from '../../lib/test-support/unmount-blur'
 
 const TS = '2026-08-28T00:00:00.000Z'
 const COMPANY_ID = 'co-rinvii'
@@ -283,8 +284,9 @@ describe('renaming a link inline', () => {
     fireEvent.click(screen.getByRole('button', { name: `Rename "${notionLink.title}"` }))
     const input = screen.getByLabelText(`Title for ${notionLink.title}`)
     fireEvent.change(input, { target: { value: 'Something else entirely' } })
-    fireEvent.keyDown(input, { key: 'Escape' })
-    fireEvent.blur(input)
+    // T-260901-25: a trailing `fireEvent.blur` landed on a detached node and
+    // proved nothing; this replays the blur while the input is still mounted.
+    await keyDownWithUnmountBlur(input, 'Escape')
 
     expect(screen.getByText(notionLink.title)).toBeTruthy()
     expect(screen.queryByText('Something else entirely')).toBeNull()

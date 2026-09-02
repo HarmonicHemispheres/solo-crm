@@ -1,7 +1,7 @@
-import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { useState, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { formatDateOnly, parseDateOnly } from '../../shared/format'
+import { parseDateOnly } from '../../shared/format'
 import type { Company, CompanyKind } from '../../shared/companies'
 import type { Person, PersonAffiliation, UpdatePersonInput } from '../../shared/people'
 import type { Activity, ActivityKind } from '../../shared/activity'
@@ -13,6 +13,7 @@ import { EmptyState } from '../components/primitives/EmptyState'
 import { Button } from '../components/primitives/Button'
 import { Toast } from '../components/primitives/Toast'
 import './PersonDetail.css'
+import { localToday } from './todo-urgency'
 
 /**
  * `/person/:id` (T-260828-31) — the view the whole affiliation model exists
@@ -251,6 +252,13 @@ function DetailField({
   const config = TEXT_FIELD_CONFIG[fieldKey]
   const isEditing = editingKey === fieldKey
   const [draft, setDraft] = useState(() => rawValueOf(person, fieldKey))
+  // T-260901-25: Escape unmounts the field, and Chromium fires a blur on
+  // the way out — which reached `commit` and saved the draft the user had
+  // just discarded. Same guard `LinksCard` carries, for the same reason;
+  // Enter takes it too, so its unmount blur does not commit a second time.
+  // This component stays mounted between edits (only the field inside it
+  // comes and goes), so the flag is re-armed where an edit starts.
+  const settled = useRef(false)
 
   if (!isEditing) {
     return (
@@ -262,6 +270,7 @@ function DetailField({
             className="field-value-btn"
             onClick={() => {
               setDraft(rawValueOf(person, fieldKey))
+              settled.current = false
               onStartEdit(fieldKey)
             }}
           >
@@ -272,11 +281,20 @@ function DetailField({
     )
   }
 
-  const commit = () => onCommit(fieldKey, draft)
+  const commit = () => {
+    if (settled.current) return
+    settled.current = true
+    onCommit(fieldKey, draft)
+  }
+  const cancel = () => {
+    if (settled.current) return
+    settled.current = true
+    onCancel()
+  }
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
-      onCancel()
+      cancel()
     } else if (event.key === 'Enter' && config.type !== 'textarea') {
       event.preventDefault()
       commit()
@@ -390,7 +408,7 @@ function MoveCompanyForm({
 }) {
   const queryClient = useQueryClient()
   const [targetId, setTargetId] = useState('')
-  const [onDate, setOnDate] = useState(() => formatDateOnly(new Date()))
+  const [onDate, setOnDate] = useState(() => localToday())
 
   const options = companies.filter((company) => company.id !== currentCompanyId)
 

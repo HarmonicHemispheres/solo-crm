@@ -8,6 +8,7 @@ import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { CrmApi } from '../../shared/ipc-types'
 import type { OfferingCategory, OfferingListItem, OfferingWithVersions } from '../../shared/offerings'
+import { keyDownWithUnmountBlur } from '../lib/test-support/unmount-blur'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -334,7 +335,9 @@ describe('Offerings', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Rename "Audits"' }))
       const input = screen.getByRole('textbox', { name: 'Rename "Audits"' })
       fireEvent.change(input, { target: { value: 'Assessments' } })
-      fireEvent.keyDown(input, { key: 'Enter' })
+      // T-260901-25: Enter unmounts the input, and Chromium's unmount blur
+      // used to reach `commit` a second time.
+      await keyDownWithUnmountBlur(input, 'Enter')
 
       await waitFor(() =>
         expect(crm['offerings:updateCategory']).toHaveBeenCalledWith({
@@ -342,6 +345,20 @@ describe('Offerings', () => {
           patch: { name: 'Assessments' }
         })
       )
+      expect(crm['offerings:updateCategory']).toHaveBeenCalledTimes(1)
+    })
+
+    it('Escape abandons a rename, including through the blur that unmounting carries', async () => {
+      const { crm } = renderOfferings()
+      await waitFor(() => expect(screen.getByText('Discovery Audit')).toBeTruthy())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Rename "Audits"' }))
+      const input = screen.getByRole('textbox', { name: 'Rename "Audits"' })
+      fireEvent.change(input, { target: { value: 'Assessments' } })
+      await keyDownWithUnmountBlur(input, 'Escape')
+
+      expect(screen.getByRole('button', { name: 'Rename "Audits"' })).toBeTruthy()
+      expect(crm['offerings:updateCategory']).not.toHaveBeenCalled()
     })
 
     it('shows the repository\'s own reason when a category holding offerings is refused, and keeps the category listed', async () => {

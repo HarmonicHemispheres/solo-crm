@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createQueryClient } from '../lib/query-client'
+import { keyDownWithUnmountBlur } from '../lib/test-support/unmount-blur'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { CrmApi } from '../../shared/ipc-types'
 import type { Company } from '../../shared/companies'
@@ -316,6 +317,36 @@ describe('PersonDetail', () => {
 
     expect(screen.getByRole('button', { name: 'priya@example.com' })).toBeTruthy()
     expect(crm['people:update']).not.toHaveBeenCalled()
+  })
+
+  // T-260901-25: jsdom fires no blur when a focused element is removed;
+  // Chromium does, and it reached `commit` with the discarded draft. See
+  // `keyDownWithUnmountBlur` for why a trailing `fireEvent.blur` is not it.
+  it('Escape discards the draft even through the blur that unmounting the field carries with it', async () => {
+    const crm = buildCrm({ 'pe-priya': { ...priya, affiliations: [priyaAtEzdeploy] } }, ALL_COMPANIES, [])
+    renderPersonDetail('pe-priya', crm)
+    await screen.findByRole('heading', { name: 'Priya Rao' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'priya@example.com' }))
+    const input = screen.getByLabelText('Email')
+    fireEvent.change(input, { target: { value: 'discarded@example.com' } })
+    await keyDownWithUnmountBlur(input, 'Escape')
+
+    expect(screen.getByRole('button', { name: 'priya@example.com' })).toBeTruthy()
+    expect(crm['people:update']).not.toHaveBeenCalled()
+  })
+
+  it('Enter commits once — the unmount blur does not write a second time', async () => {
+    const crm = buildCrm({ 'pe-priya': { ...priya, affiliations: [priyaAtEzdeploy] } }, ALL_COMPANIES, [])
+    renderPersonDetail('pe-priya', crm)
+    await screen.findByRole('heading', { name: 'Priya Rao' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'priya@example.com' }))
+    const input = screen.getByLabelText('Email')
+    fireEvent.change(input, { target: { value: 'priya@newdomain.example' } })
+    await keyDownWithUnmountBlur(input, 'Enter')
+
+    await waitFor(() => expect(crm['people:update']).toHaveBeenCalledTimes(1))
   })
 
   it('following the current company link navigates to that company', async () => {
