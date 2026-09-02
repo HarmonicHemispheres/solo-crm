@@ -5,6 +5,30 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.1
+
+- 🐛 **Person pages open on a seeded workspace** — every seeded person with a
+  company failed to load; their affiliation now carries the start date the
+  page expects.
+- 🐛 **Logging a touch on a company page resets its cadence meter** — the
+  meter, the grid and Today no longer keep the old "late" state until
+  something else refreshes.
+- 🐛 **Escape means never mind** — cancelling an edit on a person's page or a
+  category rename no longer saves the discarded text; Enter saves once, not
+  twice.
+- 🐛 **"Today" is your day** — new people, engagements and moves default to
+  the local calendar day instead of tomorrow's UTC date after 5 pm.
+- 🐛 **Info popovers return focus to the right button** — opening a second
+  one over the first, then pressing Escape, lands on the one you pressed;
+  a popover you closed no longer reappears when another opens.
+- 🔒 **A stalling website cannot wedge favicon lookups** — the fetch deadline
+  now covers the body, so one bad host no longer stays "fetching" until
+  restart; `localhost.` is refused like `localhost`.
+- 🔒 **Google "Shared drives" is refused as a data location** — the same
+  dialog as My Drive, Dropbox and OneDrive, before the database is created.
+- 📝 **The status in AGENTS.md and README matches what is built** — offerings
+  and selling from them are in; integrations are Phase 4.
+
 ## 0.6.0
 
 - ✨ **Offerings** — a price list of what you sell, each with a rate and a
