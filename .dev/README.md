@@ -3,7 +3,8 @@
 Everything an agent writes while developing Solo CRM lands here, so the working
 tree stays source code and the record of *why* stays queryable. This file is the
 contract; the skills in `.claude/skills/` execute it.
-[ADR-016](decisions/ADR-016-factory-slimming.md) records why it is this shape.
+[ADR-016](decisions/ADR-016-factory-slimming.md) records why it is this shape,
+and [HOWTO.md](HOWTO.md) is the operator's guide to using it.
 
 ```
 .dev/
