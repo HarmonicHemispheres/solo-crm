@@ -6,12 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { timestampSchema } from '../../../shared/types'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
 import { listCompanies } from '../repositories/companies'
-import { listPeople } from '../repositories/people'
+import { getPerson, listPeople } from '../repositories/people'
 import { listEngagements } from '../repositories/engagements'
 import { listTasks } from '../repositories/tasks'
 import { listActivity } from '../repositories/activity'
 import { companySchema } from '../../../shared/companies'
-import { personSchema } from '../../../shared/people'
+import { personSchema, personWithAffiliationsSchema } from '../../../shared/people'
 import { engagementSchema } from '../../../shared/engagements'
 import { taskSchema } from '../../../shared/tasks'
 import { activitySchema } from '../../../shared/activity'
@@ -482,6 +482,29 @@ describe('seedFixture: every seeded row satisfies the wire schema the IPC layer 
       for (const row of people) expect(() => personSchema.parse(row)).not.toThrow()
       for (const row of engagements) expect(() => engagementSchema.parse(row)).not.toThrow()
       for (const row of activity) expect(() => activitySchema.parse(row)).not.toThrow()
+    })
+  })
+
+  // T-260901-18: the list parse above reads `people` alone, and the seed
+  // wrote every affiliation with `started = NULL` for weeks while the wire
+  // schema declared it required — so `people:get` failed for every seeded
+  // person with a company and no test noticed. This reads each person the
+  // way the detail page does and parses the affiliations with it.
+  it('people:get — every seeded person, affiliations included', () => {
+    withFreshDb((db) => {
+      seedFixture(db)
+      const people = listPeople(db)
+      expect(people.length).toBeGreaterThan(0)
+
+      let affiliations = 0
+      for (const { id } of people) {
+        const person = getPerson(db, id)
+        expect(person).not.toBeNull()
+        expect(() => personWithAffiliationsSchema.parse(person)).not.toThrow()
+        affiliations += person!.affiliations.length
+      }
+      // Or the loop proves nothing about the affiliation shape.
+      expect(affiliations).toBeGreaterThan(0)
     })
   })
 })

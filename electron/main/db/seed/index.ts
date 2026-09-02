@@ -290,6 +290,7 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
     // immediately, not deferred) — see orderCompaniesForInsert above for
     // the one table here that actually needs a specific insertion order. ----
     const companyIds = new Map(companiesFixture.map((c) => [c.key, randomUUID()]))
+    const companiesByKey = new Map(companiesFixture.map((c) => [c.key, c]))
     const personIds = new Map(peopleFixture.map((p) => [p.key, randomUUID()]))
     const categoryIds = new Map(offeringCategoriesFixture.map((c) => [c.key, randomUUID()]))
     const offeringIds = new Map(offeringsFixture.map((s) => [s.key, randomUUID()]))
@@ -427,13 +428,21 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
         seededAt
       )
       if (person.companyKey) {
+        // T-260901-18: `affiliations.started` is required on the wire
+        // (`affiliationSchema` in electron/shared/people.ts, and the create
+        // sheet always sends one), so a NULL here failed `people:get`'s
+        // response validation for every seeded person with a company. The
+        // stint starts when the relationship did: the company's `since`,
+        // shifted like every other fixture date.
+        const company = companiesByKey.get(person.companyKey)
+        if (!company) throw new FixtureIntegrityError(`person "${person.key}" names unknown company "${person.companyKey}"`)
         insertAffiliation.run(
           randomUUID(),
           personIds.get(person.key),
           companyIds.get(person.companyKey),
           person.title,
           1,
-          null,
+          shiftDateOnly(company.since, offsetDays),
           null,
           seededAt,
           seededAt
