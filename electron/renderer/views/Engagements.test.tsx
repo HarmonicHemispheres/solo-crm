@@ -192,7 +192,7 @@ function renderEngagements({
   window.crm = stubCrm({
     'engagements:list': vi.fn(async () => ({ ok: true as const, data: engagements })),
     'companies:list': vi.fn(async () => ({ ok: true as const, data: companies })),
-    'engagements:milestones': vi.fn(async (payload: { engagementId: string }) => ({
+    'milestones:list': vi.fn(async (payload: { engagementId: string }) => ({
       ok: true as const,
       data: milestonesByEngagementId[payload.engagementId] ?? []
     }))
@@ -358,7 +358,7 @@ describe('Engagements', () => {
     window.crm = stubCrm({
       'engagements:list': engagementsList,
       'companies:list': vi.fn(async () => ({ ok: true as const, data: ALL_COMPANIES })),
-      'engagements:milestones': vi.fn(async () => ({ ok: true as const, data: [] }))
+      'milestones:list': vi.fn(async () => ({ ok: true as const, data: [] }))
     })
     render(
       <QueryClientProvider client={createQueryClient()}>

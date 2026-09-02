@@ -37,7 +37,7 @@ import './Engagements.css'
  * doesn't quietly reintroduce it): any revenue figure (ADR-003 puts every
  * revenue question through `revenue_lines`, not per-billing-model branching
  * rendered here), the milestone editor (P3-09, read-only via
- * `engagements:milestones`), a Pipeline nav item or board (ADR-005), filters
+ * `milestones:list`), a Pipeline nav item or board (ADR-005), filters
  * and saved views (P2-08). `notToExceedCents` is the one money field this
  * view does show — a stored T&M contract term the Scope names explicitly,
  * not a computed figure.
@@ -358,14 +358,14 @@ export function Engagements() {
 
   // Milestones are fetched only for fixed-scope engagements — the one model
   // whose progress shape needs them (this task's Scope) — one
-  // `engagements:milestones` query per id via `useQueries`, not a bulk
+  // `milestones:list` query per id via `useQueries`, not a bulk
   // channel (none exists), keeping every other model's card free of a query
   // it has no use for.
   const fixedEngagementIds = engagements.filter((engagement) => engagement.billingModel === 'fixed').map((engagement) => engagement.id)
   const milestonesResults = useQueries({
     queries: fixedEngagementIds.map((id) => ({
-      queryKey: queryKeys.engagements.milestones(id),
-      queryFn: ipcQueryFn('engagements:milestones', { engagementId: id })
+      queryKey: queryKeys.milestones.list(id),
+      queryFn: ipcQueryFn('milestones:list', { engagementId: id })
     }))
   })
   const milestonesByEngagementId = new Map<string, readonly Milestone[]>()

@@ -21,7 +21,6 @@ import {
   deleteEngagement,
   getEngagementWithOffering,
   listEngagements,
-  listMilestones,
   updateEngagement
 } from '../db/repositories/engagements'
 import {
@@ -48,6 +47,16 @@ import {
 import { getActivity, listActivity, logActivity } from '../db/repositories/activity'
 import { searchAll } from '../db/repositories/search'
 import { addLink, deleteLink, listLinks, updateLink } from '../db/repositories/links'
+import {
+  completeMilestone,
+  createMilestone,
+  deleteMilestone,
+  listMilestones,
+  reorderMilestones,
+  sumMilestoneAmounts,
+  uncompleteMilestone,
+  updateMilestone
+} from '../db/repositories/milestones'
 import { getFavicon } from '../favicons'
 import { chooseBrandingImage, getBrandingSlotState, getBrandingSnapshot } from '../branding'
 import { clearBrandingSlot } from '../db/repositories/branding'
@@ -332,10 +341,6 @@ export const registry = {
     ...CHANNEL_CONTRACTS['engagements:get'],
     handler: ({ id }) => getEngagementWithOffering(getDatabase(), id)
   }),
-  'engagements:milestones': defineChannel({
-    ...CHANNEL_CONTRACTS['engagements:milestones'],
-    handler: ({ engagementId }) => listMilestones(getDatabase(), engagementId)
-  }),
   'engagements:create': defineChannel({
     ...CHANNEL_CONTRACTS['engagements:create'],
     handler: (input) => runMutation(() => createEngagement(getDatabase(), input))
@@ -351,6 +356,49 @@ export const registry = {
         deleteEngagement(getDatabase(), id)
         return { id }
       })
+  }),
+
+  // ---------------------------------------------------------------------
+  // milestones (T-260902-02) — the list, the writes and the sum.
+  // ---------------------------------------------------------------------
+
+  'milestones:list': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:list'],
+    handler: ({ engagementId }) => listMilestones(getDatabase(), engagementId)
+  }),
+  'milestones:create': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:create'],
+    handler: (input) => runMutation(() => createMilestone(getDatabase(), input))
+  }),
+  'milestones:update': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:update'],
+    handler: ({ id, patch }) => runMutation(() => updateMilestone(getDatabase(), id, patch))
+  }),
+  'milestones:complete': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:complete'],
+    handler: ({ id }) => runMutation(() => completeMilestone(getDatabase(), id))
+  }),
+  'milestones:uncomplete': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:uncomplete'],
+    handler: ({ id }) => runMutation(() => uncompleteMilestone(getDatabase(), id))
+  }),
+  'milestones:reorder': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:reorder'],
+    handler: (input) => runMutation(() => reorderMilestones(getDatabase(), input))
+  }),
+  'milestones:delete': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:delete'],
+    handler: ({ id }) =>
+      runMutation(() => {
+        deleteMilestone(getDatabase(), id)
+        return { id }
+      })
+  }),
+  // A read: no `runMutation`, and a `ValidationError` on a bad request is
+  // the bridge's own validation failure, the same as every other read.
+  'milestones:sum': defineChannel({
+    ...CHANNEL_CONTRACTS['milestones:sum'],
+    handler: (input) => sumMilestoneAmounts(getDatabase(), input)
   }),
 
   // ---------------------------------------------------------------------

@@ -79,10 +79,19 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
 
     'engagements:list': vi.fn(async () => ({ ok: true as const, data: [] })),
     'engagements:get': vi.fn(async () => ({ ok: true as const, data: null })),
-    'engagements:milestones': vi.fn(async () => ({ ok: true as const, data: [] })),
     'engagements:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT } })),
     'engagements:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_ENGAGEMENT } })),
     'engagements:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
+    // T-260902-02's milestone writes. `STUB_MILESTONE` is a complete row so a
+    // mutation's response passes `milestoneSchema` under the real bridge too.
+    'milestones:list': vi.fn(async () => ({ ok: true as const, data: [] })),
+    'milestones:create': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_MILESTONE } })),
+    'milestones:update': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_MILESTONE } })),
+    'milestones:complete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_MILESTONE } })),
+    'milestones:uncomplete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_MILESTONE } })),
+    'milestones:reorder': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: [STUB_MILESTONE] } })),
+    'milestones:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
+    'milestones:sum': vi.fn(async () => ({ ok: true as const, data: { engagementId: 'stub-id', totalCents: 0, count: 0 } })),
 
     // T-260901-07's catalogue. Empty lists and `null` for the three reads,
     // successful envelopes for the seven writes — and each write's `data` is a
@@ -207,6 +216,18 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
 }
 
 const STUB_TIMESTAMP = '2026-08-28T00:00:00.000Z'
+
+const STUB_MILESTONE = {
+  id: 'stub-milestone-id',
+  engagementId: 'stub-id',
+  name: 'Stub milestone',
+  sort: 0,
+  completedAt: null,
+  amountCents: 0,
+  expectedMonth: '2026-01-01',
+  createdAt: STUB_TIMESTAMP,
+  updatedAt: STUB_TIMESTAMP
+}
 
 const STUB_COMPANY = {
   id: 'stub-company-id',

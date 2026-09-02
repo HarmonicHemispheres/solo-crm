@@ -62,8 +62,6 @@ export const queryKeys = {
     all: () => ['engagements'] as const,
     list: () => ['engagements', 'list'] as const,
     detail: (id: string) => ['engagements', 'detail', id] as const,
-    /** `engagements:milestones` — scoped under its engagement's id, not a bare `[entity, 'list']`, so invalidating one engagement's milestones never touches another's. */
-    milestones: (engagementId: string) => ['engagements', 'milestones', engagementId] as const,
     /**
      * `engagements:list({ billingCompanyId })` / `engagements:list({ clientCompanyId })`
      * (T-260828-29's company detail page: "billed here" / "delivered here,
@@ -76,6 +74,18 @@ export const queryKeys = {
      */
     byBillingCompany: (companyId: string) => ['engagements', 'byBillingCompany', companyId] as const,
     byClientCompany: (companyId: string) => ['engagements', 'byClientCompany', companyId] as const
+  },
+  /**
+   * `milestones:*` (T-260902-02). Both reads are scoped under the
+   * engagement's id, not a bare `[entity, 'list']`, so one engagement's
+   * milestones can be addressed without another's; `invalidate.milestones`
+   * still covers the whole prefix, which is what a milestone mutation
+   * calls — one helper, the way `offerings` covers its categories.
+   */
+  milestones: {
+    all: () => ['milestones'] as const,
+    list: (engagementId: string) => ['milestones', 'list', engagementId] as const,
+    sum: (engagementId: string) => ['milestones', 'sum', engagementId] as const
   },
   /**
    * `offerings:*` (T-260901-07). The entity is the channel's own namespace, so
@@ -303,6 +313,8 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
   companies: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.companies.all() }),
   people: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.people.all() }),
   engagements: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.engagements.all() }),
+  /** Every milestone read — the per-engagement lists and sums at once. */
+  milestones: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all() }),
   /**
    * The whole `['offerings']` prefix — list, every filtered list, each
    * `detail`, and `categories`. Deliberately not narrower: every one of the

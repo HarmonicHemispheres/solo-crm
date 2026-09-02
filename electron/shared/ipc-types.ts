@@ -26,6 +26,14 @@ import {
 } from './engagements'
 import { createLinkInputSchema, linkSchema, listLinksInputSchema, updateLinkInputSchema } from './links'
 import {
+  createMilestoneInputSchema,
+  listMilestonesInputSchema,
+  milestoneSumSchema,
+  reorderMilestonesInputSchema,
+  sumMilestonesInputSchema,
+  updateMilestoneInputSchema
+} from './milestones'
+import {
   createOfferingCategoryInputSchema,
   createOfferingInputSchema,
   duplicateOfferingInputSchema,
@@ -494,16 +502,36 @@ export const CHANNEL_CONTRACTS = {
   // the bare `engagementSchema`: they report the row they just wrote.
   'engagements:list': { request: listEngagementsFilterSchema.optional(), response: z.array(engagementWithOfferingSchema).readonly() },
   'engagements:get': { request: idRequestSchema, response: engagementWithOfferingSchema.nullable() },
-  'engagements:milestones': {
-    request: z.object({ engagementId: z.string().min(1) }).strict(),
-    response: z.array(milestoneSchema).readonly()
-  },
   'engagements:create': { request: createEngagementInputSchema, response: mutationResultSchema(engagementSchema) },
   'engagements:update': {
     request: z.object({ id: z.string().min(1), patch: updateEngagementInputSchema }).strict(),
     response: mutationResultSchema(engagementSchema)
   },
   'engagements:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
+
+  // -- milestones (T-260902-02, P3-04) -------------------------------------
+  //
+  // `milestones:list` was `engagements:milestones` until this task; it moved
+  // into the table's own namespace so one query-key entity — and one
+  // `invalidate.milestones` — covers every read of it. The writes are what a
+  // fixed-scope engagement's milestones need before the revenue generator
+  // (T-260902-03) can recognise anything from them. `milestones:sum` is a
+  // check on the engagement's *terms* (do they add to the contract value —
+  // P3-09's editor says so), not a revenue figure; backlog reads
+  // `revenue_lines` (ADR-003). `complete`/`uncomplete` are their own
+  // channels rather than a `completedAt` field on `update`: done-ness is a
+  // fact the repository stamps, not a timestamp a caller supplies.
+  'milestones:list': { request: listMilestonesInputSchema, response: z.array(milestoneSchema).readonly() },
+  'milestones:create': { request: createMilestoneInputSchema, response: mutationResultSchema(milestoneSchema) },
+  'milestones:update': {
+    request: z.object({ id: z.string().min(1), patch: updateMilestoneInputSchema }).strict(),
+    response: mutationResultSchema(milestoneSchema)
+  },
+  'milestones:complete': { request: idRequestSchema, response: mutationResultSchema(milestoneSchema) },
+  'milestones:uncomplete': { request: idRequestSchema, response: mutationResultSchema(milestoneSchema) },
+  'milestones:reorder': { request: reorderMilestonesInputSchema, response: mutationResultSchema(z.array(milestoneSchema).readonly()) },
+  'milestones:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
+  'milestones:sum': { request: sumMilestonesInputSchema, response: milestoneSumSchema },
 
   // -- offerings + categories (T-260901-07) --------------------------------
   //

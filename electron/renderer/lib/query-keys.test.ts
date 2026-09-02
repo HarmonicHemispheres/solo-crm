@@ -27,7 +27,8 @@ describe('queryKeys — T-260828-26 entities', () => {
 
     expect(queryKeys.people.detail('p1')).toEqual(['people', 'detail', 'p1'])
     expect(queryKeys.engagements.detail('e1')).toEqual(['engagements', 'detail', 'e1'])
-    expect(queryKeys.engagements.milestones('e1')).toEqual(['engagements', 'milestones', 'e1'])
+    expect(queryKeys.milestones.list('e1')).toEqual(['milestones', 'list', 'e1'])
+    expect(queryKeys.milestones.sum('e1')).toEqual(['milestones', 'sum', 'e1'])
     expect(queryKeys.tasks.detail('t1')).toEqual(['tasks', 'detail', 't1'])
     expect(queryKeys.tasks.countOpen()).toEqual(['tasks', 'countOpen'])
     expect(queryKeys.activity.detail('a1')).toEqual(['activity', 'detail', 'a1'])

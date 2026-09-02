@@ -23,7 +23,6 @@ in build order; -03 is the generator ADR-003 exists for and is the large one.
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260902-02](T-260902-02-milestones-repository.md) | Build the milestones repository — the fixed-scope half of revenue has nowhere to come from without it | 🗄 data | P3-04 |
 | ○ open | [T-260902-03](T-260902-03-revenue-line-generator.md) | Build the revenue line generator — the one place that turns an engagement's terms into revenue_lines rows | 🗄 data | P3-05 |
 | ○ open | [T-260902-04](T-260902-04-revenue-rollups-ipc.md) | Revenue rollup queries and their IPC channel — three attributions, four metrics, one SUM | 🗄 data | P3-06 |
 | ○ open | [T-260902-05](T-260902-05-revenue-view.md) | Build the Revenue view — rollup toggle, four metrics, the by-month table | 🎨 ui | P3-10 |
@@ -38,6 +37,7 @@ in build order; -03 is the generator ADR-003 exists for and is the large one.
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260902-02](T-260902-02-milestones-repository.md) | Build the milestones repository — the fixed-scope half of revenue has nowhere to come from without it | 🗄 data | P3-04 | — |
 | ● done | [T-260902-01](T-260902-01-revenue-page-says-what-it-is.md) | Give the Revenue route a real header and an honest empty body instead of a bare heading | 🎨 ui | | — |
 | ● done | [T-260901-29](T-260901-29-detail-header-band-contains-content.md) | Make the detail-page header band contain its content instead of a fixed strip the content straddles | 🎨 ui | | — |
 | ● done | [T-260901-25](T-260901-25-inline-editor-escape-saves.md) | Escape in the person-detail fields and the category rename must not save through the unmount blur | 🎨 ui | | — |

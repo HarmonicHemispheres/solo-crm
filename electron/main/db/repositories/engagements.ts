@@ -306,31 +306,6 @@ function mapEngagementWithOfferingRow(row: EngagementRow & OfferingJoinColumns):
   return { ...mapEngagementRow(row), offeringId: row.offering_id, offeringName: row.offering_name }
 }
 
-interface MilestoneRow {
-  readonly id: string
-  readonly engagement_id: string | null
-  readonly name: string | null
-  readonly sort: number | null
-  readonly completed_at: string | null
-  readonly amount_cents: number | null
-  readonly expected_month: string | null
-  readonly created_at: string
-  readonly updated_at: string
-}
-
-function mapMilestoneRow(row: MilestoneRow): Milestone {
-  return {
-    id: row.id,
-    engagementId: row.engagement_id,
-    name: row.name,
-    sort: row.sort,
-    completedAt: row.completed_at,
-    amountCents: row.amount_cents,
-    expectedMonth: row.expected_month,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Reads
@@ -401,23 +376,8 @@ export function getEngagementWithOffering(db: Database.Database, id: string): En
   return row ? mapEngagementWithOfferingRow(row) : null
 }
 
-/**
- * Milestone *editing* stays P3-09 (this task's Scope) — this is a read-only
- * list for a fixed-scope detail view to render.
- *
- * `milestones.sort` is nullable, and plain `ORDER BY sort ASC` sorts SQLite
- * NULLs first — an unsorted milestone would lead the list ahead of every
- * milestone that actually has a position. `sort IS NULL` evaluates to 0 for
- * a sorted row and 1 for an unsorted one, so ordering by that first pushes
- * NULLs to the end; `sort ASC` then orders the sorted rows among themselves,
- * and `created_at ASC` breaks ties (including among unsorted rows).
- */
-export function listMilestones(db: Database.Database, engagementId: string): readonly Milestone[] {
-  const rows = db
-    .prepare('SELECT * FROM milestones WHERE engagement_id = ? ORDER BY sort IS NULL, sort ASC, created_at ASC')
-    .all(engagementId) as MilestoneRow[]
-  return rows.map(mapMilestoneRow)
-}
+// `listMilestones` moved to `milestones.ts` (T-260902-02), which owns the
+// table's every read and write; see that file's header for why.
 
 // ---------------------------------------------------------------------------
 // Writes

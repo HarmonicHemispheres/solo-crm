@@ -334,7 +334,7 @@ describe('entity channels — end to end against a real database', () => {
     const filtered = await callChannel('engagements:list', { clientCompanyId: company.id })
     expect(filtered.map((e) => e.id)).toEqual([created.id])
 
-    const milestones = await callChannel('engagements:milestones', { engagementId: created.id })
+    const milestones = await callChannel('milestones:list', { engagementId: created.id })
     expect(milestones).toEqual([])
 
     const updated = expectOk(await callChannel('engagements:update', { id: created.id, patch: { status: 'active' } }))

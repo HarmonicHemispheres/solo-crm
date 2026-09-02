@@ -13,11 +13,11 @@ import {
   getEngagement,
   getEngagementWithOffering,
   listEngagements,
-  listMilestones,
   updateEngagement
 } from './engagements'
 import { archiveOffering, createOffering } from './offerings'
 import { NotFoundError, RefusalError, ValidationError } from './errors'
+import { listMilestones } from './milestones'
 
 /**
  * Same real-database discipline as companies.test.ts: every test runs

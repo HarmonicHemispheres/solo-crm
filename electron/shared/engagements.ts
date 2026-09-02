@@ -96,7 +96,7 @@ export const engagementWithOfferingSchema = engagementSchema.extend({
 })
 export type EngagementWithOffering = z.infer<typeof engagementWithOfferingSchema>
 
-/** A `milestones` row, camelCased, as read back from the database. Editing stays P3-09 — this repository only reads. `engagements:milestones`'s response shape (ADR-007 rule 5). */
+/** A `milestones` row, camelCased, as read back from the database — `milestones:list`'s response shape (ADR-007 rule 5). The write-side schemas are `./milestones` (T-260902-02); this stays here only because it was declared first and nothing gains from moving it. */
 export const milestoneSchema = z.object({
   id: z.string(),
   engagementId: z.string().nullable(),
