@@ -8,9 +8,10 @@ import { useCompaniesList, useEngagementsList, usePeopleList } from '../sheets/q
 import { callCrm, unwrapMutationResult } from '../../lib/ipc'
 import { invalidate } from '../../lib/query-keys'
 import { ACTIVITY_KINDS, type ActivityKind, type LogActivityInput } from '../../../shared/activity'
-import { formatDateOnly, nowTimestamp } from '../../../shared/format'
+import { nowTimestamp } from '../../../shared/format'
 import '../sheets/fields.css'
 import './QuickLog.css'
+import { localToday } from '../../views/todo-urgency'
 
 const KIND_LABELS: Record<ActivityKind, string> = {
   call: 'Call',
@@ -297,7 +298,7 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
       onClose={onClose}
       closeOnEscape={false}
       title="Log a touch"
-      titleMeta={formatDateOnly(new Date())}
+      titleMeta={localToday()}
       aria-label="Log a touch"
       footerNote="resets the cadence clock"
       footer={

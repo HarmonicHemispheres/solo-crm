@@ -8,7 +8,7 @@ import { useSheetMutation } from './useSheetMutation'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
 import { queryKeys } from '../../lib/query-keys'
 import type { SheetFormTarget } from '../shell/layer-manager-context'
-import { centsToDecimalString, decimalStringToCents, formatDateOnly } from '../../../shared/format'
+import { centsToDecimalString, decimalStringToCents } from '../../../shared/format'
 import {
   BILLING_MODELS,
   ENGAGEMENT_STATUSES,
@@ -20,6 +20,7 @@ import {
   type UpdateEngagementInput
 } from '../../../shared/engagements'
 import type { OfferingListItem, OfferingUnit } from '../../../shared/offerings'
+import { localToday } from '../../views/todo-urgency'
 
 const BILLING_MODEL_LABELS: Record<BillingModel, string> = {
   retainer: 'Retainer',
@@ -315,7 +316,7 @@ function EngagementForm({ engagement, onClose }: { engagement: EngagementWithOff
   // record into `retainer`, which would be a claim about it that nobody made.
   const [billingModel, setBillingModel] = useState<BillingModel>(engagement ? (engagement.billingModel ?? 'none') : 'retainer')
   const [status, setStatus] = useState<EngagementStatus>(engagement?.status ?? 'active')
-  const [startedOn, setStartedOn] = useState(() => engagement?.startedOn ?? formatDateOnly(new Date()))
+  const [startedOn, setStartedOn] = useState(() => engagement?.startedOn ?? localToday())
   const [endsOn, setEndsOn] = useState(engagement?.endsOn ?? '')
   const [hoursIncluded, setHoursIncluded] = useState(() => hoursToInput(engagement?.hoursIncluded ?? null))
   const [contractValue, setContractValue] = useState(() => centsToInput(engagement?.contractValueCents ?? null))

@@ -7,8 +7,8 @@ import { useCompaniesList } from './queries'
 import { useSheetMutation } from './useSheetMutation'
 import { callCrm, unwrapMutationResult } from '../../lib/ipc'
 import { invalidate } from '../../lib/query-keys'
-import { formatDateOnly } from '../../../shared/format'
 import type { CreatePersonInput } from '../../../shared/people'
+import { localToday } from '../../views/todo-urgency'
 
 export interface PersonSheetProps {
   onClose: () => void
@@ -33,7 +33,7 @@ const FIELD_LABELS = {
  * was picked, `people:addAffiliation` in the same submit (this task's Scope:
  * "an optional company and title that opens the first affiliation") —
  * `affiliations.started` is required (electron/shared/people.ts) and has no
- * field of its own here, so it is stamped with today via `formatDateOnly`,
+ * field of its own here, so it is stamped with today via `localToday`,
  * the same helper `nowTimestamp()` is built on.
  *
  * `people:create` and `people:addAffiliation` are two separate IPC calls,
@@ -74,7 +74,10 @@ export function PersonSheet({ onClose }: PersonSheetProps) {
             personId,
             companyId: vars.companyId,
             title: vars.title.trim() || null,
-            started: formatDateOnly(new Date())
+            // T-260901-24: the local calendar day, not `formatDateOnly(new
+            // Date())`'s UTC one — west of UTC after ~17:00 that is
+            // tomorrow, and it is written to `affiliations.started`.
+            started: localToday()
           }).then(unwrapMutationResult)
         } catch (err) {
           // The person row is already committed — these are two IPC calls,
