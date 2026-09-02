@@ -17,8 +17,19 @@ renderer, tooling and docs, each by a fresh reader). The seven that were small
 and mechanical were built in the same session; the three still open here are
 scoped and waiting for a decision.
 
+T-260902-02 to -06 are the Revenue slice of Phase 3 (P3-04/05/06/10/11),
+scoped on 2026-09-02 after the user found the Revenue page empty. They are
+in build order; -03 is the generator ADR-003 exists for and is the large one.
+
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
+| ○ open | [T-260902-02](T-260902-02-milestones-repository.md) | Build the milestones repository — the fixed-scope half of revenue has nowhere to come from without it | 🗄 data | P3-04 |
+| ○ open | [T-260902-03](T-260902-03-revenue-line-generator.md) | Build the revenue line generator — the one place that turns an engagement's terms into revenue_lines rows | 🗄 data | P3-05 |
+| ○ open | [T-260902-04](T-260902-04-revenue-rollups-ipc.md) | Revenue rollup queries and their IPC channel — three attributions, four metrics, one SUM | 🗄 data | P3-06 |
+| ○ open | [T-260902-05](T-260902-05-revenue-view.md) | Build the Revenue view — rollup toggle, four metrics, the by-month table | 🎨 ui | P3-10 |
+| ○ open | [T-260902-06](T-260902-06-stacked-monthly-chart.md) | The stacked monthly revenue chart, on Revenue and Today, from revenue_lines | 🎨 ui | P3-11 |
+| ○ open | [T-260901-30](T-260901-30-shared-detail-header-styles.md) | Give the detail-page header one stylesheet instead of two copies that must be edited in step | 🎨 ui | |
+| ○ open | [T-260901-31](T-260901-31-header-image-controls-narrow.md) | Decide where the logo and banner controls live when the header is narrow | 🎨 ui | |
 | ○ open | [T-260901-26](T-260901-26-activity-filter-local-day.md) | Make the Activity view's date-range filter use the same calendar day the rows display | 🎨 ui | |
 | ○ open | [T-260901-27](T-260901-27-one-cadence-computation.md) | Compute a company's cadence state in one place, so the grid, the detail page and Today agree | 🎨 ui | |
 | ○ open | [T-260901-28](T-260901-28-optimistic-settings-rollback.md) | Roll back the optimistic settings writes that have no onError | 🎨 ui | |
@@ -27,6 +38,8 @@ scoped and waiting for a decision.
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260902-01](T-260902-01-revenue-page-says-what-it-is.md) | Give the Revenue route a real header and an honest empty body instead of a bare heading | 🎨 ui | | — |
+| ● done | [T-260901-29](T-260901-29-detail-header-band-contains-content.md) | Make the detail-page header band contain its content instead of a fixed strip the content straddles | 🎨 ui | | — |
 | ● done | [T-260901-25](T-260901-25-inline-editor-escape-saves.md) | Escape in the person-detail fields and the category rename must not save through the unmount blur | 🎨 ui | | — |
 | ● done | [T-260901-24](T-260901-24-local-today-defaults.md) | Default "today" to the local calendar day in the four forms that used the UTC one | 🎨 ui | | — |
 | ● done | [T-260901-23](T-260901-23-company-quick-log-stale-cadence.md) | Logging a touch from the company page moves the company's cadence meter, not only its activity list | 🎨 ui | | — |

@@ -7,19 +7,11 @@ import { People } from './views/People'
 import { PersonDetail } from './views/PersonDetail'
 import { Engagements } from './views/Engagements'
 import { Offerings } from './views/Offerings'
+import { Revenue } from './views/Revenue'
 import { Today } from './views/Today'
 import { Todos } from './views/Todos'
 import { WorkspaceSettings } from './views/WorkspaceSettings'
 import { WorkspaceData } from './views/WorkspaceData'
-
-/**
- * A minimal stand-in for a view body — this task's scope is the shell, not
- * any view (see T-260828-12's "Out"). Every later P1-1x task replaces one of
- * these with its real view; until then this proves the route resolved.
- */
-function ViewPlaceholder({ title }: { title: string }) {
-  return <h1>{title}</h1>
-}
 
 /**
  * The route tree: the ten views, the two detail routes, and Settings/Data
@@ -33,7 +25,7 @@ export function AppRoutes() {
       <Route element={<ShellLayout />}>
         <Route index element={<Today />} />
         <Route path="todos" element={<Todos />} />
-        <Route path="revenue" element={<ViewPlaceholder title="Revenue" />} />
+        <Route path="revenue" element={<Revenue />} />
         <Route path="activity" element={<Activity />} />
         <Route path="companies" element={<Companies />} />
         <Route path="company/:id" element={<CompanyDetail />} />

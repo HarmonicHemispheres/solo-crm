@@ -400,9 +400,10 @@ describe('the first-run tour', () => {
       'Engagements',
       'Workspace'
     ])
-    // Revenue and Offerings render an `<h1>` and nothing else (routes.tsx's
-    // `ViewPlaceholder`); a tour step for either would be describing a page
-    // that does not exist yet.
+    // Offerings is a management surface the tour's five stops do not need
+    // (T-260901-11), and Revenue (T-260902-01) is a header over an empty
+    // body until the revenue generator lands; a tour step for it would be
+    // describing a page that does not exist yet.
     expect(TOUR_STEPS.some((step) => step.title === 'Revenue' || step.title === 'Offerings')).toBe(false)
     // "two or three sentences" (this task's Scope) — a card that grows into a
     // paragraph is a card nobody reads.
