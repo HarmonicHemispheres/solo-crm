@@ -175,7 +175,18 @@ export function openDatabase(options: OpenDatabaseOptions = {}): Database.Databa
 
   const db = new Database(dbPath)
 
-  applyPragmas(db)
+  // T-260901-22: a pragma can throw — `journal_mode = WAL` on a volume that
+  // cannot create the `-shm`, a read-only mount — and until now the raw
+  // connection stayed open with no owner. The next successful open (after
+  // `move-data-root.ts` reopens, say) would then run beside it, which is the
+  // second-attached-connection state `closeDatabase` warns makes the quit
+  // checkpoint fail quietly. Same treatment as a failed migration below.
+  try {
+    applyPragmas(db)
+  } catch (error) {
+    db.close()
+    throw error
+  }
   handle = db
 
   // T-260828-07: runs after the handle is set, reached through

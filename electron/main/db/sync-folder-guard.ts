@@ -28,6 +28,7 @@ import { realpathSync } from 'node:fs'
 export const SYNC_FOLDER_MARKERS: readonly string[] = [
   'Google Drive',
   'My Drive',
+  'Shared drives', // Google Drive for desktop's streamed mount: `G:\Shared drives\<name>` (T-260901-22)
   'Dropbox',
   'iCloud Drive',
   'iCloudDrive', // iCloud for Windows' actual on-disk folder — no space

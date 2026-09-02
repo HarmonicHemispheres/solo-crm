@@ -110,7 +110,10 @@ describe('findSyncFolderMatch: decorated real-world folder names', () => {
     ['iCloud for Windows', 'iCloudDrive'],
     ['business OneDrive', 'OneDrive - Contoso Ltd'],
     ['macOS CloudStorage OneDrive', 'OneDrive-Personal'],
-    ['Dropbox team account', 'Dropbox (Personal)']
+    ['Dropbox team account', 'Dropbox (Personal)'],
+    // T-260901-22: Google Drive for desktop mounts shared drives as
+    // `G:\Shared drives\<name>`, beside `My Drive`, and nothing matched it.
+    ['Google Drive shared drive', 'Shared drives']
   ])('refuses %s (%s)', (_label, folderName) => {
     const tmpDir = makeTmpDir('solo-crm-guard-')
     const syncDir = join(tmpDir, folderName)
