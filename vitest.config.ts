@@ -1,6 +1,23 @@
 import { sep } from 'node:path'
 import { defineConfig } from 'vitest/config'
 
+// T-260901-19: the Node this config is evaluated under is the Node every
+// worker runs under, and better-sqlite3's prebuilt binary segfaults on the
+// 22.12 this machine ships as its default — 25 workers die with "Worker
+// exited unexpectedly" / EPIPE and no test names, while the same tree is
+// green on 22.22. That was LESSONS.md's tenth line; a lesson a check can
+// enforce becomes the check (.dev/README.md), so it lives here now and the
+// line is gone. `package.json`'s `engines` says the same thing for humans
+// and `npm ls`; this is the one that stops the run.
+const MIN_NODE = [22, 22] as const
+const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number)
+if (nodeMajor < MIN_NODE[0] || (nodeMajor === MIN_NODE[0] && nodeMinor < MIN_NODE[1])) {
+  throw new Error(
+    `Node ${process.versions.node} cannot run this suite: better-sqlite3 segfaults under vitest before ` +
+      `${MIN_NODE.join('.')}. Use \`nvm use 22.22.0\`, or prepend %APPDATA%\nvm\v22.22.0 to PATH.`
+  )
+}
+
 // T-260828-54: how many workers one `vitest run` may claim.
 //
 // Vitest sizes its pool from the whole machine, so on these 8 cores a run takes

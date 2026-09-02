@@ -55,8 +55,14 @@ const paths = status
   .map((line) => line.slice(3).trim().replace(/^"|"$/g, ''))
   .map((p) => (p.includes(' -> ') ? p.split(' -> ')[1] : p))
 
+// Everything eslint lints or a tsconfig includes: the four source trees,
+// the root configs, and the two root-level test files. T-260901-19 widened
+// this from `electron|src|scripts` — a turn that edited only a custom lint
+// rule, the integration tests or the electron-vite config used to end with
+// no check run, which is the gap this hook exists to close.
 const isSource = (p) =>
-  /^(electron|src|scripts)\//.test(p) || /^(package\.json|tsconfig[^/]*\.json|eslint\.config\.[cm]?js|vitest\.config\.[cm]?ts)$/.test(p)
+  /^(electron|src|scripts|tests|eslint-rules)\//.test(p) ||
+  /^(package\.json|tsconfig[^/]*\.json|eslint\.config\.[cm]?js|vitest\.config\.[cm]?ts|vitest-pools\.test\.ts|electron\.vite\.config\.[cm]?ts|drizzle\.config\.[cm]?ts)$/.test(p)
 const isRecord = (p) => p.startsWith('.dev/')
 
 const sourceDirty = paths.some(isSource)

@@ -19,6 +19,8 @@ the two 📄 docs tasks and the settings ADR are for.
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260901-20](T-260901-20-status-prose-drift.md) | Bring the status prose in AGENTS.md, README and HOWTO back in line with what is built | 📄 docs | | — |
+| ● done | [T-260901-19](T-260901-19-node-version-check-and-hook-gaps.md) | Turn the Node-version lesson into a check, and close the Stop hook's and tsconfig's coverage gaps | 📦 build | | — |
 | ● done | [T-260901-16](T-260901-16-popover-layer-retarget.md) | Retarget the popover layer when a second InfoPopover opens over the first | 🎨 ui | | — |
 | ● done | [T-260901-18](T-260901-18-seeded-affiliation-started-null.md) | Person detail fails for every seeded person with a company — affiliation `started` is NULL but the wire schema requires a date | 🗄 data | | — |
 | ● done | [T-260901-17](T-260901-17-factory-slimming.md) | Slim the software factory — interview-first scopes, sequential builds, a Stop-hook gate, screenshots for UI, capped lessons | 📄 docs | | — |
