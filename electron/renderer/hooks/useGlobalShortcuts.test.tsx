@@ -100,6 +100,7 @@ describe('useGlobalShortcuts', () => {
       isTopmost: () => true,
       openLayer,
       closeLayer: vi.fn(),
+      retargetLayer: vi.fn(),
       openSheet: vi.fn(),
       editSheet: vi.fn()
     }

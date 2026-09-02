@@ -105,6 +105,15 @@ export function LayerManager({ children }: { children: ReactNode }) {
     trigger?.focus()
   }, [])
 
+  // T-260901-16: see the context's doc comment. Guarded on the ref for the
+  // same reason `closeLayer` is — a stable callback reading `stack` would
+  // read the render that created it — and refusing to write a trigger for a
+  // closed kind keeps `closeLayer`'s "no focus theft on a no-op close" rule
+  // intact: a trigger is only ever stored for a layer that is open.
+  const retargetLayer = useCallback((kind: LayerKind, trigger: HTMLElement | null) => {
+    if (stackRef.current.includes(kind)) triggers.current[kind] = trigger
+  }, [])
+
   const openSheetTarget = useCallback(
     (target: SheetTarget, trigger?: HTMLElement | null) => {
       // Matches `openLayer`'s own idempotency contract (see its comment: "a
@@ -180,8 +189,8 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<LayerManagerContextValue>(
-    () => ({ isOpen, isTopmost, openLayer, closeLayer, openSheet, editSheet }),
-    [isOpen, isTopmost, openLayer, closeLayer, openSheet, editSheet]
+    () => ({ isOpen, isTopmost, openLayer, closeLayer, retargetLayer, openSheet, editSheet }),
+    [isOpen, isTopmost, openLayer, closeLayer, retargetLayer, openSheet, editSheet]
   )
 
   // DOM order is paint order here (see the component comment): a closed

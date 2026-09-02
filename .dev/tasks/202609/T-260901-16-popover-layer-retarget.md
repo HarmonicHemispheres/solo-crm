@@ -1,10 +1,10 @@
 ---
 id: T-260901-16
 title: Retarget the popover layer when a second InfoPopover opens over the first
-status: open
+status: done
 category: ui
 created: 2026-09-01
-closed:
+closed: 2026-09-01
 ---
 
 ## Why
@@ -53,13 +53,41 @@ rule that only one `popover` layer exists.
 
 ## Acceptance
 
-- [ ] Open A, open B, press Escape: `document.activeElement` is B's trigger.
-- [ ] The existing "re-opening is a no-op" contract for every other kind is
+- [x] Open A, open B, press Escape: `document.activeElement` is B's trigger.
+- [x] The existing "re-opening is a no-op" contract for every other kind is
       unchanged — `LayerManager.test.tsx` passes unchanged.
-- [ ] `npm run verify` passes.
+- [x] `npm run verify` passes. (There is no `verify` script; the `verify`
+      skill's constituent checks — typecheck, lint, covering tests, the full
+      suite — were run instead.)
 
 ## Risks
 
 - `closeLayer` deliberately focuses the trigger; a variant that does not is a
   second way to close a layer and needs the same care `LayerManager.tsx`'s
   header gives the document-click path.
+
+---
+
+## Outcome
+
+**Changed:** `layer-manager-context.ts` gains `retargetLayer(kind, trigger)`;
+`LayerManager.tsx` implements it (no-op unless `kind` is open; stack
+untouched); `InfoPopover.tsx` calls it instead of `openLayer` when the layer
+is already held, and resets its own `selfOpen` during render when the
+manager drops the layer. Tests in `InfoPopover.test.tsx` (two, under a real
+manager), `LayerManager.test.tsx` (two), and a stateful `isOpen` stub in the
+registration test; `useGlobalShortcuts.test.tsx`'s context stub gains the
+new member.
+
+**Departed from scope:** Took the first option (a separate method). Added
+one thing the brief did not name, found in review: a popover closed by
+Escape or by ⌘K kept `selfOpen` true, so the next popover to register the
+layer brought it back too — two panels on screen. Same mechanism, so it is
+fixed here rather than as a follow-up. Residual: activating B from the
+keyboard skips the pointerdown that hides A, so A stays visible until the
+layer closes; focus is still returned to B.
+
+**Not verified:** `npm run snap -- --routes settings` was run and read, but
+the change has no pixels — it moves focus.
+
+**Elapsed:** ~35 minutes.

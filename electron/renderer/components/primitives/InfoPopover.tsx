@@ -47,7 +47,9 @@ export interface InfoPopoverProps {
  * Only one `popover` layer exists, so only one of these can be open at a
  * time under a manager — which is what a click-to-open affordance does
  * anyway, since opening a second one starts with a pointerdown outside the
- * first.
+ * first. That second one finds the layer still registered to the first's
+ * button, so it retargets the layer rather than re-opening it
+ * (T-260901-16); otherwise Escape would put focus back on the wrong button.
  */
 export function InfoPopover({ children, 'aria-label': ariaLabel }: InfoPopoverProps) {
   // Deliberately `useContext` rather than `useLayerManager()`: that hook
@@ -60,7 +62,24 @@ export function InfoPopover({ children, 'aria-label': ariaLabel }: InfoPopoverPr
   const wrapRef = useRef<HTMLSpanElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
-  const open = selfOpen && (standalone || layers.isOpen('popover'))
+  const layerOpen = standalone || layers.isOpen('popover')
+
+  // T-260901-16: when the manager drops the layer from under this instance
+  // (Escape, or ⌘K/⌘L opening a heavier layer), `selfOpen` has to follow it
+  // down. Left standing, it would make `open` true again the moment *any*
+  // other InfoPopover re-registers the layer — close A with Escape, click
+  // B, and both panels are on screen. Reset during render rather than in an
+  // effect (React's "adjusting state when a prop changes" pattern, and what
+  // `react-hooks/set-state-in-effect` exists to steer towards): the reset is
+  // derived from the same render that observed the layer go, not a frame
+  // behind it.
+  const [seenLayerOpen, setSeenLayerOpen] = useState(layerOpen)
+  if (layerOpen !== seenLayerOpen) {
+    setSeenLayerOpen(layerOpen)
+    if (!layerOpen) setSelfOpen(false)
+  }
+
+  const open = selfOpen && layerOpen
 
   useEffect(() => {
     if (!open || !standalone) return
@@ -95,7 +114,16 @@ export function InfoPopover({ children, 'aria-label': ariaLabel }: InfoPopoverPr
       layers?.closeLayer('popover')
     } else {
       setSelfOpen(true)
-      layers?.openLayer('popover', buttonRef.current)
+      // T-260901-16: if another InfoPopover already holds the single
+      // `popover` layer, `openLayer` would be a no-op — trigger write
+      // included — leaving Escape to return focus to *that* button. Take
+      // the layer over instead, so focus comes back here. A mouse click's
+      // pointerdown has already hidden the other panel; a keyboard
+      // activation (Enter/Space) has not, and it stays visible until the
+      // layer closes — focus is still right, and the reset above then
+      // clears both.
+      if (layers?.isOpen('popover')) layers.retargetLayer('popover', buttonRef.current)
+      else layers?.openLayer('popover', buttonRef.current)
     }
   }
 

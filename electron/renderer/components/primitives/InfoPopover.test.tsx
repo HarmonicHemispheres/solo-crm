@@ -93,13 +93,23 @@ describe('InfoPopover', () => {
 
   describe('inside the layer stack', () => {
     it('registers the popover layer, naming its trigger as the focus-return target', () => {
-      const openLayer = vi.fn()
-      const closeLayer = vi.fn()
+      // A stateful stub: `isOpen` answers the way the real manager would
+      // after each call. Answering `true` unconditionally would tell the
+      // component another popover already holds the layer, which is the
+      // retarget path (T-260901-16), not the registration this asserts.
+      let popoverOpen = false
+      const openLayer = vi.fn(() => {
+        popoverOpen = true
+      })
+      const closeLayer = vi.fn(() => {
+        popoverOpen = false
+      })
       const value: LayerManagerContextValue = {
-        isOpen: () => true,
-        isTopmost: () => true,
+        isOpen: () => popoverOpen,
+        isTopmost: () => popoverOpen,
         openLayer,
         closeLayer,
+        retargetLayer: vi.fn(),
         openSheet: vi.fn(),
         editSheet: vi.fn()
       }
@@ -123,6 +133,7 @@ describe('InfoPopover', () => {
         isTopmost: () => true,
         openLayer: vi.fn(),
         closeLayer,
+        retargetLayer: vi.fn(),
         openSheet: vi.fn(),
         editSheet: vi.fn()
       }
@@ -147,6 +158,7 @@ describe('InfoPopover', () => {
         isTopmost: () => false,
         openLayer: vi.fn(),
         closeLayer: vi.fn(),
+        retargetLayer: vi.fn(),
         openSheet: vi.fn(),
         editSheet: vi.fn()
       }
@@ -202,6 +214,75 @@ describe('InfoPopover', () => {
 
       fireEvent.keyDown(document, { key: 'Escape' })
       expect(screen.getByTestId('sheet-open').textContent).toBe('no')
+    })
+
+    // T-260901-16. Opening B while A holds the layer: A hides on the
+    // pointerdown, B's wrapper stops the document click that would drop the
+    // layer, and `openLayer` is a no-op for a kind already open — so before
+    // the retarget, Escape here focused A's button.
+    it('a second popover opened over the first takes the layer, so Escape returns focus to its own button', () => {
+      window.crm = stubCrm()
+      render(
+        <MemoryRouter>
+          <QueryClientProvider client={createQueryClient()}>
+            <LayerManager>
+              <InfoPopover aria-label="About A">Prose A.</InfoPopover>
+              <InfoPopover aria-label="About B">Prose B.</InfoPopover>
+            </LayerManager>
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+      const a = screen.getByRole('button', { name: 'About A' })
+      const b = screen.getByRole('button', { name: 'About B' })
+
+      fireEvent.click(a)
+      expect(screen.getByText('Prose A.')).toBeTruthy()
+
+      // A real click is a pointerdown first — that is what hides A.
+      fireEvent.pointerDown(b)
+      fireEvent.click(b)
+      expect(screen.queryByText('Prose A.')).toBeNull()
+      expect(screen.getByText('Prose B.')).toBeTruthy()
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByText('Prose A.')).toBeNull()
+      expect(screen.queryByText('Prose B.')).toBeNull()
+      expect(document.activeElement).toBe(b)
+    })
+
+    // T-260901-16, the sibling defect: A's own open flag outlived the layer
+    // the manager dropped, so B re-registering the layer brought A back too.
+    it('a popover the manager closed stays closed when another one opens later', () => {
+      window.crm = stubCrm()
+      render(
+        <MemoryRouter>
+          <QueryClientProvider client={createQueryClient()}>
+            <LayerManager>
+              <InfoPopover aria-label="About A">Prose A.</InfoPopover>
+              <InfoPopover aria-label="About B">Prose B.</InfoPopover>
+            </LayerManager>
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+      const a = screen.getByRole('button', { name: 'About A' })
+      const b = screen.getByRole('button', { name: 'About B' })
+
+      fireEvent.click(a)
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByText('Prose A.')).toBeNull()
+      expect(document.activeElement).toBe(a)
+
+      fireEvent.pointerDown(b)
+      fireEvent.click(b)
+      expect(screen.queryByText('Prose A.')).toBeNull()
+      expect(screen.getByText('Prose B.')).toBeTruthy()
+
+      // And A opens cleanly again afterwards — the reset did not wedge it.
+      fireEvent.keyDown(document, { key: 'Escape' })
+      fireEvent.pointerDown(a)
+      fireEvent.click(a)
+      expect(screen.getByText('Prose A.')).toBeTruthy()
+      expect(screen.queryByText('Prose B.')).toBeNull()
     })
   })
 

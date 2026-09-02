@@ -79,6 +79,18 @@ export interface LayerManagerContextValue {
   openLayer: (kind: LayerKind, trigger?: HTMLElement | null) => void
   /** Closes `kind` if open and returns focus to its stored trigger. */
   closeLayer: (kind: LayerKind) => void
+  /**
+   * Replaces the focus-return target of a `kind` that is already open, and
+   * does nothing if it is not (T-260901-16). `openLayer`'s no-op contract
+   * deliberately includes the trigger write, which is right for a held ⌘K
+   * and wrong for the one layer two controls share: a second `InfoPopover`
+   * opening while the first holds the single `popover` layer takes it over
+   * — the first has already hidden itself on the pointerdown — and Escape
+   * must return focus to the button the user actually pressed, not the one
+   * that opened the layer originally. Stack membership and order are
+   * untouched; only the trigger moves.
+   */
+  retargetLayer: (kind: LayerKind, trigger: HTMLElement | null) => void
   /** Opens the generic 'sheet' layer holding `kind`'s real form. A dedicated
    * setter rather than overloading `openLayer` with a payload argument that
    * only one of five layer kinds ever uses.

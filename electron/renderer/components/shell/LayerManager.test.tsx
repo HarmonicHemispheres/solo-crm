@@ -27,7 +27,7 @@ afterEach(() => {
  * or `popover` has to stop that propagation itself; this harness mirrors
  * that contract instead of masking it. */
 function Harness() {
-  const { openLayer, openSheet, editSheet, closeLayer, isOpen, isTopmost } = useLayerManager()
+  const { openLayer, openSheet, editSheet, closeLayer, retargetLayer, isOpen, isTopmost } = useLayerManager()
   return (
     <div>
       <button onClick={(e) => openLayer('palette', e.currentTarget)}>open-palette</button>
@@ -67,6 +67,18 @@ function Harness() {
         open-popover
       </button>
       <button onClick={() => closeLayer('sheet')}>close-sheet</button>
+      {/* T-260901-16: a second control claiming the one `popover` layer's
+          focus return. Stops propagation for the same reason open-popover
+          does — the click that retargets must not be the click that
+          dismisses. */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          retargetLayer('popover', e.currentTarget)
+        }}
+      >
+        retarget-popover
+      </button>
       <pre data-testid="state">
         {JSON.stringify({
           palette: isOpen('palette'),
@@ -245,6 +257,29 @@ describe('LayerManager', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(document.activeElement).toBe(screen.getByText('open-sheet'))
+  })
+
+  // T-260901-16
+  it('retargeting an open layer moves only where focus returns — the stack is untouched', () => {
+    renderHarness()
+    fireEvent.click(screen.getByText('open-popover'))
+    fireEvent.click(screen.getByText('retarget-popover'))
+    expect(state()).toMatchObject({ popover: true })
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(state()).toMatchObject({ popover: false })
+    expect(document.activeElement).toBe(screen.getByText('retarget-popover'))
+  })
+
+  it('retargeting a layer that is not open is a no-op — no trigger is stored for a later close to focus', () => {
+    renderHarness()
+    fireEvent.click(screen.getByText('retarget-popover'))
+    expect(state()).toMatchObject({ popover: false })
+
+    // The next real open still captures its own trigger, not the stale one.
+    fireEvent.click(screen.getByText('open-popover'))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(document.activeElement).toBe(screen.getByText('open-popover'))
   })
 
   it('opening a heavier layer closes an already-open menu and popover', () => {
