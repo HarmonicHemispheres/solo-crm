@@ -5,6 +5,27 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.0
+
+- ✨ **Offerings** — a price list of what you sell, each with a rate and a
+  billing model, versioned so a price change is a new entry rather than a
+  rewrite of the old one; grouped by category, quick-added from one line.
+- ✨ **Sell an engagement from an offering** — pick one when creating an
+  engagement and its rate is copied in once; later price changes never
+  touch a signed deal, and the engagement says what it was sold as.
+- ✨ **Company logo and banner** — upload both from the company page; the
+  banner washes the company's card in the grid and the logo replaces its
+  initials, and neither leaves the machine.
+- ✨ **Edit a company or engagement from its page** — an Edit button on the
+  header opens the same form that created it, filled in; the Details card
+  now only shows values instead of also editing them.
+- ⚡ **Workspace Settings is a section rail** — one section's card at a time
+  instead of a grid that reflowed with the window.
+- ⚡ **Detail-page headings read as a banner** — the company and person
+  headers no longer look empty above the fold.
+- 🐛 **Data view buttons have a colour again** — the two that rendered
+  unstyled now carry a variant, and a third such button is a type error.
+
 ## 0.5.0
 
 - ✨ **A portable build** — `Solo CRM-Portable-<version>.exe` now ships beside
