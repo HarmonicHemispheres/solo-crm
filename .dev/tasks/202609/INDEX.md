@@ -12,13 +12,26 @@ addition, and the Workspace Settings rearrangement departs from the mockup.
 Each of those three needed a decision written down before code, which is what
 the two 📄 docs tasks and the settings ADR are for.
 
+T-260901-19 to -28 came out of a whole-repository review on 2026-09-01 (main,
+renderer, tooling and docs, each by a fresh reader). The seven that were small
+and mechanical were built in the same session; the three still open here are
+scoped and waiting for a decision.
+
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
+| ○ open | [T-260901-26](T-260901-26-activity-filter-local-day.md) | Make the Activity view's date-range filter use the same calendar day the rows display | 🎨 ui | |
+| ○ open | [T-260901-27](T-260901-27-one-cadence-computation.md) | Compute a company's cadence state in one place, so the grid, the detail page and Today agree | 🎨 ui | |
+| ○ open | [T-260901-28](T-260901-28-optimistic-settings-rollback.md) | Roll back the optimistic settings writes that have no onError | 🎨 ui | |
 
 ## Closed this month
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260901-25](T-260901-25-inline-editor-escape-saves.md) | Escape in the person-detail fields and the category rename must not save through the unmount blur | 🎨 ui | | — |
+| ● done | [T-260901-24](T-260901-24-local-today-defaults.md) | Default "today" to the local calendar day in the four forms that used the UTC one | 🎨 ui | | — |
+| ● done | [T-260901-23](T-260901-23-company-quick-log-stale-cadence.md) | Logging a touch from the company page moves the company's cadence meter, not only its activity list | 🎨 ui | | — |
+| ● done | [T-260901-22](T-260901-22-shared-drives-and-pragma-leak.md) | Refuse Google "Shared drives" as a database location, and close the connection a throwing pragma leaves open | 🗄 data | | — |
+| ● done | [T-260901-21](T-260901-21-favicon-body-deadline.md) | Bound the favicon body read by the same deadline as the headers, and close the trailing-dot host bypass | 🔗 integration | | — |
 | ● done | [T-260901-20](T-260901-20-status-prose-drift.md) | Bring the status prose in AGENTS.md, README and HOWTO back in line with what is built | 📄 docs | | — |
 | ● done | [T-260901-19](T-260901-19-node-version-check-and-hook-gaps.md) | Turn the Node-version lesson into a check, and close the Stop hook's and tsconfig's coverage gaps | 📦 build | | — |
 | ● done | [T-260901-16](T-260901-16-popover-layer-retarget.md) | Retarget the popover layer when a second InfoPopover opens over the first | 🎨 ui | | — |
