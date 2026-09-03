@@ -5,6 +5,16 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.5
+
+- 🐛 **Fixed-scope engagements show up on Revenue** — a fixed scope with no
+  milestones entered yet recognises its contract value evenly across its
+  term; the first milestone you add replaces that spread with your plan.
+- ⚡ **The chart has a scale** — amount gridlines down the left, and each
+  bar names its month's total on hover.
+- ⚡ **Revenue lines are refreshed on launch** — so an upgrade or a new
+  month is reflected without re-saving every engagement.
+
 ## 0.6.4
 
 - ✨ **The Revenue page** — recurring revenue this month with the next twelve

@@ -430,7 +430,7 @@ export function Today() {
           <Card.Header title="Revenue" actions={<RevenueLegend compact />} />
           {recognised ? (
             <div className="today-chart">
-              <RevenueChart window={revenue.window} series={revenue.series} currentMonth={revenue.currentMonth} height={150} />
+              <RevenueChart window={revenue.window} series={revenue.series} months={revenue.months} currentMonth={revenue.currentMonth} height={150} />
             </div>
           ) : revenueQuery.error ? (
             <EmptyState>{revenueQuery.error.message}</EmptyState>

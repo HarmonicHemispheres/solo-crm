@@ -167,6 +167,8 @@ export const revenueSummarySchema = z.object({
   window: z.object({ from: periodMonthSchema, to: periodMonthSchema }),
   /** Gross of expense lines — see `REVENUE_SERIES_KINDS`. */
   series: z.array(revenueSeriesPointSchema).readonly(),
+  /** Each month of the window's gross total — `GROUP BY period_month` over the same lines as `series` — for the chart's scale and its tooltips, so no total is summed in the renderer. */
+  months: z.array(z.object({ periodMonth: periodMonthSchema, cents: centsSchema })).readonly(),
   /** The same money attributed three ways, each largest YTD first. */
   rollups: z.object({ billing: revenueRollupRowsSchema, client: revenueRollupRowsSchema, model: revenueRollupRowsSchema }),
   /** The column sums of any rollup's rows — equal across the three by construction (every line is in exactly one group under each key), and asserted so. */

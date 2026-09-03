@@ -116,3 +116,12 @@ regeneration (now an invoice stands in for exactly one projection);
 `writeTmActual` could delete an invoiced row (now refuses).
 
 **Elapsed:** ~2.5 hours across the four tasks.
+
+**Follow-up (0.6.5, same day):** the user's fixed scopes showed nothing —
+there is no milestone editor yet (P3-09), so none had milestones. A fixed
+scope with no milestones now spreads `contract_value_cents` evenly over
+its term (whole value in the first month when it has no end date); any
+milestone replaces the spread. `regenerateAllRevenueLines` also runs once
+per launch, so an upgrade and a passing month are picked up without a
+re-save. The chart gained a labelled y-axis, driven by a per-month total
+the summary now carries (`months`) rather than a sum in the renderer.

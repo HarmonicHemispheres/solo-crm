@@ -234,6 +234,19 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
     series.push({ periodMonth: periodMonth.data, kind, status: row.status, cents: row.cents })
   }
 
+  const months: RevenueSummary['months'][number][] = []
+  const monthRows = db
+    .prepare(
+      `SELECT period_month, SUM(amount_cents) AS cents FROM revenue_lines
+       WHERE period_month BETWEEN ? AND ? AND kind <> 'expense' AND kind IS NOT NULL
+       GROUP BY 1 ORDER BY 1`
+    )
+    .all(windowFrom, windowTo) as { period_month: string; cents: number }[]
+  for (const row of monthRows) {
+    const periodMonth = periodMonthSchema.safeParse(row.period_month)
+    if (periodMonth.success) months.push({ periodMonth: periodMonth.data, cents: row.cents })
+  }
+
   return {
     currentMonth,
     yearStart,
@@ -253,6 +266,7 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
     },
     window: { from: windowFrom, to: windowTo },
     series,
+    months,
     rollups,
     totals: {
       monthlyCents: rollups.billing.reduce((total, row) => total + row.monthlyCents, 0),

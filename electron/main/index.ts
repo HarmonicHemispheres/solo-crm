@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, session, shell } from 'electron'
 import { installApplicationMenu } from './app-menu'
-import { closeDatabase, openDatabase } from './db/connection'
+import { closeDatabase, getDatabase, openDatabase } from './db/connection'
+import { regenerateAllRevenueLines } from './db/repositories/revenue-generator'
 import { closeReadOnlyDatabase } from './db/readonly-connection'
 import { runFirstRunDataLocationPrompt } from './first-run/data-location-prompt'
 import { registerIpcHandlers } from './ipc'
@@ -96,6 +97,14 @@ app
     // call site. T-260828-06's sync-folder guard and T-260828-07's migration
     // runner both land inside `openDatabase`/immediately after it, not here.
     openDatabase()
+
+    // T-260902-03: every engagement's revenue lines are brought up to date
+    // once per launch. The generator runs inside every write, so this is
+    // for what a write cannot see — months passing (a rolling retainer's
+    // horizon moves with the calendar) and an upgrade that changed what
+    // the terms mean (0.6.4's fixed-scope spread). Idempotent: a line that
+    // already matches is left as it is, ids and all.
+    regenerateAllRevenueLines(getDatabase())
 
     // T-260828-09: registered after openDatabase() — db:schemaVersion's
     // handler calls getDatabase(), which throws until a connection is open

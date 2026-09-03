@@ -36,7 +36,14 @@ import { parseInput } from './input'
  *   and a forecast must not contain a figure no one entered.
  * - **fixed** — one `milestone` row per milestone, at that milestone's
  *   `expected_month`, for its `amount_cents`. A milestone missing either
- *   (pre-T-260902-02 data) generates nothing.
+ *   (pre-T-260902-02 data) generates nothing. **Until an engagement has
+ *   any milestone**, its `contract_value_cents` is spread evenly across
+ *   its term as `milestone` rows (odd cents on the last month; a fixed
+ *   scope with no end date puts the whole value in its first month): the
+ *   operator has told the app what the work is worth and when it runs,
+ *   and a forecast that showed nothing for a signed $18,000 build until
+ *   its milestones were typed in would be the less honest reading. The
+ *   first milestone entered replaces the spread with the plan.
  * - **tm** — `tm_estimate` rows at `estimated_hours x hourly_rate_cents`,
  *   never more in total than `not_to_exceed_cents`. A bounded term spreads
  *   the estimate evenly across its months (the odd cents land on the last
@@ -107,6 +114,7 @@ interface EngagementTermsRow {
   readonly retainer_basis: RetainerBasis | null
   readonly monthly_amount_cents: number | null
   readonly hours_included: number | null
+  readonly contract_value_cents: number | null
   readonly hourly_rate_cents: number | null
   readonly estimated_hours: number | null
   readonly not_to_exceed_cents: number | null
@@ -167,10 +175,30 @@ function retainerLines(row: EngagementTermsRow, currentMonth: PeriodMonth): Desi
   return eachMonth(term.from, term.to).map((periodMonth) => ({ periodMonth, kind: 'retainer', amountCents: monthly }))
 }
 
-function milestoneLines(db: Database.Database, engagementId: string): DesiredLine[] {
+/** `total` over `months`, evenly, the odd cents on the last month so the rows sum to `total` exactly. */
+function spreadEvenly(total: number, months: readonly PeriodMonth[], kind: GeneratedKind): DesiredLine[] {
+  if (total <= 0 || months.length === 0) return []
+  const share = Math.floor(total / months.length)
+  const remainder = total - share * months.length
+  return months.map((periodMonth, index) => ({
+    periodMonth,
+    kind,
+    amountCents: index === months.length - 1 ? share + remainder : share
+  }))
+}
+
+function milestoneLines(db: Database.Database, row: EngagementTermsRow, currentMonth: PeriodMonth): DesiredLine[] {
   const milestones = db
     .prepare('SELECT amount_cents, expected_month FROM milestones WHERE engagement_id = ?')
-    .all(engagementId) as MilestoneTermsRow[]
+    .all(row.id) as MilestoneTermsRow[]
+  if (milestones.length === 0) {
+    // No plan yet: the contract value over the term (header, "fixed").
+    if (row.contract_value_cents === null) return []
+    const term = termOf(row, currentMonth)
+    if (term === null) return []
+    const months = row.ends_on === null ? [term.from] : eachMonth(term.from, term.to)
+    return spreadEvenly(row.contract_value_cents, months, 'milestone')
+  }
   const lines: DesiredLine[] = []
   for (const milestone of milestones) {
     if (milestone.amount_cents === null || milestone.expected_month === null) continue
@@ -191,17 +219,7 @@ function tmLines(row: EngagementTermsRow, currentMonth: PeriodMonth): DesiredLin
 
   if (row.ends_on !== null) {
     // A bounded term: the estimate is the whole of the work, spread evenly.
-    // Integer division leaves up to `months.length - 1` cents over; they go
-    // on the last month so the rows sum to exactly the (capped) estimate.
-    const total = cap === null ? estimate : Math.min(estimate, cap)
-    if (total <= 0) return []
-    const share = Math.floor(total / months.length)
-    const remainder = total - share * months.length
-    return months.map((periodMonth, index) => ({
-      periodMonth,
-      kind: 'tm_estimate',
-      amountCents: index === months.length - 1 ? share + remainder : share
-    }))
+    return spreadEvenly(cap === null ? estimate : Math.min(estimate, cap), months, 'tm_estimate')
   }
 
   // Rolling: the estimate is the expected work each month, and the cap — if
@@ -228,7 +246,7 @@ function desiredLines(db: Database.Database, row: EngagementTermsRow, currentMon
     case 'retainer':
       return retainerLines(row, currentMonth)
     case 'fixed':
-      return milestoneLines(db, row.id)
+      return milestoneLines(db, row, currentMonth)
     case 'tm':
       return tmLines(row, currentMonth)
     case 'equity':
@@ -258,7 +276,7 @@ export function regenerateRevenueLines(db: Database.Database, engagementId: stri
     const row = db
       .prepare(
         `SELECT id, billing_model, status, started_on, ends_on, retainer_basis, monthly_amount_cents, hours_included,
-                hourly_rate_cents, estimated_hours, not_to_exceed_cents
+                contract_value_cents, hourly_rate_cents, estimated_hours, not_to_exceed_cents
          FROM engagements WHERE id = ?`
       )
       .get(engagementId) as EngagementTermsRow | undefined

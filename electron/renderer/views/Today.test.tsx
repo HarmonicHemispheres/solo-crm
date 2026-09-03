@@ -294,6 +294,10 @@ describe('Today', () => {
               { periodMonth: '2026-09-01', kind: 'retainer' as const, status: 'projected' as const, cents: 830_000 },
               { periodMonth: '2026-09-01', kind: 'milestone' as const, status: 'projected' as const, cents: 360_000 }
             ],
+            months: [
+              { periodMonth: '2026-08-01', cents: 830_000 },
+              { periodMonth: '2026-09-01', cents: 1_190_000 }
+            ],
             rollups: { billing: [], client: [], model: [] },
             totals: { monthlyCents: 0, backlogCents: 0, ytdCents: 0 }
           }
@@ -739,6 +743,7 @@ describe('Today at 10x data volume', () => {
             (['projected', 'actual'] as const).map((status) => ({ periodMonth, kind, status, cents: 100_000 }))
           )
         ),
+        months: months.map((periodMonth) => ({ periodMonth, cents: 600_000 })),
         rollups: {
           billing: rows(COMPANY_COUNT, (index) => ({
             key: `company-${index}`,

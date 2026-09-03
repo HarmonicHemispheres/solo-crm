@@ -140,7 +140,7 @@ export function Revenue() {
         <Card>
           <Card.Header title="Recognised by month" actions={<RevenueLegend />} />
           <div className="rev-chart">
-            <RevenueChart window={summary.window} series={summary.series} currentMonth={summary.currentMonth} height={190} />
+            <RevenueChart window={summary.window} series={summary.series} months={summary.months} currentMonth={summary.currentMonth} height={190} />
           </div>
         </Card>
 

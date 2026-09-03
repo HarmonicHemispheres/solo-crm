@@ -214,13 +214,38 @@ describe('fixed', () => {
     })
   })
 
-  it('a milestone with no amount or no month generates nothing, and the contract value is never used in its place', () => {
+  it('a milestone with no amount or no month generates nothing, and once any milestone exists the contract value is never used in its place', () => {
     withDatabase((db) => {
       const id = rawEngagement(db, { billingModel: 'fixed', contractValueCents: 1_800_000, startedOn: '2026-02-10', endsOn: '2026-10-15' })
       rawMilestone(db, id, null, '2026-03-01')
       rawMilestone(db, id, 600_000, null)
       regenerateRevenueLines(db, id, OPTS)
       expect(lines(db, id)).toEqual([])
+    })
+  })
+
+  it('with no milestones at all, the contract value is spread evenly over the term — and the first milestone replaces the spread', () => {
+    withDatabase((db) => {
+      // $18,000 over Feb-Apr: 600,000 x 3.
+      const id = rawEngagement(db, { billingModel: 'fixed', contractValueCents: 1_800_000, startedOn: '2026-02-10', endsOn: '2026-04-15' })
+      regenerateRevenueLines(db, id, OPTS)
+      expect(shape(lines(db, id))).toEqual([
+        ['2026-02-01', 'milestone', 600_000],
+        ['2026-03-01', 'milestone', 600_000],
+        ['2026-04-01', 'milestone', 600_000]
+      ])
+
+      rawMilestone(db, id, 1_000_000, '2026-03-01')
+      regenerateRevenueLines(db, id, OPTS)
+      expect(shape(lines(db, id))).toEqual([['2026-03-01', 'milestone', 1_000_000]])
+
+      // No end date: the whole value in the first month. No contract value: nothing.
+      const open = rawEngagement(db, { billingModel: 'fixed', contractValueCents: 450_000, startedOn: '2026-09-01', endsOn: null })
+      regenerateRevenueLines(db, open, OPTS)
+      expect(shape(lines(db, open))).toEqual([['2026-09-01', 'milestone', 450_000]])
+      const unpriced = rawEngagement(db, { billingModel: 'fixed', startedOn: '2026-09-01', endsOn: '2026-10-31' })
+      regenerateRevenueLines(db, unpriced, OPTS)
+      expect(lines(db, unpriced)).toEqual([])
     })
   })
 })
@@ -567,11 +592,12 @@ describe('through the repositories', () => {
         name: 'Build',
         billingModel: 'fixed',
         status: 'active',
-        contractValueCents: 1_000_000,
+        contractValueCents: 1_200_000,
         startedOn: '2026-01-01',
         endsOn: '2026-06-30'
       })
-      expect(lines(db, engagement.id)).toEqual([])
+      // No milestones yet: the contract value over the six-month term.
+      expect(lines(db, engagement.id).map((line) => line.amount_cents)).toEqual([200_000, 200_000, 200_000, 200_000, 200_000, 200_000])
 
       const milestone = createMilestone(db, { engagementId: engagement.id, name: 'Kickoff', amountCents: 400_000, expectedMonth: '2026-02-01' })
       expect(shape(lines(db, engagement.id))).toEqual([['2026-02-01', 'milestone', 400_000]])
@@ -584,7 +610,8 @@ describe('through the repositories', () => {
       expect(lines(db, engagement.id)).toEqual(before)
 
       deleteMilestone(db, milestone.id)
-      expect(lines(db, engagement.id)).toEqual([])
+      // Back to no plan, so back to the spread.
+      expect(lines(db, engagement.id)).toHaveLength(6)
     })
   })
 })

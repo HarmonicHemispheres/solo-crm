@@ -58,6 +58,10 @@ function summaryFor(overrides: Partial<RevenueSummary> = {}): RevenueSummary {
       { periodMonth: '2026-09-01', kind: 'milestone', status: 'projected', cents: 360_000 },
       { periodMonth: '2026-09-01', kind: 'tm', status: 'projected', cents: 495_000 }
     ],
+    months: [
+      { periodMonth: '2026-08-01', cents: 830_000 },
+      { periodMonth: '2026-09-01', cents: 1_685_000 }
+    ],
     rollups: {
       billing: [
         { key: 'ez', name: 'EZDeploy', model: null, companyId: 'ez', via: null, engagementCount: 3, monthlyCents: 855_000, backlogCents: 720_000, ytdCents: 3_840_000, ytdShare: 0.6 },
@@ -122,6 +126,14 @@ describe('Revenue', () => {
     expect(document.querySelectorAll('.stat.hero')).toHaveLength(1)
     expect(screen.getByRole('heading', { name: 'Recognised by month' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Rollup' })).toBeTruthy()
+
+    // The chart's scale comes from the payload's tallest month ($16,850 ->
+    // a $20k top, four gridlines), and a month's tooltip is its `months`
+    // row, not a sum of its segments.
+    const axis = document.querySelector('.revchart-y') as HTMLElement
+    expect([...axis.querySelectorAll('span')].map((span) => span.textContent)).toEqual(['$5k', '$10k', '$15k', '$20k'])
+    expect(document.querySelector('.revchart svg')?.getAttribute('aria-label')).toContain('up to $20,000')
+    expect(document.querySelector('g[data-month="2026-09-01"] title')?.textContent).toBe('Sep 2026: $16,850')
   })
 
   it('the toggle changes the attribution rows and not the total — and fetches nothing', async () => {
@@ -202,6 +214,7 @@ describe('Revenue', () => {
         lineCount: 0,
         rollups: { billing: [], client: [], model: [] },
         series: [],
+        months: [],
         metrics: { ...summaryFor().metrics, recurringMonthCents: 0, backlogCents: 0, tmMonthCents: 0, concentration: { share: null, name: null, payers: [] } }
       })
     )
