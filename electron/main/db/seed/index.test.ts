@@ -7,17 +7,19 @@ import { timestampSchema } from '../../../shared/types'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
 import { listCompanies } from '../repositories/companies'
 import { getPerson, listPeople } from '../repositories/people'
-import { listEngagements } from '../repositories/engagements'
+import { createEngagement, listEngagements } from '../repositories/engagements'
+import { createCompany } from '../repositories/companies'
 import { listTasks } from '../repositories/tasks'
 import { listActivity } from '../repositories/activity'
 import { companySchema } from '../../../shared/companies'
 import { personSchema, personWithAffiliationsSchema } from '../../../shared/people'
-import { engagementSchema } from '../../../shared/engagements'
+import { engagementSchema, isSigned, type EngagementStatus } from '../../../shared/engagements'
 import { taskSchema } from '../../../shared/tasks'
 import { activitySchema } from '../../../shared/activity'
 import type { CompanySeed } from './fixture'
 import { MOCKUP_TODAY, companies as companiesFixture } from './fixture'
 import { FixtureIntegrityError, SeedGuardError, orderCompaniesForInsert, seedFixture } from './index'
+import { regenerateAllRevenueLines } from '../repositories/revenue-generator'
 
 /**
  * Covers T-260828-13's acceptance criteria directly against `seedFixture`,
@@ -83,6 +85,90 @@ describe('seedFixture: row counts', () => {
         .prepare('SELECT COUNT(DISTINCT entity_id) AS c FROM links WHERE entity_type = ?')
         .get('company') as { c: number }
       expect(distinctCompaniesWithLinks.c).toBe(10)
+    })
+  })
+})
+
+describe('seedFixture: milestones and revenue lines (T-260902-03)', () => {
+  // Pinned so the month arithmetic below is a fact, not a function of the
+  // day the suite runs. Noon UTC is the 15th in every timezone the fixture
+  // cares about (see `timeOfDayFor`'s note on the operator's timezones).
+  const REFERENCE_NOW = new Date('2026-09-15T12:00:00Z')
+
+  it('seeds the six fixed scopes\' milestones — 24 rows, every expected_month a first-of-month after shifting', () => {
+    withFreshDb((db) => {
+      seedFixture(db, { referenceNow: REFERENCE_NOW })
+      expect(count(db, 'milestones')).toBe(5 + 4 + 5 + 3 + 4 + 3)
+      const months = db.prepare('SELECT expected_month FROM milestones').all() as { expected_month: string }[]
+      for (const { expected_month } of months) expect(expected_month).toMatch(/^\d{4}-\d{2}-01$/)
+      // MOCKUP_TODAY is 2026-08-27 and the reference is 2026-09-15: one
+      // month on. Samay's "Discovery" (mockup 2026-02) lands in March.
+      const discovery = db
+        .prepare("SELECT expected_month, completed_at FROM milestones WHERE name = 'Discovery' ORDER BY expected_month LIMIT 1")
+        .get() as { expected_month: string; completed_at: string | null }
+      expect(discovery.expected_month).toBe('2026-03-01')
+      expect(discovery.completed_at).not.toBeNull()
+    })
+  })
+
+  it('produces a populated revenue_lines — the generator ran over every engagement — and running it again changes no row', () => {
+    withFreshDb((db) => {
+      seedFixture(db, { referenceNow: REFERENCE_NOW })
+      expect(count(db, 'revenue_lines')).toBeGreaterThan(0)
+
+      const before = db.prepare('SELECT * FROM revenue_lines ORDER BY id').all()
+      regenerateAllRevenueLines(db, { now: REFERENCE_NOW })
+      expect(db.prepare('SELECT * FROM revenue_lines ORDER BY id').all()).toEqual(before)
+    })
+  })
+
+  it('generates nothing for the equity, none and proposed engagements, and something for each of the signed ones', () => {
+    withFreshDb((db) => {
+      seedFixture(db, { referenceNow: REFERENCE_NOW })
+      const perEngagement = db
+        .prepare(
+          `SELECT e.name AS name, e.billing_model AS model, e.status AS status, COUNT(r.id) AS lines
+           FROM engagements e LEFT JOIN revenue_lines r ON r.engagement_id = e.id
+           GROUP BY e.id`
+        )
+        .all() as { name: string; model: string; status: string; lines: number }[]
+      for (const row of perEngagement) {
+        const shouldGenerate = isSigned(row.status as EngagementStatus) && !['equity', 'none'].includes(row.model)
+        expect(row.lines > 0, `${row.name} (${row.model}, ${row.status}) has ${row.lines} lines`).toBe(shouldGenerate)
+      }
+    })
+  })
+
+  it('--force on a populated database marks only its own rows paid — an existing engagement\'s projected lines are not rewritten', () => {
+    withFreshDb((db) => {
+      const own = createCompany(db, { name: 'Mine' })
+      const mine = createEngagement(db, {
+        name: 'My retainer',
+        billingCompanyId: own.id,
+        billingModel: 'retainer',
+        status: 'active',
+        retainerBasis: 'amount',
+        monthlyAmountCents: 100_000,
+        startedOn: '2026-01-01',
+        endsOn: '2026-12-31'
+      })
+      seedFixture(db, { referenceNow: REFERENCE_NOW, force: true })
+      const rewritten = db
+        .prepare("SELECT COUNT(*) AS c FROM revenue_lines WHERE engagement_id = ? AND status <> 'projected'")
+        .get(mine.id) as { c: number }
+      expect(rewritten.c).toBe(0)
+    })
+  })
+
+  it('marks every line before the current month paid, standing in for Stripe, and leaves the current month and later projected', () => {
+    withFreshDb((db) => {
+      seedFixture(db, { referenceNow: REFERENCE_NOW })
+      const past = db.prepare("SELECT COUNT(*) AS c FROM revenue_lines WHERE period_month < '2026-09-01' AND status <> 'paid'").get() as { c: number }
+      const future = db.prepare("SELECT COUNT(*) AS c FROM revenue_lines WHERE period_month >= '2026-09-01' AND status <> 'projected'").get() as { c: number }
+      expect(past.c).toBe(0)
+      expect(future.c).toBe(0)
+      const paid = db.prepare("SELECT paid_at FROM revenue_lines WHERE status = 'paid' LIMIT 1").get() as { paid_at: string }
+      expect(() => timestampSchema.parse(paid.paid_at)).not.toThrow()
     })
   })
 })

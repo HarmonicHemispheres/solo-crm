@@ -16,29 +16,34 @@ T-260901-19 to -28 came out of a whole-repository review on 2026-09-01 (main,
 renderer, tooling and docs, each by a fresh reader). The three defects among
 them closed on 2026-09-02.
 
-T-260902-02 to -06 are the Revenue slice of Phase 3 (P3-04/05/06/10/11),
-scoped on 2026-09-02 after the user found the Revenue page empty. They are
-in build order; -03 is the generator ADR-003 exists for and is the large one.
-**They are the whole of what is left open here**, apart from T-260901-31,
-which is a design decision rather than a defect: the company header's
-`Edit / LOGO Upload… / BANNER Upload…` cluster fits at 700px (no overflow in
-`shots/metrics.json`) but is dense, and whether it stays a row of buttons,
-collapses to one control, or moves into the Edit sheet is product direction,
-not a fix. It was deliberately left for the user rather than decided inside
-a scan-and-fix pass.
+T-260902-02 to -06 were the Revenue slice of Phase 3 (P3-04/05/06/10/11),
+scoped on 2026-09-02 after the user found the Revenue page empty, and built
+the same day — -03 to -06 in one session after it was found empty a second
+time. **The one thing left open is T-260901-31**, a design decision rather
+than a defect: the company header's `Edit / LOGO Upload… / BANNER Upload…`
+cluster fits at 700px (no overflow in `shots/metrics.json`) but is dense,
+and whether it stays a row of buttons, collapses to one control, or moves
+into the Edit sheet is product direction, not a fix. It was deliberately
+left for the user rather than decided inside a scan-and-fix pass.
+
+Follow-ups named in the revenue tasks' Outcomes but not scoped: the
+milestone editor (P3-09), the batched `security-review` over the
+`milestones:*`, `*:deleteImpact` and `revenue:summary` surface, and three
+promotions (a shared identity mark, a `layout.css`, one billing-model label
+map).
 
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
-| ○ open | [T-260902-03](T-260902-03-revenue-line-generator.md) | Build the revenue line generator — the one place that turns an engagement's terms into revenue_lines rows | 🗄 data | P3-05 |
-| ○ open | [T-260902-04](T-260902-04-revenue-rollups-ipc.md) | Revenue rollup queries and their IPC channel — three attributions, four metrics, one SUM | 🗄 data | P3-06 |
-| ○ open | [T-260902-05](T-260902-05-revenue-view.md) | Build the Revenue view — rollup toggle, four metrics, the by-month table | 🎨 ui | P3-10 |
-| ○ open | [T-260902-06](T-260902-06-stacked-monthly-chart.md) | The stacked monthly revenue chart, on Revenue and Today, from revenue_lines | 🎨 ui | P3-11 |
 | ○ open | [T-260901-31](T-260901-31-header-image-controls-narrow.md) | Decide where the logo and banner controls live when the header is narrow | 🎨 ui | |
 
 ## Closed this month
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260902-06](T-260902-06-stacked-monthly-chart.md) | The stacked monthly revenue chart, on Revenue and Today, from revenue_lines | 🎨 ui | P3-11 | — |
+| ● done | [T-260902-05](T-260902-05-revenue-view.md) | Build the Revenue view — rollup toggle, four metrics, the by-month table | 🎨 ui | P3-10 | — |
+| ● done | [T-260902-04](T-260902-04-revenue-rollups-ipc.md) | Revenue rollup queries and their IPC channel — three attributions, four metrics, one SUM | 🗄 data | P3-06 | — |
+| ● done | [T-260902-03](T-260902-03-revenue-line-generator.md) | Build the revenue line generator — the one place that turns an engagement's terms into revenue_lines rows | 🗄 data | P3-05 | — |
 | ● done | [T-260902-11](T-260902-11-sheet-drag-close.md) | A press that starts inside a sheet and ends on the scrim must not close it | 🎨 ui | | — |
 | ● done | [T-260902-10](T-260902-10-engagement-terms.md) | An engagement card states what it is worth, instead of hours nobody can book | 🎨 ui | | — |
 | ● done | [T-260902-09](T-260902-09-deletes.md) | Delete a company, person, engagement or offering, after being shown what goes with it | 🗄 data | | — |

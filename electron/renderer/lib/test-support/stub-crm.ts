@@ -119,6 +119,9 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     'milestones:reorder': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: [STUB_MILESTONE] } })),
     'milestones:delete': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { id: 'stub-id' } } })),
     'milestones:sum': vi.fn(async () => ({ ok: true as const, data: { engagementId: 'stub-id', totalCents: 0, count: 0 } })),
+    // T-260902-04. The default is an empty table — `lineCount: 0`, the
+    // shape the Revenue view shows its empty state for.
+    'revenue:summary': vi.fn(async () => ({ ok: true as const, data: STUB_REVENUE_SUMMARY })),
 
     // T-260901-07's catalogue. Empty lists and `null` for the three reads,
     // successful envelopes for the seven writes — and each write's `data` is a
@@ -248,6 +251,25 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
 }
 
 const STUB_TIMESTAMP = '2026-08-28T00:00:00.000Z'
+
+const STUB_REVENUE_SUMMARY = {
+  currentMonth: '2026-08-01',
+  yearStart: '2026-01-01',
+  lineCount: 0,
+  metrics: {
+    recurringMonthCents: 0,
+    recurringEngagements: 0,
+    recurringNextYearCents: 0,
+    backlogCents: 0,
+    backlogMilestones: 0,
+    tmMonthCents: 0,
+    concentration: { share: null, name: null, payers: [] }
+  },
+  window: { from: '2026-05-01', to: '2027-04-01' },
+  series: [],
+  rollups: { billing: [], client: [], model: [] },
+  totals: { monthlyCents: 0, backlogCents: 0, ytdCents: 0 }
+}
 
 const STUB_MILESTONE = {
   id: 'stub-milestone-id',

@@ -30,11 +30,16 @@
   margin-bottom: 14px;
 }
 
+/* The mockup's `padding:15px` around `stackChart(150)`. */
+.today-chart {
+  padding: 15px;
+}
+
 /* The mockup's own `grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
-   align-items:start` for the dashboard's card row — three cards here rather
-   than the mockup's four, since the revenue chart is deferred (Today.tsx's
-   header explains why). Collapses to one column well before 700px, so the
-   body never scrolls sideways (ui-design.md). */
+   align-items:start` for the dashboard's card row — the mockup's four
+   cards, the revenue chart among them since T-260902-06. Collapses to one
+   column well before 700px, so the body never scrolls sideways
+   (ui-design.md). */
 .today-cards {
   grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   align-items: start;

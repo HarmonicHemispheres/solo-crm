@@ -132,6 +132,23 @@ describe('invalidate', () => {
     expect(queryClient.getQueryState(queryKeys.companies.list())?.isInvalidated).toBe(false)
   })
 
+  it('T-260902-03: engagement, milestone and settings writes invalidate revenue too — main regenerated or re-read it in the same transaction', async () => {
+    // Every `engagements:*` and `milestones:*` mutation regenerates
+    // `revenue_lines`; `workspace.fiscalYearStartMonth` is read inside the
+    // summary. A summary cached across any of those writes would show the
+    // old money until an unrelated invalidation, so the three helpers fold
+    // the `['revenue']` prefix in — pinned here so nobody "restores" the
+    // one-prefix rule the test above states for the other entities.
+    for (const helper of ['engagements', 'milestones', 'settings'] as const) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
+      queryClient.setQueryData(queryKeys.revenue.summary(), {})
+      queryClient.setQueryData(queryKeys.companies.list(), [])
+      await invalidate[helper](queryClient)
+      expect(queryClient.getQueryState(queryKeys.revenue.summary())?.isInvalidated, helper).toBe(true)
+      expect(queryClient.getQueryState(queryKeys.companies.list())?.isInvalidated, helper).toBe(false)
+    }
+  })
+
   it('a prefix invalidation actually marks a longer, real key stale (not just the spy assertion above)', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity } } })
     queryClient.setQueryData(queryKeys.app.version(), { version: '0.1.0' })

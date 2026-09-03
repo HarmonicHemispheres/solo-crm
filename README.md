@@ -8,9 +8,11 @@ one-person consultancy — local-first, no account, no server, no telemetry.
 **Status:** the spine is in. Repositories over the real schema, typed IPC,
 FTS5 search, the create sheets and every list and detail view; a command
 palette, a quick log, a read-only SQL console channel, and a branded Windows
-installer; offerings, and engagements sold from them. Not yet built: the
-integrations (P4), revenue lines, and the timelog import that every
-hours-used figure depends on.
+installer; offerings, and engagements sold from them; revenue lines
+generated from each engagement's terms, rolled up three ways on a Revenue
+page with a twelve-month chart. Not yet built: the integrations (P4) —
+Stripe is what turns a projected line into a paid one — and the timelog
+import that every hours-used figure depends on.
 
 ## Why
 

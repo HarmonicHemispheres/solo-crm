@@ -85,6 +85,9 @@ export const CHANNEL_NAMES = [
   'milestones:delete',
   'milestones:sum',
 
+  // -- revenue -----------------------------------------------------------
+  'revenue:summary',
+
   // -- offerings ---------------------------------------------------------
   'offerings:listCategories',
   'offerings:list',

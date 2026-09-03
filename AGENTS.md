@@ -8,8 +8,12 @@ typed IPC · SQLite FTS5. See [README](README.md) for the why.
 database, creates and shows every entity, searches across all five indexed
 kinds and installs on Windows. Phase 2 (cadence) is partly in, and Phase 3
 (money) has its offerings slice — the repositories, the view and selling an
-engagement from an offering (P3-01/03/07) — but no revenue lines. Build
-order is [planning/solo-crm-taskplan.md](planning/solo-crm-taskplan.md).
+engagement from an offering (P3-01/03/07) — and its revenue slice: the
+generator that writes `revenue_lines` from an engagement's terms, the
+rollups, the Revenue view and the stacked chart (P3-04/05/06/10/11). Not
+yet: the milestone editor (P3-09), Stripe writing `status` onto lines, and
+the timelog import. Build order is
+[planning/solo-crm-taskplan.md](planning/solo-crm-taskplan.md).
 
 ## How work happens
 

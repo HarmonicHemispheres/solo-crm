@@ -13,6 +13,7 @@ import type { Person } from '../../shared/people'
 import type { Task, TaskFilter } from '../../shared/tasks'
 import type { Activity } from '../../shared/activity'
 import type { SettingsSnapshot } from '../../shared/settings'
+import type { RevenueSummary } from '../../shared/revenue'
 
 /**
  * T-260829-14's acceptance, as checks.
@@ -217,7 +218,7 @@ function renderToday({
   return { ...result, queryClient }
 }
 
-/** The `.card` a card's `<h2>` heading sits in — headings, not text, because "Companies" is also a stat label. */
+/** The `.card` a card's `<h2>` heading sits in — headings, not text, because "Revenue" is also the rail's nav label and a legend word. */
 function card(name: string): HTMLElement {
   const heading = screen.getByRole('heading', { name })
   const found = heading.closest('.card')
@@ -231,7 +232,7 @@ function rowTexts(cardEl: HTMLElement): string[] {
 }
 
 describe('Today', () => {
-  it('renders the header, four stats and three cards — and none of §6.1’s money figures', async () => {
+  it('renders the header, §6.1’s four stats and four cards — and, with nothing recognised, no money figure at all', async () => {
     renderToday({
       companies: [makeCompany({ id: 'ezdeploy', name: 'EZDeploy' })],
       openTasks: [makeTask({ id: 't1', title: 'Send the SOW', dueOn: addDays(TODAY, -1) })],
@@ -242,25 +243,95 @@ describe('Today', () => {
 
     expect(await screen.findByRole('heading', { name: 'Today' })).toBeTruthy()
     // The whole page has one loading state and one error state (Today.tsx),
-    // so waiting on any card is waiting on all eight queries.
+    // so waiting on any card is waiting on all nine queries.
     await screen.findByRole('heading', { name: 'Going quiet' })
-    for (const label of ['Open todos', 'Cadence health', 'Active engagements', 'Companies']) {
+    for (const label of ['Recurring / month', 'Fixed backlog', 'Open todos', 'Cadence health']) {
       expect(screen.getByText(label)).toBeTruthy()
     }
-    for (const heading of ['Going quiet', 'Next up', 'Recent']) {
+    for (const heading of ['Revenue', 'Going quiet', 'Next up', 'Recent']) {
       expect(screen.getByRole('heading', { name: heading })).toBeTruthy()
     }
 
     // ui-design.md: "gold marks exactly one hero value per view".
     expect(document.querySelectorAll('.stat.hero')).toHaveLength(1)
 
-    // The §6.1 deviation, asserted rather than only documented (Today.tsx's
-    // header): the two money stats and the twelve-month chart are deferred
-    // to P3-05 because `revenue_lines` is empty, and porting the mockup's
-    // per-engagement `mrr()`/`backlog()` is the thing AGENTS.md forbids.
-    expect(screen.queryByText(/recurring/i)).toBeNull()
-    expect(screen.queryByText(/backlog/i)).toBeNull()
+    // The stub's `revenue:summary` answers `lineCount: 0`: nothing has been
+    // recognised, and the honest reading of that is a dash, not `$0`. The
+    // engagement above is active, and there is still no dollar figure —
+    // the page derives nothing from engagement columns (ADR-003).
     expect(document.body.textContent).not.toContain('$')
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
+    expect(within(card('Revenue')).getByText(/nothing recognised yet/i)).toBeTruthy()
+  })
+
+  it('the two money stats and the chart read revenue:summary as it came — no arithmetic over engagement columns', async () => {
+    renderToday({
+      // Two engagements with every price column set, and NONE of those
+      // numbers is what the page shows: the summary is the source.
+      engagements: [
+        makeEngagement({ id: 'e1', name: 'A', status: 'active', billingModel: 'retainer', retainerBasis: 'amount', monthlyAmountCents: 999_999 }),
+        makeEngagement({ id: 'e2', name: 'B', status: 'active', billingModel: 'fixed', contractValueCents: 777_777 })
+      ],
+      crmOverrides: {
+        'revenue:summary': vi.fn(async () => ({
+          ok: true as const,
+          data: {
+            currentMonth: '2026-09-01',
+            yearStart: '2026-01-01',
+            lineCount: 3,
+            metrics: {
+              recurringMonthCents: 830_000,
+              recurringEngagements: 2,
+              recurringNextYearCents: 9_960_000,
+              backlogCents: 720_000,
+              backlogMilestones: 2,
+              tmMonthCents: 495_000,
+              concentration: { share: 0.34, name: 'Rinvii', payers: [{ name: 'Rinvii', cents: 1, share: 1 }] }
+            },
+            window: { from: '2026-06-01', to: '2027-05-01' },
+            series: [
+              { periodMonth: '2026-08-01', kind: 'retainer' as const, status: 'actual' as const, cents: 830_000 },
+              { periodMonth: '2026-09-01', kind: 'retainer' as const, status: 'projected' as const, cents: 830_000 },
+              { periodMonth: '2026-09-01', kind: 'milestone' as const, status: 'projected' as const, cents: 360_000 }
+            ],
+            rollups: { billing: [], client: [], model: [] },
+            totals: { monthlyCents: 0, backlogCents: 0, ytdCents: 0 }
+          }
+        }))
+      }
+    })
+
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    const recurring = screen.getByText('Recurring / month').closest('.stat') as HTMLElement
+    expect(within(recurring).getByText('$8,300')).toBeTruthy()
+    expect(recurring.textContent).toContain('2 retainers · $99,600 next 12 mo')
+    expect(recurring.classList.contains('hero')).toBe(true)
+
+    const backlog = screen.getByText('Fixed backlog').closest('.stat') as HTMLElement
+    expect(within(backlog).getByText('$7,200')).toBeTruthy()
+    expect(backlog.textContent).toContain('2 unbilled milestones')
+
+    // Neither engagement column value is anywhere on the page.
+    expect(document.body.textContent).not.toContain('9,999.99')
+    expect(document.body.textContent).not.toContain('7,777.77')
+
+    // The chart drew the three points: one actual (solid), two projected (dashed).
+    const chart = within(card('Revenue')).getByRole('img', { name: /Recognised revenue by month/ })
+    expect(chart.querySelectorAll('rect.revchart-seg.actual')).toHaveLength(1)
+    expect(chart.querySelectorAll('rect.revchart-seg.projected')).toHaveLength(2)
+  })
+
+  it('a failing revenue:summary does not take the dashboard down — the tiles read a dash and the card says what happened', async () => {
+    renderToday({
+      openTasks: [makeTask({ id: 't1', title: 'Still here' })],
+      crmOverrides: {
+        'revenue:summary': vi.fn(async () => ({ ok: false as const, error: { code: 'invalid-response' as const, message: 'revenue_lines row 7 has a bad period_month' } }))
+      }
+    })
+    await screen.findByRole('heading', { name: 'Going quiet' })
+    expect(screen.getByText('Still here')).toBeTruthy()
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
+    expect(within(card('Revenue')).getByText(/bad period_month/)).toBeTruthy()
   })
 
   it('Going quiet sorts by ratio, not raw days', async () => {
@@ -418,17 +489,18 @@ describe('Today', () => {
 
 
   /**
-   * The three tests below were added by the orchestrator at merge
-   * (R-260829-03), not by the builder. Mutation testing found that two of the
-   * four stat *values* and the sort's tiebreak were unasserted: the opening
-   * test checks that each stat's label is on the page, and `Open todos` has
-   * the dedicated test above, but `Cadence health` and `Active engagements`
-   * could each have read any number at all. Three mutants passed all fifteen
-   * tests — `companies.length - quiet.length` → `companies.length`,
-   * `status === 'active'` → `status !== 'lost'`, and dropping the name
-   * tiebreak from `byPctDescending`. The scope's acceptance asked that four
-   * stats *render*, which they did; that was the criterion being too weak,
-   * not the builder skipping it.
+   * The two tests below were added by the orchestrator at merge
+   * (R-260829-03), not by the builder. Mutation testing found that a stat
+   * *value* and the sort's tiebreak were unasserted: the opening test checks
+   * that each stat's label is on the page, and `Open todos` has the
+   * dedicated test above, but `Cadence health` could have read any number at
+   * all. Mutants passed all fifteen tests — `companies.length -
+   * quiet.length` → `companies.length`, and dropping the name tiebreak from
+   * `byPctDescending`. The scope's acceptance asked that four stats
+   * *render*, which they did; that was the criterion being too weak, not
+   * the builder skipping it. (A third test, for the "Active engagements"
+   * stat, went with that stat when T-260902-05 restored §6.1's money tiles
+   * in its place; `Companies.tsx` still owns the `=== 'active'` predicate.)
    */
 
   it('Cadence health counts the companies that are current, not all of them', async () => {
@@ -448,32 +520,6 @@ describe('Today', () => {
     // 2, not 3. A stat that ignored `quiet` would read the company count.
     expect(within(stat).getByText('2')).toBeTruthy()
     expect(stat.textContent).toContain('of 3 current')
-  })
-
-  it('Active engagements counts the active ones only, not everything that is not lost', async () => {
-    renderToday({
-      companies: [makeCompany({ id: 'ez', name: 'EZDeploy' })],
-      engagements: [
-        makeEngagement({ id: 'e1', name: 'Retainer', status: 'active' }),
-        makeEngagement({ id: 'e2', name: 'Second retainer', status: 'active' }),
-        // The four that are not active are not all the same kind of
-        // not-active — two have not started, two have stopped — and none of
-        // them belongs in a count a person reads as "what I am working on".
-        // `Companies.tsx` counts a company's own engagements with this same
-        // predicate, so a wider one here would make the dashboard disagree
-        // with the card.
-        makeEngagement({ id: 'e3', name: 'Not started', status: 'pending' }),
-        makeEngagement({ id: 'e4', name: 'Quoted', status: 'proposed' }),
-        makeEngagement({ id: 'e5', name: 'Paused', status: 'held' }),
-        makeEngagement({ id: 'e6', name: 'Finished', status: 'delivered' })
-      ]
-    })
-
-    await screen.findByRole('heading', { name: 'Going quiet' })
-    const stat = screen.getByText('Active engagements').closest('.stat') as HTMLElement
-
-    // 2, not 5 (everything but `lost`) and not 6 (everything).
-    expect(within(stat).getByText('2')).toBeTruthy()
   })
 
   it('breaks a tie in Going quiet by name, so equally overdue companies hold their order', async () => {
@@ -669,6 +715,49 @@ describe('Today at 10x data volume', () => {
         })
       )
 
+      // The revenue summary at the same scale (T-260902-06): every month of
+      // the window carrying all three stacks in both statuses — the fullest
+      // chart the page can draw — and a rollup row per company, which Today
+      // does not render but the payload carries.
+      const months = rows(12, (index) => `${2026 + Math.floor((5 + index) / 12)}-${String(((5 + index) % 12) + 1).padStart(2, '0')}-01`)
+      const revenue: RevenueSummary = {
+        currentMonth: months[3],
+        yearStart: '2026-01-01',
+        lineCount: 5_000,
+        metrics: {
+          recurringMonthCents: 8_300_000,
+          recurringEngagements: 20,
+          recurringNextYearCents: 99_600_000,
+          backlogCents: 7_200_000,
+          backlogMilestones: 20,
+          tmMonthCents: 4_950_000,
+          concentration: { share: 0.34, name: 'Acme Company 0', payers: rows(COMPANY_COUNT, (index) => ({ name: `Acme Company ${index}`, cents: 100, share: 0.01 })) }
+        },
+        window: { from: months[0], to: months[11] },
+        series: months.flatMap((periodMonth) =>
+          (['retainer', 'milestone', 'tm'] as const).flatMap((kind) =>
+            (['projected', 'actual'] as const).map((status) => ({ periodMonth, kind, status, cents: 100_000 }))
+          )
+        ),
+        rollups: {
+          billing: rows(COMPANY_COUNT, (index) => ({
+            key: `company-${index}`,
+            name: `Acme Company ${index}`,
+            model: null,
+            companyId: `company-${index}`,
+            via: null,
+            engagementCount: 5,
+            monthlyCents: 100_000,
+            backlogCents: 50_000,
+            ytdCents: 900_000,
+            ytdShare: 0.01
+          })),
+          client: [],
+          model: []
+        },
+        totals: { monthlyCents: 10_000_000, backlogCents: 5_000_000, ytdCents: 90_000_000 }
+      }
+
       window.crm = stubCrm()
 
       // Built once, outside every timed region, and reused: `staleTime` is
@@ -683,6 +772,7 @@ describe('Today at 10x data volume', () => {
       client.setQueryData(queryKeys.people.list(), people)
       client.setQueryData(queryKeys.activity.list(), activity)
       client.setQueryData(queryKeys.settings.list(), settings)
+      client.setQueryData(queryKeys.revenue.summary(), revenue)
 
       function renderOnce() {
         return render(
@@ -701,6 +791,8 @@ describe('Today at 10x data volume', () => {
       const warmup = renderOnce()
       expect(screen.getByRole('heading', { name: 'Going quiet' })).toBeTruthy()
       expect(screen.getByRole('heading', { name: 'Next up' })).toBeTruthy()
+      // The chart drew every cell: 12 months x 3 stacks x 2 statuses.
+      expect(document.querySelectorAll('rect.revchart-seg')).toHaveLength(72)
       // Without this the fixture could quietly stop producing late companies
       // and the budget below would pass over an empty card — a fast render of
       // nothing. Forty of the hundred are late, the seed's own proportion.

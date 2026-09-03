@@ -152,6 +152,23 @@ export interface EngagementSeed {
   readonly estimatedHours: number | null
   readonly notToExceedCents: number | null
   readonly notes: string | null
+  /**
+   * fixed only (T-260902-03): the mockup's `milestones` names with the
+   * contract value split evenly across them, each placed in a month of the
+   * term, the first `done` of them completed. Absent on every other model —
+   * a milestone is what a fixed scope recognises revenue by (ADR-003), and
+   * the generator reads nothing else from a fixed engagement.
+   */
+  readonly milestones?: readonly MilestoneSeed[]
+}
+
+export interface MilestoneSeed {
+  readonly name: string
+  readonly amountCents: number
+  /** YYYY-MM-01, mockup-relative; the loader shifts it by whole months so it stays a `period_month`. */
+  readonly expectedMonth: string
+  /** YYYY-MM-DD, mockup-relative, or null when not yet complete. */
+  readonly completedOn: string | null
 }
 
 export interface ActivitySeed {
@@ -617,7 +634,15 @@ export const engagements: readonly EngagementSeed[] = [
     hourlyRateCents: null,
     estimatedHours: null,
     notToExceedCents: null,
-    notes: null
+    notes: null,
+    // Mockup: done 3 of 5 — $3,600 each, every other month of the Feb-Oct term.
+    milestones: [
+      { name: 'Discovery', amountCents: 360_000, expectedMonth: '2026-02-01', completedOn: '2026-02-28' },
+      { name: 'Graph auth', amountCents: 360_000, expectedMonth: '2026-04-01', completedOn: '2026-04-30' },
+      { name: 'Agent core', amountCents: 360_000, expectedMonth: '2026-06-01', completedOn: '2026-06-30' },
+      { name: 'Edge cases', amountCents: 360_000, expectedMonth: '2026-08-01', completedOn: null },
+      { name: 'Handoff', amountCents: 360_000, expectedMonth: '2026-10-01', completedOn: null }
+    ]
   },
   {
     key: 'e5',
@@ -638,7 +663,14 @@ export const engagements: readonly EngagementSeed[] = [
     hourlyRateCents: null,
     estimatedHours: null,
     notToExceedCents: null,
-    notes: null
+    notes: null,
+    // Mockup: done 4 of 4 — $1,050 each across the two-month audit.
+    milestones: [
+      { name: 'Inventory', amountCents: 105_000, expectedMonth: '2026-04-01', completedOn: '2026-04-15' },
+      { name: 'Analysis', amountCents: 105_000, expectedMonth: '2026-04-01', completedOn: '2026-04-30' },
+      { name: 'Findings', amountCents: 105_000, expectedMonth: '2026-05-01', completedOn: '2026-05-15' },
+      { name: 'Remediation plan', amountCents: 105_000, expectedMonth: '2026-05-01', completedOn: '2026-05-20' }
+    ]
   },
   {
     key: 'e6',
@@ -680,7 +712,15 @@ export const engagements: readonly EngagementSeed[] = [
     hourlyRateCents: null,
     estimatedHours: null,
     notToExceedCents: null,
-    notes: null
+    notes: null,
+    // Mockup: done 5 of 5 — $4,400 each over the Sep-Mar build.
+    milestones: [
+      { name: 'Scope', amountCents: 440_000, expectedMonth: '2025-09-01', completedOn: '2025-09-30' },
+      { name: 'Auth', amountCents: 440_000, expectedMonth: '2025-11-01', completedOn: '2025-11-30' },
+      { name: 'Portal', amountCents: 440_000, expectedMonth: '2026-01-01', completedOn: '2026-01-31' },
+      { name: 'QA', amountCents: 440_000, expectedMonth: '2026-02-01', completedOn: '2026-02-28' },
+      { name: 'Launch', amountCents: 440_000, expectedMonth: '2026-03-01', completedOn: '2026-03-15' }
+    ]
   },
   {
     key: 'e8',
@@ -701,7 +741,13 @@ export const engagements: readonly EngagementSeed[] = [
     hourlyRateCents: null,
     estimatedHours: null,
     notToExceedCents: null,
-    notes: null
+    notes: null,
+    // Mockup: done 3 of 3 — $2,500 each.
+    milestones: [
+      { name: 'Scope', amountCents: 250_000, expectedMonth: '2026-01-01', completedOn: '2026-01-31' },
+      { name: 'Build', amountCents: 250_000, expectedMonth: '2026-03-01', completedOn: '2026-03-31' },
+      { name: 'Launch', amountCents: 250_000, expectedMonth: '2026-04-01', completedOn: '2026-04-30' }
+    ]
   },
   {
     key: 'e9',
@@ -722,7 +768,16 @@ export const engagements: readonly EngagementSeed[] = [
     hourlyRateCents: null,
     estimatedHours: null,
     notToExceedCents: null,
-    notes: null
+    notes: null,
+    // Mockup: done 0 of 4 — $7,125 each. Still `proposed`, so the generator
+    // writes nothing from these until it is signed; they are here so the
+    // engagement card can show its plan.
+    milestones: [
+      { name: 'Discovery', amountCents: 712_500, expectedMonth: '2026-09-01', completedOn: null },
+      { name: 'Data layer', amountCents: 712_500, expectedMonth: '2026-10-01', completedOn: null },
+      { name: 'Agent build', amountCents: 712_500, expectedMonth: '2026-12-01', completedOn: null },
+      { name: 'Handoff', amountCents: 712_500, expectedMonth: '2027-01-01', completedOn: null }
+    ]
   },
   {
     key: 'e10',
@@ -764,7 +819,13 @@ export const engagements: readonly EngagementSeed[] = [
     hourlyRateCents: null,
     estimatedHours: null,
     notToExceedCents: null,
-    notes: null
+    notes: null,
+    // Mockup: done 0 of 3 — $1,500 each. Proposed, like e9.
+    milestones: [
+      { name: 'Interviews', amountCents: 150_000, expectedMonth: '2026-09-01', completedOn: null },
+      { name: 'Map', amountCents: 150_000, expectedMonth: '2026-09-01', completedOn: null },
+      { name: 'Report', amountCents: 150_000, expectedMonth: '2026-10-01', completedOn: null }
+    ]
   }
 ]
 

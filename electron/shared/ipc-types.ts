@@ -55,6 +55,7 @@ import {
   updateAffiliationInputSchema,
   updatePersonInputSchema
 } from './people'
+import { revenueSummaryRequestSchema, revenueSummarySchema } from './revenue'
 import type { CHANNEL_NAMES as CHANNEL_NAMES_LIST } from './channel-names'
 import { deleteRequestSchema, deletionImpactSchema } from './deletion'
 import { SEARCH_KINDS, searchQueryInputSchema } from './search'
@@ -558,6 +559,17 @@ export const CHANNEL_CONTRACTS = {
   'milestones:reorder': { request: reorderMilestonesInputSchema, response: mutationResultSchema(z.array(milestoneSchema).readonly()) },
   'milestones:delete': { request: idRequestSchema, response: mutationResultSchema(idResultSchema) },
   'milestones:sum': { request: sumMilestonesInputSchema, response: milestoneSumSchema },
+
+  // -- revenue (T-260902-04, P3-06) ----------------------------------------
+  //
+  // One read, answering §6.7 whole: the four metrics, the chart's series and
+  // the rows of the requested rollup, every figure a `SUM` over
+  // `revenue_lines` in main (ADR-003). There is no write channel: the lines
+  // are written by the generator inside `engagements:*` and `milestones:*`
+  // mutations, and a channel that let the renderer write one would be a
+  // second path around it. The request's optional `now` is for tests
+  // (`revenueSummaryRequestSchema`); the view never sends it.
+  'revenue:summary': { request: revenueSummaryRequestSchema.optional(), response: revenueSummarySchema },
 
   // -- offerings + categories (T-260901-07) --------------------------------
   //

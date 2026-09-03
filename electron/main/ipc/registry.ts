@@ -68,6 +68,7 @@ import {
   uncompleteMilestone,
   updateMilestone
 } from '../db/repositories/milestones'
+import { revenueSummary } from '../db/repositories/revenue'
 import { getFavicon } from '../favicons'
 import { chooseBrandingImage, getBrandingSlotState, getBrandingSnapshot } from '../branding'
 import { clearBrandingSlot } from '../db/repositories/branding'
@@ -422,6 +423,16 @@ export const registry = {
   'milestones:sum': defineChannel({
     ...CHANNEL_CONTRACTS['milestones:sum'],
     handler: (input) => sumMilestoneAmounts(getDatabase(), input)
+  }),
+
+  // ---------------------------------------------------------------------
+  // revenue (T-260902-04) — §6.7 in one read; see ipc-types.ts on why
+  // there is no write.
+  // ---------------------------------------------------------------------
+
+  'revenue:summary': defineChannel({
+    ...CHANNEL_CONTRACTS['revenue:summary'],
+    handler: (input) => revenueSummary(getDatabase(), input ?? {})
   }),
 
   // ---------------------------------------------------------------------

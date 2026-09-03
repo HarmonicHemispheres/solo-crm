@@ -50,6 +50,11 @@ export function formatMoney(cents: number): string {
   return `${negative ? '-' : ''}$${grouped}${tail}`
 }
 
+/** `2 retainers`, `1 unbilled milestone` — a count with its noun, for the Stat metas Today and Revenue both draw (T-260902-05). Regular plurals only; nothing here takes an irregular one. */
+export function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
 /**
  * The mockup's `fmtRate()` — a rate plus the unit it is quoted in. `fixed`
  * and a null unit both render the bare amount; there is no sentence

@@ -15,6 +15,7 @@ import {
 } from '../../../shared/milestones'
 import { NotFoundError, RefusalError } from './errors'
 import { parseInput } from './input'
+import { regenerateRevenueLines } from './revenue-generator'
 import { type ConstraintHandler, translateWriteError } from './sqlite-errors'
 
 /**
@@ -59,18 +60,15 @@ const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
 
 /**
  * Called at the end of every write, inside its transaction, with the
- * engagement whose milestones changed. T-260902-03 replaces the body with
- * "regenerate this engagement's revenue lines"; until then there is nothing
- * to do, and the call sites are the contract. `engagementId` is `null`
- * only for a pre-task row with no engagement (the column is nullable), for
- * which there is nothing to regenerate.
+ * engagement whose milestones changed: a fixed scope's revenue is one
+ * `revenue_lines` row per milestone (ADR-003), so its lines are
+ * regenerated here, atomically with the milestone write (T-260902-03).
+ * `engagementId` is `null` only for a pre-task row with no engagement (the
+ * column is nullable), for which there is nothing to regenerate.
  */
 function afterMilestoneWrite(db: Database.Database, engagementId: string | null): void {
-  // T-260902-03 wires the revenue line generator here. Until then the two
-  // arguments are the contract, not a use — `void` keeps the signature
-  // honest without a lint exemption.
-  void db
-  void engagementId
+  if (engagementId === null) return
+  regenerateRevenueLines(db, engagementId)
 }
 
 // ---------------------------------------------------------------------------

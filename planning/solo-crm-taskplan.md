@@ -521,13 +521,13 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
         reasoning
   - [ ] No query joins an engagement to a live price to display its rate
 
-- [ ] **P3-04 · Milestones repository** — 🗄 data · S · after P1-03
+- [x] **P3-04 · Milestones repository** — 🗄 data · S · after P1-03
   Name, sort, `amount_cents`, `expected_month`, `completed_at` (G4).
   - [ ] Milestone amounts are queryable as a sum per engagement
   - [ ] Completing a milestone sets `completed_at`; uncompleting clears it
   - [ ] Reordering is stable and does not renumber unrelated rows
 
-- [ ] **P3-05 · Revenue line generator** — 🗄 data · XL · after P3-04, P1-03 · +architecture-review
+- [x] **P3-05 · Revenue line generator** — 🗄 data · XL · after P3-04, P1-03 · +architecture-review
   **The task that decides whether §5's central decision survives contact** (G5).
   Materialise, do not compute: retainers generate one row per month; fixed scopes
   one row per milestone at its expected month; T&M estimates that actuals
@@ -553,7 +553,7 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
         regeneration untouched
   - [ ] Regeneration is idempotent — running it twice changes no row
 
-- [ ] **P3-06 · Revenue rollup queries** — 🗄 data · M · after P3-05
+- [x] **P3-06 · Revenue rollup queries** — 🗄 data · M · after P3-05
   Billing party, end client and model attributions; recurring monthly, fixed
   backlog, T&M run rate, concentration.
   - [ ] The three rollups agree to the cent
@@ -585,13 +585,13 @@ Phase 1 makes it a good record. Phase 2 makes it tell you something.
   - [ ] Editing milestones on a signed engagement warns before regenerating
         revenue lines
 
-- [ ] **P3-10 · Revenue view** — 🎨 ui · L · after P3-06
+- [x] **P3-10 · Revenue view** — 🎨 ui · L · after P3-06
   The rollup toggle and the four metrics.
   - [ ] Switching rollup changes attribution and not the total
   - [ ] Every figure is traceable to `revenue_lines` — no number is computed in
         the component
 
-- [ ] **P3-11 · Stacked monthly chart** — 🎨 ui · M · after P3-05
+- [x] **P3-11 · Stacked monthly chart** — 🎨 ui · M · after P3-05
   Twelve months, stacked by model, projected months visually distinct from
   actuals. Replaces the mockup's hardcoded array on Revenue and Today.
   - [ ] The chart reads `revenue_lines`; the mockup's `revMonths` array appears

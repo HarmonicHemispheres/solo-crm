@@ -88,6 +88,19 @@ export const queryKeys = {
     sum: (engagementId: string) => ['milestones', 'sum', engagementId] as const
   },
   /**
+   * `revenue:summary` (T-260902-04). One read, one entry: the payload
+   * carries all three rollups, so the Revenue view's toggle and Today's
+   * tiles share it and a toggle flip is a lookup, not a fetch. Nothing
+   * writes `revenue_lines` from the renderer; the entity is invalidated by
+   * the engagement and milestone mutations that regenerate it in main, and
+   * by a settings write, since the fiscal year start is one of them (see
+   * the three `invalidate` helpers that fold it in).
+   */
+  revenue: {
+    all: () => ['revenue'] as const,
+    summary: () => ['revenue', 'summary'] as const
+  },
+  /**
    * `offerings:*` (T-260901-07). The entity is the channel's own namespace, so
    * the categories read lives here as a *scope* rather than under an
    * `offeringCategories` entity of its own: `offerings:createCategory` and
@@ -327,9 +340,27 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
   db: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.db.all() }),
   companies: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.companies.all() }),
   people: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.people.all() }),
-  engagements: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.engagements.all() }),
-  /** Every milestone read — the per-engagement lists and sums at once. */
-  milestones: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all() }),
+  /**
+   * Engagements *and* revenue (T-260902-03): every `engagements:*` mutation
+   * regenerates the engagement's `revenue_lines` inside its own
+   * transaction, so a cache of the summary is stale the moment the
+   * mutation returns. Folding the second prefix in here, rather than at
+   * each call site, is what keeps a sheet that invalidates "the entity it
+   * wrote" correct without knowing what main derived from the write.
+   */
+  engagements: (queryClient) =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.engagements.all() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.revenue.all() })
+    ]).then(() => undefined),
+  /** Every milestone read — the per-engagement lists and sums at once — and revenue, for the same reason as `engagements` above: a fixed scope's lines are its milestones. */
+  milestones: (queryClient) =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.milestones.all() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.revenue.all() })
+    ]).then(() => undefined),
+  /** The summary under every rollup. Called by nothing directly today — the two helpers above cover every write that changes it — and here so the entity map stays total. */
+  revenue: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.revenue.all() }),
   /**
    * The whole `['offerings']` prefix — list, every filtered list, each
    * `detail`, and `categories`. Deliberately not narrower: every one of the
@@ -390,7 +421,19 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
   companyImages: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.companyImages.all() }),
   /** Present so `invalidate` stays exhaustive over `queryKeys`; nothing calls it — see `queryKeys.deletion`'s comment. */
   deletion: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.deletion.all() }),
-  settings: (queryClient) => queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
+  /**
+   * Settings, and revenue with them: `workspace.fiscalYearStartMonth` is
+   * read inside `revenue:summary` (every YTD figure and the concentration
+   * metric hang off it), so a settings write that left the summary cached
+   * would show last year's boundary until some unrelated engagement edit.
+   * One extra prefix on a write that happens a few times in the life of a
+   * workspace.
+   */
+  settings: (queryClient) =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.revenue.all() })
+    ]).then(() => undefined)
 }
 
 /** Re-exported so call sites can type a key without importing `@tanstack/react-query` directly. */

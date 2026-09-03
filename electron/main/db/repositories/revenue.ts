@@ -1,0 +1,263 @@
+import type Database from 'better-sqlite3'
+import { addMonths, localPeriodMonth } from '../../../shared/format'
+import { periodMonthSchema } from '../../../shared/types'
+import type { PeriodMonth } from '../../../shared/types'
+import type { BillingModel } from '../../../shared/engagements'
+import {
+  revenueSummaryRequestSchema,
+  type RevenueRollup,
+  type RevenueRollupRow,
+  type RevenueSeriesPoint,
+  type RevenueSummary
+} from '../../../shared/revenue'
+import { getSetting } from './settings'
+import { parseInput } from './input'
+
+/**
+ * The revenue rollups (T-260902-04, P3-06): §6.7's four metrics, the
+ * chart's series and the rollup table, every one of them a
+ * `SUM(amount_cents)` over `revenue_lines` (ADR-003) with a different
+ * filter or `GROUP BY` key. Nothing here reads a rate, a contract value or
+ * an hours column off `engagements`; the join to that table is for its two
+ * company columns and its `billing_model`, and the model is used as a group
+ * key only — there is no `CASE billing_model` anywhere in this file, and
+ * `revenue-generator.test.ts`'s source scan keeps it that way.
+ *
+ * The three rollups are one query, `rollupRows`, differing in the
+ * expression it groups by, and the summary carries all three: they are
+ * three cheap `GROUP BY`s over the same lines, and one payload means the
+ * view's toggle and Today's tiles share a single cache entry. That one
+ * query is what makes "same totals, different attribution" true by
+ * construction rather than by care: every line belongs to exactly one
+ * group under each key (a NULL company or model is its own group,
+ * `'none'`), so the column sums cannot differ between rollups.
+ * `revenue.test.ts` asserts it anyway.
+ *
+ * "This month", "the fiscal year to date" and the chart's window are all
+ * derived from one instant, `now`, read once per call as the operator's
+ * local calendar month (`localPeriodMonth`) — the renderer never sends it;
+ * a test pins it through the request's optional field.
+ *
+ * `revenue_lines.engagement_id` is nullable, so the join to `engagements`
+ * is a `LEFT JOIN`: a line with no engagement (an operator's expense row,
+ * one day) groups under `'none'` in every rollup rather than dropping out
+ * of the table while staying in the tiles above it. The four metrics, the
+ * series and the rows are then all sums over the same set of lines, which
+ * is what lets the footer claim to be the same money as the tiles.
+ */
+
+/** Months the chart shows before the current one. With `CHART_MONTHS`, this puts the current month a third of the way in: what landed, then what is coming. */
+const CHART_MONTHS_BEFORE = 3
+/** The chart's width in months, the current month included. */
+const CHART_MONTHS = 12
+/** The recurring "next year" metric: the current month and the eleven after it — the same span the generator projects a rolling retainer over. */
+const NEXT_YEAR_MONTHS = 12
+
+interface SumRow {
+  readonly cents: number | null
+  readonly count: number
+}
+
+interface SeriesRow {
+  readonly period_month: string
+  readonly kind: string
+  readonly status: 'projected' | 'actual'
+  readonly cents: number
+}
+
+interface RollupRow {
+  readonly key: string | null
+  readonly name: string | null
+  readonly via: string | null
+  readonly engagement_count: number
+  readonly monthly_cents: number | null
+  readonly backlog_cents: number | null
+  readonly ytd_cents: number | null
+}
+
+const MODEL_LABEL: Record<BillingModel, string> = {
+  retainer: 'Retainer',
+  fixed: 'Fixed scope',
+  tm: 'Time & materials',
+  equity: 'Equity',
+  none: 'Unpriced'
+}
+
+/** The first month of the fiscal year containing `month`, given the year's first month number (1-12). */
+export function fiscalYearStart(month: PeriodMonth, fiscalYearStartMonth: number): PeriodMonth {
+  const [year, monthNumber] = month.split('-').map(Number)
+  const startYear = monthNumber >= fiscalYearStartMonth ? year : year - 1
+  return periodMonthSchema.parse(`${startYear}-${String(fiscalYearStartMonth).padStart(2, '0')}-01`)
+}
+
+function sum(db: Database.Database, where: string, params: readonly unknown[]): SumRow {
+  return db
+    .prepare(`SELECT SUM(amount_cents) AS cents, COUNT(*) AS count FROM revenue_lines WHERE ${where}`)
+    .get(...params) as SumRow
+}
+
+/**
+ * A part over a whole, kept inside `[0, 1]`. Expense lines are negative
+ * (ADR-003), so a group's part can exceed the total or the total can be
+ * zero or negative; the wire schema bounds every share, and a share the
+ * schema rejects would take the whole page down with it.
+ */
+function shareOf(part: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.min(1, Math.max(0, part / total))
+}
+
+/**
+ * The rollup table. `groupKey` and the name/via columns are the only
+ * things that change between the three rollups; the four aggregates are
+ * identical, which is the point.
+ *
+ * `backlog` is a filter on the *line's* kind (`milestone`, still
+ * `projected`), which ADR-003 permits — it is what remains to be billed of
+ * every fixed scope, read off the lines the generator wrote from the
+ * milestones, not recomputed from them.
+ */
+function rollupRows(db: Database.Database, rollup: RevenueRollup, currentMonth: PeriodMonth, yearStart: PeriodMonth): RevenueRollupRow[] {
+  const grouping =
+    rollup === 'model'
+      ? {
+          key: 'e.billing_model',
+          name: 'NULL',
+          via: 'NULL',
+          join: ''
+        }
+      : rollup === 'billing'
+        ? {
+            key: 'e.billing_company_id',
+            name: 'c.name',
+            via: 'v.name',
+            join: 'LEFT JOIN companies c ON c.id = e.billing_company_id LEFT JOIN companies v ON v.id = c.billed_via_company_id'
+          }
+        : {
+            key: 'e.client_company_id',
+            name: 'c.name',
+            via: 'NULL',
+            join: 'LEFT JOIN companies c ON c.id = e.client_company_id'
+          }
+
+  const rows = db
+    .prepare(
+      `SELECT ${grouping.key} AS key,
+              ${grouping.name} AS name,
+              ${grouping.via} AS via,
+              COUNT(DISTINCT e.id) AS engagement_count,
+              SUM(CASE WHEN r.period_month = ? THEN r.amount_cents ELSE 0 END) AS monthly_cents,
+              SUM(CASE WHEN r.kind = 'milestone' AND r.status = 'projected' THEN r.amount_cents ELSE 0 END) AS backlog_cents,
+              SUM(CASE WHEN r.period_month BETWEEN ? AND ? THEN r.amount_cents ELSE 0 END) AS ytd_cents
+       FROM revenue_lines r
+       LEFT JOIN engagements e ON e.id = r.engagement_id
+       ${grouping.join}
+       GROUP BY ${grouping.key}`
+    )
+    .all(currentMonth, yearStart, currentMonth) as RollupRow[]
+
+  const ytdTotal = rows.reduce((total, row) => total + (row.ytd_cents ?? 0), 0)
+
+  return rows
+    .map((row): RevenueRollupRow => {
+      const model = rollup === 'model' ? (row.key as BillingModel | null) : null
+      const name = rollup === 'model' ? (model ? MODEL_LABEL[model] : 'No billing model') : (row.name ?? 'No company')
+      return {
+        key: row.key ?? 'none',
+        name,
+        model,
+        companyId: rollup === 'model' ? null : row.key,
+        via: row.via,
+        engagementCount: row.engagement_count,
+        monthlyCents: row.monthly_cents ?? 0,
+        backlogCents: row.backlog_cents ?? 0,
+        ytdCents: row.ytd_cents ?? 0,
+        ytdShare: shareOf(row.ytd_cents ?? 0, ytdTotal)
+      }
+    })
+    .sort((a, b) => b.ytdCents - a.ytdCents || a.name.localeCompare(b.name))
+}
+
+export function revenueSummary(db: Database.Database, input: unknown): RevenueSummary {
+  const parsed = parseInput(revenueSummaryRequestSchema, input)
+  const currentMonth = localPeriodMonth(parsed.now ? new Date(parsed.now) : new Date())
+  const yearStart = fiscalYearStart(currentMonth, getSetting(db, 'workspace.fiscalYearStartMonth'))
+  const nextYearEnd = addMonths(currentMonth, NEXT_YEAR_MONTHS - 1)
+  const windowFrom = addMonths(currentMonth, -CHART_MONTHS_BEFORE)
+  const windowTo = addMonths(windowFrom, CHART_MONTHS - 1)
+
+  const lineCount = (db.prepare('SELECT COUNT(*) AS count FROM revenue_lines').get() as { count: number }).count
+
+  const recurring = db
+    .prepare(
+      "SELECT SUM(amount_cents) AS cents, COUNT(DISTINCT engagement_id) AS count FROM revenue_lines WHERE kind = 'retainer' AND period_month = ?"
+    )
+    .get(currentMonth) as SumRow
+  const recurringNextYear = sum(db, "kind = 'retainer' AND period_month BETWEEN ? AND ?", [currentMonth, nextYearEnd])
+  const backlog = sum(db, "kind = 'milestone' AND status = 'projected'", [])
+  const tmMonth = sum(db, "kind IN ('tm_estimate', 'tm_actual') AND period_month = ?", [currentMonth])
+
+  const rollups = {
+    billing: rollupRows(db, 'billing', currentMonth, yearStart),
+    client: rollupRows(db, 'client', currentMonth, yearStart),
+    model: rollupRows(db, 'model', currentMonth, yearStart)
+  }
+  // Concentration is by billing party whatever rollup is on screen — the
+  // `billing` rollup's own YTD column, largest first, which `rollupRows`
+  // already sorts by. One definition of a payer's share, not two.
+  const payerRows = rollups.billing.filter((row) => row.ytdCents > 0).map((row) => ({ name: row.name, cents: row.ytdCents, share: row.ytdShare }))
+  const largest = payerRows[0]
+
+  const series: RevenueSeriesPoint[] = []
+  const seriesRows = db
+    .prepare(
+      `SELECT period_month,
+              CASE kind WHEN 'tm_estimate' THEN 'tm' WHEN 'tm_actual' THEN 'tm' ELSE kind END AS kind,
+              CASE WHEN status IN ('invoiced', 'paid') THEN 'actual' ELSE 'projected' END AS status,
+              SUM(amount_cents) AS cents
+       FROM revenue_lines
+       WHERE period_month BETWEEN ? AND ? AND kind <> 'expense'
+       GROUP BY 1, 2, 3
+       ORDER BY 1, 2, 3`
+    )
+    .all(windowFrom, windowTo) as SeriesRow[]
+  for (const row of seriesRows) {
+    // A row the chart cannot place — a NULL or unknown `kind`, or a
+    // `period_month` that is not a first-of-month (nothing in the schema
+    // forbids one; only the generator's writes are validated) — is left
+    // out of the chart, not out of the totals, and never takes the page
+    // down: Today folds this channel's error into its own, so a throw
+    // here would blank the dashboard over one hand-edited row.
+    const kind = row.kind === 'retainer' || row.kind === 'milestone' || row.kind === 'tm' ? row.kind : null
+    const periodMonth = periodMonthSchema.safeParse(row.period_month)
+    if (kind === null || !periodMonth.success) continue
+    series.push({ periodMonth: periodMonth.data, kind, status: row.status, cents: row.cents })
+  }
+
+  return {
+    currentMonth,
+    yearStart,
+    lineCount,
+    metrics: {
+      recurringMonthCents: recurring.cents ?? 0,
+      recurringEngagements: recurring.count,
+      recurringNextYearCents: recurringNextYear.cents ?? 0,
+      backlogCents: backlog.cents ?? 0,
+      backlogMilestones: backlog.count,
+      tmMonthCents: tmMonth.cents ?? 0,
+      concentration: {
+        share: largest ? largest.share : null,
+        name: largest ? largest.name : null,
+        payers: payerRows
+      }
+    },
+    window: { from: windowFrom, to: windowTo },
+    series,
+    rollups,
+    totals: {
+      monthlyCents: rollups.billing.reduce((total, row) => total + row.monthlyCents, 0),
+      backlogCents: rollups.billing.reduce((total, row) => total + row.backlogCents, 0),
+      ytdCents: rollups.billing.reduce((total, row) => total + row.ytdCents, 0)
+    }
+  }
+}

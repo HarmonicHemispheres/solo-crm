@@ -83,6 +83,7 @@ export default tseslint.config(
       'electron/renderer/components/shell/Rail.test.ts',
       'electron/renderer/views/Companies.css.test.ts',
       'electron/renderer/views/cadence-single-source.test.ts',
+      'electron/renderer/views/revenue-single-source.test.ts',
       'electron/renderer/views/detail-header.css.test.ts'
     ],
     languageOptions: {

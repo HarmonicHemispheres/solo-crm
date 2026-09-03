@@ -66,6 +66,61 @@ export function startOfMonth(date: Date): PeriodMonth {
   return periodMonthSchema.parse(`${year}-${month}-01`)
 }
 
+/**
+ * The `period_month` of the operator's **local** calendar day at `date` —
+ * the one deliberate local read in this module, and the answer to "what is
+ * this month?" everywhere revenue is recognised (the generator's rolling
+ * horizon, the summary's "this month" and its chart divider). The UTC rule
+ * above exists to stop a *stored* date shifting between machines; this is
+ * a different question, the same one `seed/index.ts`'s `localDateOnly` and
+ * the renderer's `localToday` answer locally for the same reason: at 17:00
+ * on the 30th in California, UTC is already the 1st, and a Revenue page
+ * that rolled over to next month before dinner would be wrong on the wall
+ * clock the operator invoices by (LESSONS.md 12).
+ */
+export function localPeriodMonth(date: Date): PeriodMonth {
+  return periodMonthSchema.parse(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`)
+}
+
+/** The `period_month` a `YYYY-MM-DD` date falls in — `2026-09-17` -> `2026-09-01`. */
+export function periodMonthOf(value: string): PeriodMonth {
+  const validated = dateOnlySchema.parse(value)
+  return periodMonthSchema.parse(`${validated.slice(0, 7)}-01`)
+}
+
+/**
+ * `period_month` arithmetic on the string itself, never through a `Date` —
+ * a Date would need a timezone to say which month it is in, and a month
+ * has none. `addMonths('2026-11-01', 3)` is `2027-02-01`; negative `count`
+ * walks backwards. This is what the revenue generator (T-260902-03) walks
+ * a term with and what the chart labels its axis from, so both agree on
+ * what "the next month" is.
+ */
+export function addMonths(period: string, count: number): PeriodMonth {
+  const validated = periodMonthSchema.parse(period)
+  const [year, month] = validated.split('-').map(Number)
+  // Zero-based total months, so the division below floors cleanly for
+  // negative results too (`Math.floor(-1 / 12)` is -1, which is right).
+  const total = year * 12 + (month - 1) + count
+  const outYear = Math.floor(total / 12)
+  const outMonth = total - outYear * 12 + 1
+  return periodMonthSchema.parse(`${outYear}-${String(outMonth).padStart(2, '0')}-01`)
+}
+
+/** Whole months from `from` to `to`, as a signed count — `0` for the same month, `1` for the next. */
+export function monthsBetween(from: string, to: string): number {
+  const [fromYear, fromMonth] = periodMonthSchema.parse(from).split('-').map(Number)
+  const [toYear, toMonth] = periodMonthSchema.parse(to).split('-').map(Number)
+  return (toYear - fromYear) * 12 + (toMonth - fromMonth)
+}
+
+/** Every month from `from` to `to`, both inclusive; empty when `to` is before `from`. The generator walks a term with this and the chart lays out its window with it, so both sides of IPC agree on what a twelve-month span holds. */
+export function eachMonth(from: string, to: string): PeriodMonth[] {
+  const months: PeriodMonth[] = []
+  for (let i = 0; i <= monthsBetween(from, to); i += 1) months.push(addMonths(from, i))
+  return months
+}
+
 // ---- Money --------------------------------------------------------------
 //
 // No currency symbol and no locale formatting below — both are P2-01's job

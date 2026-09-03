@@ -65,12 +65,12 @@ function insertMilestone(db: Database.Database, engagementId: string): void {
   )
 }
 
-function insertRevenueLine(db: Database.Database, engagementId: string): void {
+function insertRevenueLine(db: Database.Database, engagementId: string, status: 'projected' | 'invoiced' = 'invoiced'): void {
   const now = nowTimestamp()
   db.prepare(
     `INSERT INTO revenue_lines (id, engagement_id, period_month, amount_cents, kind, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(randomUUID(), engagementId, '2026-08-01', 100000, 'retainer', 'projected', now, now)
+  ).run(randomUUID(), engagementId, '2026-08-01', 100000, 'retainer', status, now, now)
 }
 
 function insertTimeEntry(db: Database.Database, engagementId: string): void {
@@ -787,10 +787,11 @@ describe('deleteEngagement: referential refusals — all five foreign keys migra
     })
   })
 
-  it('refuses to delete an engagement referenced by a revenue line; the row survives', () => {
+  it('refuses to delete an engagement referenced by an invoiced revenue line; the row survives, and so do its projected lines', () => {
     withDatabase((db) => {
       const engagement = createEngagement(db, { name: 'Revenue Co', billingModel: 'retainer', startedOn: '2026-01-01' })
-      insertRevenueLine(db, engagement.id)
+      insertRevenueLine(db, engagement.id, 'invoiced')
+      insertRevenueLine(db, engagement.id, 'projected')
 
       let thrown: unknown
       try {
@@ -802,6 +803,32 @@ describe('deleteEngagement: referential refusals — all five foreign keys migra
       expect(thrown).toBeInstanceOf(RefusalError)
       expect((thrown as RefusalError).blocker).toEqual({ reason: 'revenue-lines', count: 1 })
       expect(getEngagement(db, engagement.id)).not.toBeNull()
+      // The refusal rolled the whole transaction back: the projected line the
+      // delete had already cleared is there again.
+      const remaining = db.prepare('SELECT COUNT(*) AS c FROM revenue_lines WHERE engagement_id = ?').get(engagement.id) as { c: number }
+      expect(remaining.c).toBe(2)
+    })
+  })
+
+  it('a projected line the generator wrote does not block the delete — it is derived from the row and goes with it (T-260902-03)', () => {
+    withDatabase((db) => {
+      const engagement = createEngagement(db, {
+        name: 'Priced retainer',
+        billingModel: 'retainer',
+        status: 'active',
+        retainerBasis: 'amount',
+        monthlyAmountCents: 100_000,
+        startedOn: '2026-01-01',
+        endsOn: '2026-06-30'
+      })
+      const before = db.prepare('SELECT COUNT(*) AS c FROM revenue_lines WHERE engagement_id = ?').get(engagement.id) as { c: number }
+      expect(before.c).toBe(6)
+
+      deleteEngagement(db, engagement.id)
+
+      expect(getEngagement(db, engagement.id)).toBeNull()
+      const after = db.prepare('SELECT COUNT(*) AS c FROM revenue_lines').get() as { c: number }
+      expect(after.c).toBe(0)
     })
   })
 

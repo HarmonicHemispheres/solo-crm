@@ -1,0 +1,171 @@
+/*
+ * Revenue view — planning/solo-crm-mockup.html's `views.revenue` (mockup
+ * lines ~1123-1190) and the rules it leans on: `.conc` (~320), `.tbl`
+ * (~163-170), `.bar` (~291). `.card`/`.card-h`, `.stat`, `.toggle`,
+ * `.modeltag`, `.legend` and the chart itself are styled by their own
+ * components. `.cmark` is styles/identity-mark.css.
+ *
+ * `.grid`/`.stats` are duplicated here exactly as Today.css duplicates them
+ * from Companies.css, with that file's own note: a shared layout module
+ * would be the better home, and promoting it is not this task's diff.
+ *
+ * The table is `.rev-tbl`, not Companies.css's `.tbl`: Vite bundles every
+ * view's stylesheet into one, so a second `.tbl` here would be the
+ * "three stylesheets fighting over one unscoped selector" T-260828-15
+ * found — and this table has a footer row and a share bar that one does
+ * not.
+ */
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.stats {
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+}
+
+.rev-stats {
+  margin-bottom: 14px;
+}
+
+/* The mockup's `minmax(420px,1fr)`. At the 700px floor the content column
+   is narrower than two of those, so this is one column there — the chart
+   above the table — and the body never scrolls sideways. */
+.rev-cards {
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  align-items: start;
+}
+
+.rev-chart {
+  padding: 15px;
+}
+
+/* ── concentration bar (in the Stat's chart slot) ── */
+.conc {
+  display: flex;
+  height: 8px;
+  border-radius: var(--radius-4);
+  overflow: hidden;
+  margin-top: 10px;
+  gap: 2px;
+}
+
+.conc i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+/* Stat.css sizes `.spark` for a 22px sparkline; the bar is 8px and needs no
+   fixed height. */
+.rev-stats .spark {
+  height: auto;
+}
+
+/* ── rollup table ── */
+.rev-scroll {
+  overflow-x: auto;
+}
+
+.rev-tbl {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rev-tbl th {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 400;
+}
+
+.rev-tbl td {
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.rev-tbl tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rev-tbl tbody tr.navigable {
+  cursor: pointer;
+  transition: background var(--motion-hover);
+}
+
+.rev-tbl tbody tr.navigable:hover,
+.rev-tbl tbody tr.navigable:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.rev-tbl .num {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rev-tbl td.num.dim {
+  color: var(--slate);
+}
+
+.rev-tbl tfoot td {
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.rev-tbl tfoot td.num {
+  color: var(--papyrus);
+  font-size: 12.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* The identity cell: mark + name/qualifier, the mockup's inline
+   `display:flex;align-items:center;gap:10px` / `min-width:0` as classes. */
+.rev-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rev-cell-text {
+  min-width: 0;
+}
+
+.rev-cell .nm {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The mockup's 3px `.bar` under each row's name: this row's share of YTD. */
+.rev-share {
+  height: 3px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.rev-share i {
+  display: block;
+  height: 100%;
+  background: var(--verdigris);
+}

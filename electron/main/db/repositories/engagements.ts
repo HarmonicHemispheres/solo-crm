@@ -24,6 +24,7 @@ import { type ConstraintHandler, NOT_NULL_HANDLER, PRIMARY_KEY_HANDLER, translat
 import type { DeletionImpact } from '../../../shared/deletion'
 import { impactOf, runCascade } from './cascade'
 import { refuseIfReferenced } from './referential-guard'
+import { deleteGeneratedLines, regenerateRevenueLines } from './revenue-generator'
 
 /**
  * The `engagements` repository (T-260828-22), built on `companies.ts`'s
@@ -42,6 +43,10 @@ import { refuseIfReferenced } from './referential-guard'
  * puts every revenue question through `revenue_lines` (P3-05); branching on
  * `billingModel` to produce a figure anywhere else is the defect this
  * task's Risks section names as the highest-risk carry-over in the project.
+ * What it does do (T-260902-03) is call the generator that owns that
+ * branch: every create and update ends, inside its own transaction, with
+ * `regenerateRevenueLines`, so the lines an engagement's terms imply can
+ * never be stale by a forgotten call from the renderer.
  */
 export { BILLING_MODELS, createEngagementInputSchema, ENGAGEMENT_STATUSES, listEngagementsFilterSchema, updateEngagementInputSchema }
 export type {
@@ -424,8 +429,14 @@ export function createEngagement(db: Database.Database, input: unknown): Engagem
   }
   values.push(timestamp, timestamp)
 
-  try {
+  // One transaction: the row and the revenue lines its terms imply land
+  // together or not at all (T-260902-03).
+  const insert = db.transaction(() => {
     db.prepare(`INSERT INTO engagements (${columns.join(', ')}) VALUES (${placeholders})`).run(...values)
+    regenerateRevenueLines(db, id)
+  })
+  try {
+    insert()
   } catch (error) {
     translateWriteError(CONSTRAINT_HANDLERS, error)
   }
@@ -495,8 +506,16 @@ export function updateEngagement(db: Database.Database, id: string, patch: unkno
   values.push(timestamp)
   values.push(id)
 
-  try {
+  // Regenerated on every patch, not only one that names a term: a status
+  // change (`proposed` -> `active`) is exactly what turns a proposal into a
+  // forecast, and the generator is cheap enough that deciding which keys
+  // matter here would be a second copy of its rules.
+  const update = db.transaction(() => {
     db.prepare(`UPDATE engagements SET ${setClauses.join(', ')} WHERE id = ?`).run(...values)
+    regenerateRevenueLines(db, id)
+  })
+  try {
+    update()
   } catch (error) {
     translateWriteError(CONSTRAINT_HANDLERS, error)
   }
@@ -521,7 +540,8 @@ export function updateEngagement(db: Database.Database, id: string, patch: unkno
  * they were shown exactly what would go — `engagementDeleteImpact` below, which
  * derives its counts from the same declarations `runCascade` deletes by —
  * and said yes. It defaults to false, so every caller that does not opt in
- * keeps the refusing behaviour this function has always had.
+ * keeps the refusing behaviour — refusing on every reference but the
+ * generator's own projected lines, since T-260902-03.
  */
 
 /**
@@ -551,6 +571,16 @@ export function deleteEngagement(db: Database.Database, id: string, cascade = fa
       return
     }
 
+    // The projected lines the generator wrote from this engagement's terms
+    // are derived from the row being deleted, not facts about it, so they
+    // go with it before the guard looks (T-260902-03). What the guard then
+    // refuses on is every *other* line: invoiced or paid (Stripe's record),
+    // `tm_actual` (hours worked) and `expense` (operator-entered). A throw
+    // from the guard rolls this delete back with the rest of the
+    // transaction. Before T-260902-03 any line at all refused; the
+    // generator's own rows are the one class that no longer does.
+    deleteGeneratedLines(db, id)
+
     refuseIfReferenced(db, id, [
       {
         table: 'milestones',
@@ -567,8 +597,8 @@ export function deleteEngagement(db: Database.Database, id: string, cascade = fa
         column: 'engagement_id',
         reason: 'revenue-lines',
         describe: (count) =>
-          `Cannot delete "${engagement.name}": ${count} revenue line${count === 1 ? '' : 's'} reference it. ` +
-          'Revenue lines are the materialised record ADR-003 relies on and cannot be reassigned or removed to make room.'
+          `Cannot delete "${engagement.name}": ${count} invoiced, paid, actual or expense revenue line${count === 1 ? '' : 's'} reference it. ` +
+          'Those are the record ADR-003 relies on and cannot be reassigned or removed to make room.'
       },
       {
         table: 'time_entries',

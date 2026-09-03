@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { ChainCycleError, ChainDepthExceededError, MAX_CHAIN_DEPTH, walkChain } from '../chain-walk'
-import { formatDateOnly, formatTimestamp, nowTimestamp, parseDateOnly } from '../../../shared/format'
+import { addMonths, formatDateOnly, formatTimestamp, monthsBetween, nowTimestamp, parseDateOnly, periodMonthOf } from '../../../shared/format'
 import { dateOnlySchema } from '../../../shared/types'
 import type { DateOnly, Timestamp } from '../../../shared/types'
+import { regenerateAllRevenueLines } from '../repositories/revenue-generator'
 import type { CompanySeed } from './fixture'
 import {
   MOCKUP_TODAY,
@@ -69,6 +70,8 @@ const SEED_TABLES = [
   'offerings',
   'offering_versions',
   'engagements',
+  'milestones',
+  'revenue_lines',
   'tasks',
   'activity',
   'links'
@@ -137,6 +140,18 @@ function shiftDateOnly(value: string, offsetDays: number): DateOnly {
 
 function shiftDateOnlyOrNull(value: string | null, offsetDays: number): DateOnly | null {
   return value === null ? null : shiftDateOnly(value, offsetDays)
+}
+
+/**
+ * A `period_month` is shifted by whole months (`addMonths`), not days:
+ * `shiftDateOnly` on `2026-02-01` by six days gives `2026-02-07`, which is
+ * not a first-of-month and fails `periodMonthSchema` on the way back out.
+ * The month offset is the calendar-month distance between the mockup's
+ * frozen today and the real one, so a milestone the mockup places "the
+ * month after next" still lands the month after next.
+ */
+function computeOffsetMonths(referenceNow: Date): number {
+  return monthsBetween(periodMonthOf(MOCKUP_TODAY), periodMonthOf(localDateOnly(referenceNow)))
 }
 
 /**
@@ -280,7 +295,9 @@ export interface SeedFixtureOptions {
 export function seedFixture(db: Database.Database, options: SeedFixtureOptions = {}): void {
   assertSeedableOrForced(db, options.force ?? false)
 
-  const offsetDays = computeOffsetDays(options.referenceNow ?? new Date())
+  const referenceNow = options.referenceNow ?? new Date()
+  const offsetDays = computeOffsetDays(referenceNow)
+  const offsetMonths = computeOffsetMonths(referenceNow)
   const seededAt = nowTimestamp()
 
   const run = db.transaction(() => {
@@ -489,6 +506,29 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
       )
     }
 
+    // ---- milestones (T-260902-03) — the fixed scopes' plans, in the order
+    // the fixture lists them; `completed_at` is a timestamp like every
+    // other done-ness column, shifted like activity's `occurred_at`. ----
+    const insertMilestone = db.prepare(
+      `INSERT INTO milestones (id, engagement_id, name, sort, completed_at, amount_cents, expected_month, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    for (const engagement of engagementsFixture) {
+      ;(engagement.milestones ?? []).forEach((milestone, index) => {
+        insertMilestone.run(
+          randomUUID(),
+          engagementIds.get(engagement.key),
+          milestone.name,
+          index,
+          milestone.completedOn ? shiftToTimestamp(milestone.completedOn, offsetDays, `${engagement.key}:${milestone.name}`) : null,
+          milestone.amountCents,
+          addMonths(milestone.expectedMonth, offsetMonths),
+          seededAt,
+          seededAt
+        )
+      })
+    }
+
     // ---- tasks ----
     const insertTask = db.prepare(
       `INSERT INTO tasks (id, title, status, is_next_step, due_on, waiting_since, done_at, company_id, engagement_id, person_id, created_at, updated_at)
@@ -555,6 +595,33 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
         insertLink.run(randomUUID(), 'company', companyIds.get(company.key), link.url, link.title, link.kind, seededAt, seededAt, seededAt)
       }
     }
+
+    // ---- revenue_lines (T-260902-03) — not a fixture table: nothing above
+    // lists a line. The generator writes them from the engagements and
+    // milestones just inserted, exactly as it does after every repository
+    // write, against the same "now" the dates were shifted to. The seed
+    // therefore cannot disagree with what the app would generate itself. ----
+    regenerateAllRevenueLines(db, { now: referenceNow })
+
+    // Then stand in for Stripe (§7), which is the only real writer of
+    // `status`: every line of a *fixture* engagement before the current
+    // month is marked `paid`, as if each invoice went out on the first and
+    // was settled. Without this every line on a fresh profile is
+    // `projected` and the chart has no actual to draw against a projection
+    // (T-260902-06) — and it is also what makes "fixed backlog" read as
+    // *unbilled* milestones rather than every milestone ever. A dev-fixture
+    // simulation, stated as one; the generator never touches these rows
+    // again (its header). Scoped to the engagements this run inserted, so
+    // `--force` on a populated database still touches nobody else's rows —
+    // the header's "append-only regardless of force" holds for the
+    // operator's data.
+    const currentMonth = periodMonthOf(localDateOnly(referenceNow))
+    const seededEngagementIds = [...engagementIds.values()]
+    db.prepare(
+      `UPDATE revenue_lines
+       SET status = 'paid', invoiced_at = period_month || 'T17:00:00.000Z', paid_at = period_month || 'T17:00:00.000Z', updated_at = ?
+       WHERE period_month < ? AND engagement_id IN (${seededEngagementIds.map(() => '?').join(', ')})`
+    ).run(seededAt, currentMonth, ...seededEngagementIds)
   })
 
   run()

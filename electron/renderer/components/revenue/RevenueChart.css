@@ -1,0 +1,86 @@
+/* The stacked monthly chart (T-260902-06) — planning/solo-crm-mockup.html's
+   `stackChart()` and `.legend`. Colours come in from the component as
+   tokens; this file owns only the projected/actual treatment, the two
+   guide lines and the month axis. */
+
+.revchart svg {
+  width: 100%;
+  display: block;
+}
+
+/* Actual: solid, as the mockup draws every bar. */
+.revchart-seg.actual {
+  opacity: 0.92;
+  stroke-width: 0;
+}
+
+/* Projected: paler AND dashed, so it reads without colour (ui-design.md,
+   §8). `vector-effect: non-scaling-stroke` on the element keeps the dash
+   length in screen pixels while the canvas stretches. */
+.revchart-seg.projected {
+  opacity: 0.45;
+  stroke-width: 1px;
+  stroke-dasharray: 3 2;
+  fill-opacity: 0.55;
+}
+
+.revchart-base {
+  stroke: var(--border);
+  stroke-width: 1px;
+}
+
+.revchart-now {
+  stroke: var(--border-bright);
+  stroke-width: 1px;
+  stroke-dasharray: 2 2;
+}
+
+.revchart-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 2px 0;
+}
+
+.revchart-axis .meta {
+  font-size: 9px;
+  flex: 1;
+  text-align: center;
+}
+
+.revchart-axis .meta.now {
+  color: var(--papyrus);
+}
+
+.revchart-axis .meta.ahead {
+  opacity: 0.5;
+}
+
+/* ── legend ── */
+.legend {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--slate);
+}
+
+.legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: block;
+}
+
+.legend .legend-note {
+  opacity: 0.5;
+}

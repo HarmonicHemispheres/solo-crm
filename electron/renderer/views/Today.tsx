@@ -22,6 +22,8 @@ import { callCrm, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { decayForCompany, type Decay } from '../lib/decay'
 import { identityColor, initials } from '../lib/identity'
+import { RevenueChart, RevenueLegend } from '../components/revenue/RevenueChart'
+import { formatMoney, plural } from './offerings-display'
 // Imported, never restated — see this file's header and T-260829-14's Risks.
 import { localToday, dueMeta, sortByDue } from './todo-urgency'
 import { TodoRow } from './Todos'
@@ -32,6 +34,7 @@ import type { Person } from '../../shared/people'
 import type { CreateTaskInput, Task } from '../../shared/tasks'
 import type { Activity as ActivityRow } from '../../shared/activity'
 import type { SettingsSnapshot } from '../../shared/settings'
+import type { RevenueSummary } from '../../shared/revenue'
 import './Today.css'
 
 /**
@@ -60,17 +63,18 @@ import './Today.css'
  *   functions `Todos.tsx` sorts and labels with. A second copy here would
  *   drift at a timezone boundary where nobody is looking.
  *
- * **The §6.1 deviation, stated so nobody quietly "fixes" it back.** §6.1's
- * hero row is "recurring monthly revenue, fixed backlog, open todos, cadence
- * health", and the mockup computes the first two live off engagement columns
- * (`engagements.reduce((n,e) => n + mrr(e), 0)`). AGENTS.md forbids porting
- * exactly that: revenue reads from `revenue_lines`, which is empty until
- * Phase 3's revenue module (P3-05). So both money stats — and the mockup's
- * twelve-month stacked chart, whose series are hardcoded arrays — are
- * deliberately absent, and two counts that are true today stand in their
- * place. There is no `mrr()`/`backlog()`-shaped computation over
- * `engagements` anywhere in this file, and adding one is a task that should
- * say ADR-003 in its title, not an omission to fix here.
+ * **The money stats and the chart read `revenue:summary`** (T-260902-05,
+ * -06). §6.1's hero row is "recurring monthly revenue, fixed backlog, open
+ * todos, cadence health", and the mockup computes the first two live off
+ * engagement columns (`engagements.reduce((n,e) => n + mrr(e), 0)`), which
+ * AGENTS.md forbids porting. Until P3-05 landed, two counts stood in for
+ * them; now both figures and the twelve-month chart arrive from the same
+ * one channel the Revenue view reads — every number a `SUM` over
+ * `revenue_lines` in main (ADR-003). There is still no `mrr()`/`backlog()`-
+ * shaped computation over `engagements` anywhere in this file, and adding
+ * one is a task that should say ADR-003 in its title. When nothing has been
+ * recognised yet (`lineCount` 0) the two tiles say so with a dash rather
+ * than a `$0` that claims a fact.
  *
  * The mockup's **linked-systems strip** is absent for the same species of
  * reason: Notion/Drive/Stripe/Calendar last-sync times need adapters that do
@@ -158,18 +162,6 @@ function byPctDescending(a: QuietRow, b: QuietRow): number {
 // Engagements
 // ---------------------------------------------------------------------------
 
-/**
- * "Active" is the literal `active` status and nothing else — the same
- * predicate `Companies.tsx` counts its per-company active engagements with
- * (`engagement.status !== 'active'`). `pending`/`proposed` are work that has
- * not started and `held`/`delivered`/`lost` are work that has stopped;
- * folding any of them in here would make this stat mean something different
- * from the count on a company's own card.
- */
-function isActive(engagement: Engagement): boolean {
-  return engagement.status === 'active'
-}
-
 // Stable empty-array fallbacks for a query's `undefined` (still-loading)
 // data — a fresh `[]` literal is a new reference every render, which would
 // make the memos below see a changed dependency on every render.
@@ -212,6 +204,12 @@ export function Today() {
   // view issues no second `settings:getAll` — it reads the snapshot they
   // cached. Needed here for `decayForCompany`'s kind-default cadence.
   const settingsQuery = useQuery({ queryKey: queryKeys.settings.list(), queryFn: ipcQueryFn('settings:getAll') })
+  // The same entry the Revenue view holds, so moving between the two pages
+  // is one read. Its failure is kept out of the page's own `loadError`
+  // below: the dashboard's todos and cadence have nothing to do with a
+  // revenue line, and a hand-edited row that broke the summary must not
+  // blank them — the two tiles read "—" and the card says what happened.
+  const revenueQuery = useQuery({ queryKey: queryKeys.revenue.summary(), queryFn: ipcQueryFn('revenue:summary') })
 
   // ---- Completion — the same contract Todos.tsx's own completion uses: the
   // open list and the countOpen summary are both rewritten in onMutate so
@@ -257,6 +255,7 @@ export function Today() {
   const people: readonly Person[] = peopleQuery.data ?? EMPTY_PEOPLE
   const activityRows: readonly ActivityRow[] = activityQuery.data ?? EMPTY_ACTIVITY
   const settings: SettingsSnapshot | undefined = settingsQuery.data
+  const revenue: RevenueSummary | undefined = revenueQuery.data
 
   const quiet = useMemo<readonly QuietRow[]>(() => {
     if (!settings) return []
@@ -293,8 +292,9 @@ export function Today() {
   // `dueMeta` that labels each row "3d overdue" — one local-day boundary on
   // the page, not a second one written for the stat.
   const overdueCount = openTasks.filter((task) => dueMeta(task, today).cls === 'over').length
-  const activeEngagements = engagements.filter(isActive).length
   const currentCompanies = companies.length - quiet.length
+  // Nothing recognised yet: the tiles say so rather than reading `$0`.
+  const recognised = revenue !== undefined && revenue.lineCount > 0
 
   const isLoading =
     companiesQuery.isPending ||
@@ -304,7 +304,8 @@ export function Today() {
     engagementsQuery.isPending ||
     peopleQuery.isPending ||
     activityQuery.isPending ||
-    settingsQuery.isPending
+    settingsQuery.isPending ||
+    revenueQuery.isPending
   const loadError =
     companiesQuery.error ??
     openTasksQuery.error ??
@@ -368,11 +369,21 @@ export function Today() {
       {header}
       <div className="grid stats today-stats">
         <Stat
-          label="Open todos"
-          value={countOpenQuery.data?.count ?? 0}
+          label="Recurring / month"
+          value={recognised ? formatMoney(revenue.metrics.recurringMonthCents) : '—'}
           tone="hero"
-          meta={`${overdueCount} overdue · ${waitingTasks.length} waiting`}
+          meta={
+            recognised
+              ? `${plural(revenue.metrics.recurringEngagements, 'retainer')} · ${formatMoney(revenue.metrics.recurringNextYearCents)} next 12 mo`
+              : 'nothing recognised yet'
+          }
         />
+        <Stat
+          label="Fixed backlog"
+          value={recognised ? formatMoney(revenue.metrics.backlogCents) : '—'}
+          meta={recognised ? plural(revenue.metrics.backlogMilestones, 'unbilled milestone') : 'nothing recognised yet'}
+        />
+        <Stat label="Open todos" value={countOpenQuery.data?.count ?? 0} meta={`${overdueCount} overdue · ${waitingTasks.length} waiting`} />
         <Stat
           label="Cadence health"
           value={currentCompanies}
@@ -385,8 +396,6 @@ export function Today() {
             />
           }
         />
-        <Stat label="Active engagements" value={activeEngagements} meta="in delivery now" />
-        <Stat label="Companies" value={companies.length} meta="in the book" />
       </div>
 
       <div className="grid today-cards">
@@ -413,6 +422,20 @@ export function Today() {
                 }
               />
             ))
+          )}
+        </Card>
+
+        {/* The mockup's order: Going quiet, then the chart, then Next up. */}
+        <Card>
+          <Card.Header title="Revenue" actions={<RevenueLegend compact />} />
+          {recognised ? (
+            <div className="today-chart">
+              <RevenueChart window={revenue.window} series={revenue.series} currentMonth={revenue.currentMonth} height={150} />
+            </div>
+          ) : revenueQuery.error ? (
+            <EmptyState>{revenueQuery.error.message}</EmptyState>
+          ) : (
+            <EmptyState>Nothing recognised yet — a signed engagement with a price puts its months here.</EmptyState>
           )}
         </Card>
 

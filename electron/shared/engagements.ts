@@ -33,6 +33,20 @@ import { centsSchema, dateOnlySchema, hoursSchema, timestampSchema } from './typ
 export const ENGAGEMENT_STATUSES = ['active', 'pending', 'proposed', 'held', 'delivered', 'lost'] as const
 export type EngagementStatus = (typeof ENGAGEMENT_STATUSES)[number]
 
+/**
+ * The statuses of work that is signed — what the revenue generator
+ * (T-260902-03) forecasts from. `active` is in delivery, `pending` is
+ * signed and not yet started, `delivered` is done and its past months are
+ * the record of what landed. `proposed` is pipeline, `lost` is gone and
+ * `held` is paused: none of the three puts a figure in a forecast. Declared
+ * once here so the generator, the seed's tests and any copy that names the
+ * rule read the same list.
+ */
+export const SIGNED_STATUSES = ['active', 'pending', 'delivered'] as const satisfies readonly EngagementStatus[]
+export function isSigned(status: EngagementStatus | null): boolean {
+  return status !== null && (SIGNED_STATUSES as readonly EngagementStatus[]).includes(status)
+}
+
 /** `schema.ts`'s comment on `billing_model`: "retainer | fixed | tm | equity | none". */
 export const BILLING_MODELS = ['retainer', 'fixed', 'tm', 'equity', 'none'] as const
 export type BillingModel = (typeof BILLING_MODELS)[number]
