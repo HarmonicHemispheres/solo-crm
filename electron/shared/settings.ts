@@ -160,6 +160,23 @@ export const SETTINGS_REGISTRY = {
     [] as { name: string; statement: string }[]
   ),
 
+  // T-260902-13: the rail's Reports group, expanded or collapsed. Chrome
+  // rather than a view's own state, hence `nav.` and not `view.` — the rail
+  // is on every route and belongs to none of them.
+  //
+  // `true` is the default because a collapsed group hides the only report
+  // there is: an operator who has never touched this would otherwise open a
+  // fresh install and find Revenue gone. The rail falls back to this same
+  // value while `settings:getAll` is in flight, so the group never flashes
+  // shut and then open on a cold start.
+  //
+  // One key, not one per subgroup: `NAV_SUBGROUP_SETTING_KEY` in
+  // `renderer/nav.ts` maps the group id to this key the way
+  // `CADENCE_SETTING_KEY` above maps a company kind, so a second subgroup
+  // adds a key here and an entry there rather than composing one at a call
+  // site (ADR-002 rule 3).
+  'nav.reportsExpanded': spec(z.boolean(), true),
+
   // T-260829-15's first-run walkthrough. `false` is the honest default —
   // a fresh install has not seen it — and the overlay's *second* condition
   // (the workspace holds no companies) is what stops an existing workspace

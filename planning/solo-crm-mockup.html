@@ -502,6 +502,25 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
       <button class="nav" data-view="today"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.8"/></svg>Today</button>
       <button class="nav" data-view="pipeline"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h16M6.5 12h11M10 19h4"/></svg>Pipeline<span class="count" id="c-pipe"></span></button>
       <button class="nav" data-view="todos"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7l2 2 3.5-3.5M4 17l2 2 3.5-3.5M13 7h7M13 17h7"/></svg>Todos<span class="count" id="c-td"></span></button>
+      <!-- DIVERGENCE (T-260902-13): the shipped rail does not draw Revenue as a
+           flat Work item. It draws a **Reports** subgroup header in this
+           position — a `<button aria-expanded>` with a disclosure caret, no
+           route of its own — with Revenue nested under it, and the engagement
+           timeline (P3-12) joining it there. Revenue keeps `/revenue` and this
+           glyph; only its position in the rail changed. The breadcrumb reads
+           "Reports / Revenue", the way "/workspace/data" already reads
+           "Workspace / Data".
+           Why: Revenue is one report and the timeline is the second. A flat
+           item named after one of them has nowhere to put the other, and
+           renaming it later moves the operator's muscle memory twice.
+           The expanded/collapsed state persists on `nav.reportsExpanded`
+           (ADR-002's settings table). A collapsed group does NOT spring open
+           when its child is the active route — the header takes the active
+           mark instead — because forcing it open would make the collapse
+           control do nothing while you are standing on Revenue.
+           No ADR: this is a rearrangement of one nav item with no alternative
+           worth recording, the same weight as T-260829-06's brand block, not
+           ADR-005's or ADR-014's. Do not "fix" the rail back to this row. -->
       <button class="nav" data-view="revenue"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19V9M9.5 19V5M15 19v-7M20.5 19v-4"/></svg>Revenue</button>
       <button class="nav" data-view="activity"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Activity</button>
     </nav>

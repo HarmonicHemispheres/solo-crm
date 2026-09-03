@@ -112,6 +112,36 @@ export function DataIcon(props: ShellIconProps) {
   )
 }
 
+/**
+ * The Reports subgroup header's glyph (T-260902-13). The mockup has no
+ * subgroups and so no glyph to copy — this is a sheet with two ruled lines,
+ * deliberately *not* the bar chart `RevenueIcon` draws: the header and the
+ * Revenue item under it sit two rows apart and repeating the bars there
+ * would read as the same destination twice.
+ */
+export function ReportsIcon(props: ShellIconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M6 3h8l4 4v14H6z" />
+      <path d="M14 3v4h4M9.5 13h5M9.5 17h5" />
+    </svg>
+  )
+}
+
+/**
+ * The subgroup header's disclosure caret, pointing right when collapsed. The
+ * rail rotates it to point down when expanded (Rail.css) rather than swapping
+ * glyphs, so `prefers-reduced-motion` can drop the rotation's transition and
+ * still leave the two states distinguishable.
+ */
+export function NavChevronIcon(props: ShellIconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M9.5 6l6 6-6 6" />
+    </svg>
+  )
+}
+
 /** `.searchbtn`'s magnifier — drawn thinner (1.8) and smaller than the nav
  * glyphs in the mockup. */
 export function SearchIcon(props: ShellIconProps) {

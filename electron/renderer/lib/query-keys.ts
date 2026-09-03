@@ -426,8 +426,15 @@ export const invalidate: Record<keyof typeof queryKeys, (queryClient: QueryClien
    * read inside `revenue:summary` (every YTD figure and the concentration
    * metric hang off it), so a settings write that left the summary cached
    * would show last year's boundary until some unrelated engagement edit.
-   * One extra prefix on a write that happens a few times in the life of a
-   * workspace.
+   *
+   * That used to read "a write that happens a few times in the life of a
+   * workspace". T-260902-13 made it more than that: the rail's Reports
+   * disclosure writes `nav.reportsExpanded` through here, so a toggle on the
+   * Revenue page refetches the summary. Still the right trade — the summary
+   * is a handful of aggregates over a local SQLite file, TanStack refetches
+   * only mounted queries, and it keeps the previous data while it does, so
+   * nothing on screen flashes. Splitting the prefix per key would trade a
+   * cheap local query for two ways to reconcile one table.
    */
   settings: (queryClient) =>
     Promise.all([

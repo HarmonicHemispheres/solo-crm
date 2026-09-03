@@ -1,5 +1,6 @@
 import { matchPath, type To } from 'react-router'
 import type { SearchKind } from '../shared/search'
+import type { SettingKey } from '../shared/settings'
 
 /**
  * The ten views the mockup ships, minus Pipeline (ADR-005, T-260828-02) — the
@@ -24,6 +25,16 @@ export type NavId =
   | 'settings'
   | 'data'
 
+/**
+ * A rail row that is a header over other rows rather than a destination of
+ * its own (T-260902-13). Clicking it expands and collapses; it has no route,
+ * which is why it is a separate vocabulary from `NavId` rather than an
+ * eleventh member of it — `ROUTE_META`, `getActiveNavId` and
+ * `routes.test.tsx` all assume a `NavId` resolves to a page, and a
+ * pathless member would be a special case in each.
+ */
+export type NavSubgroupId = 'reports'
+
 export interface NavItem {
   readonly id: NavId
   readonly label: string
@@ -33,14 +44,51 @@ export interface NavItem {
    * does. */
   readonly path: string
   readonly group: 'Work' | 'Records' | 'Workspace'
+  /** When set, the rail draws this item nested under that subgroup's header
+   * instead of at the top level of `group`. */
+  readonly parent?: NavSubgroupId
 }
 
+export interface NavSubgroup {
+  readonly id: NavSubgroupId
+  readonly label: string
+  readonly group: NavItem['group']
+}
+
+/**
+ * The subgroup headers, one row each. A subgroup takes the position of its
+ * first member in `NAV_ITEMS` (see `railRowsFor`), so ordering lives in one
+ * table rather than two.
+ *
+ * Reports exists because Revenue is one report and the engagement timeline
+ * (P3-12) is the second. A flat item named after one of them has nowhere to
+ * put the other.
+ */
+export const NAV_SUBGROUPS: readonly NavSubgroup[] = [{ id: 'reports', label: 'Reports', group: 'Work' }]
+
+/**
+ * Which `settings` key holds a subgroup's expanded state — the same shape
+ * `CADENCE_SETTING_KEY` uses in `shared/settings.ts`, and for the same
+ * reason: ADR-002 rule 3 calls a key composed at a call site a defect, and a
+ * literal map lets `tsc` prove each value is a real `SettingKey`.
+ *
+ * `as const satisfies`, not an annotation: `settings:set`'s payload is a
+ * discriminated union over the key, so a lookup widened to all of
+ * `SettingKey` would make `{ key, value: boolean }` unassignable. This keeps
+ * each entry's literal type while still failing the build if one names a key
+ * the registry does not declare.
+ */
+export const NAV_SUBGROUP_SETTING_KEY = {
+  reports: 'nav.reportsExpanded'
+} as const satisfies Record<NavSubgroupId, SettingKey>
+
 /** `.navgroup` order and membership, taken from the mockup's rail verbatim
- * (lines ~489-508) — Pipeline's `data-view="pipeline"` button omitted. */
+ * (lines ~489-508) — Pipeline's `data-view="pipeline"` button omitted, and
+ * Revenue nested under Reports since T-260902-13. */
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'today', label: 'Today', path: '/', group: 'Work' },
   { id: 'todos', label: 'Todos', path: '/todos', group: 'Work' },
-  { id: 'revenue', label: 'Revenue', path: '/revenue', group: 'Work' },
+  { id: 'revenue', label: 'Revenue', path: '/revenue', group: 'Work', parent: 'reports' },
   { id: 'activity', label: 'Activity', path: '/activity', group: 'Work' },
   { id: 'companies', label: 'Companies', path: '/companies', group: 'Records' },
   { id: 'people', label: 'People', path: '/people', group: 'Records' },
@@ -68,7 +116,9 @@ export interface RouteMeta {
 export const ROUTE_META: readonly RouteMeta[] = [
   { path: '/', navId: 'today', breadcrumb: 'Today' },
   { path: '/todos', navId: 'todos', breadcrumb: 'Todos' },
-  { path: '/revenue', navId: 'revenue', breadcrumb: 'Revenue' },
+  // 'Reports / Revenue', the way '/workspace/data' reads 'Workspace / Data':
+  // the crumb names the rail group the route sits in, not only the page.
+  { path: '/revenue', navId: 'revenue', breadcrumb: 'Reports / Revenue' },
   { path: '/activity', navId: 'activity', breadcrumb: 'Activity' },
   { path: '/companies', navId: 'companies', breadcrumb: 'Companies' },
   { path: '/company/:id', navId: 'companies', breadcrumb: 'Companies /' },
@@ -139,4 +189,50 @@ export function getActiveNavId(pathname: string): NavId | undefined {
  * itself so an unmatched route is visibly wrong rather than silently blank. */
 export function getBreadcrumb(pathname: string): string {
   return ROUTE_META.find((route) => matchPath({ path: route.path, end: true }, pathname) != null)?.breadcrumb ?? pathname
+}
+
+/** The subgroup the active route sits inside, or `undefined` when it sits at
+ * the top level. The rail uses it to mark a collapsed Reports header as
+ * active — a collapsed group still has to say "you are in here". */
+export function getActiveNavSubgroupId(pathname: string): NavSubgroupId | undefined {
+  const activeNavId = getActiveNavId(pathname)
+  return NAV_ITEMS.find((item) => item.id === activeNavId)?.parent
+}
+
+/** One row of one `.navgroup`, in render order: either a plain nav item or a
+ * subgroup header with the items nested under it. */
+export type RailRow = { readonly kind: 'item'; readonly item: NavItem } | { readonly kind: 'subgroup'; readonly subgroup: NavSubgroup; readonly items: readonly NavItem[] }
+
+/**
+ * The rows of one nav group, in `NAV_ITEMS`' own order, with each subgroup
+ * emitted at the position of its first member. Here rather than in `Rail.tsx`
+ * so the ordering rule is one testable function instead of nested `filter`
+ * calls inside JSX — and so `Rail.tsx` stays a component file, which under
+ * `react-refresh/only-export-components` may not export this anyway.
+ *
+ * A subgroup with no members is not drawn: a header that expands to nothing
+ * is worse than an absent one.
+ */
+export function railRowsFor(group: NavItem['group']): readonly RailRow[] {
+  const rows: RailRow[] = []
+  const emitted = new Set<NavSubgroupId>()
+  for (const item of NAV_ITEMS) {
+    if (item.group !== group) continue
+    if (item.parent === undefined) {
+      rows.push({ kind: 'item', item })
+      continue
+    }
+    if (emitted.has(item.parent)) continue
+    const subgroup = NAV_SUBGROUPS.find((candidate) => candidate.id === item.parent)
+    if (subgroup === undefined) {
+      // A `parent` naming no declared subgroup would otherwise drop the item
+      // out of the rail entirely — silently, which is the failure mode this
+      // whole module's two-table check exists to prevent. Draw it flat.
+      rows.push({ kind: 'item', item })
+      continue
+    }
+    emitted.add(item.parent)
+    rows.push({ kind: 'subgroup', subgroup, items: NAV_ITEMS.filter((member) => member.parent === subgroup.id) })
+  }
+  return rows
 }

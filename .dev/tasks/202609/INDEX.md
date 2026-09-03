@@ -35,11 +35,20 @@ map).
 | | ID | Title | Cat | Plan |
 |---|---|---|---|---|
 | ○ open | [T-260901-31](T-260901-31-header-image-controls-narrow.md) | Decide where the logo and banner controls live when the header is narrow | 🎨 ui | |
+| ○ open | [T-260902-12](T-260902-12-company-page-one-feed.md) | Decide the company page's shape — one activity feed, one engagements card, and what the mockup's two-card split becomes | 📄 docs | |
+| ○ open | [T-260902-14](T-260902-14-collapsible-rail.md) | Collapse the rail to a strip of icons, and remember which way the operator left it | 🎨 ui | |
+| ○ open | [T-260902-15](T-260902-15-company-page-rebuild.md) | Rebuild the company page as two columns — one Engagements card, one activity feed, a Notes card, no empty cards | 🎨 ui | |
+| ○ open | [T-260902-16](T-260902-16-engagement-timeline-page.md) | Build the engagement timeline as its own page under Reports | 🎨 ui | P3-12 |
+| ○ open | [T-260902-17](T-260902-17-mark-revenue-received.md) | Let a revenue line be marked invoiced or paid, so the chart has an actual to draw | 🗄 data | |
+| ○ open | [T-260902-18](T-260902-18-revenue-mark-received-ui.md) | Give the Revenue page a way to mark a month received, and stop every bar reading as a forecast | 🎨 ui | |
+| ○ open | [T-260902-19](T-260902-19-task-completions-by-month.md) | Count task completions by month, so a sparkline can draw something true | 🗄 data | |
+| ○ open | [T-260902-20](T-260902-20-todo-stat-cards.md) | Cut the Todos stat cards back to the mockup — four cards, terser captions, a real sparkline | 🎨 ui | |
 
 ## Closed this month
 
 | | ID | Title | Cat | Plan | Run |
 |---|---|---|---|---|---|
+| ● done | [T-260902-13](T-260902-13-reports-nav-group.md) | Turn the rail's Revenue item into a Reports group that expands, with Revenue inside it | 🎨 ui | | — |
 | ● done | [T-260902-06](T-260902-06-stacked-monthly-chart.md) | The stacked monthly revenue chart, on Revenue and Today, from revenue_lines | 🎨 ui | P3-11 | — |
 | ● done | [T-260902-05](T-260902-05-revenue-view.md) | Build the Revenue view — rollup toggle, four metrics, the by-month table | 🎨 ui | P3-10 | — |
 | ● done | [T-260902-04](T-260902-04-revenue-rollups-ipc.md) | Revenue rollup queries and their IPC channel — three attributions, four metrics, one SUM | 🗄 data | P3-06 | — |
@@ -152,3 +161,39 @@ annualised figure or a total across engagements is an aggregation, which
 belongs to `revenue_lines` and the generator that writes it — T-260902-03,
 still open below, followed by -04 to -06. Building it there is also what
 fills the Revenue page, which is the same feature seen from the other end.
+
+## The 2026-09-02 report, second pass
+
+Six things the operator asked for against the 0.6.5 build, scoped the same
+day. Two were not what they looked like.
+
+**The chart is not mis-rendering.** Querying the operator's own database:
+every `revenue_lines` row is `projected`, milestones back to 2026-01
+included. `status` has one writer in the plan — the Stripe adapter, P4-02,
+two phases out — so nothing in the shipped app can produce an actual, and
+the projected/actual treatment T-260902-06 built has never had anything to
+distinguish. Inferring actuals from the calendar was offered and rejected:
+a month being over is not evidence money arrived. T-260902-17 and -18 give
+the operator the pen instead.
+
+**The company-page reference is not the mockup.** It merges Todos and
+History into one feed, collapses the two engagement cards into one, adds a
+Notes card and shows a `SYSTEM` activity row that no `ACTIVITY_KIND` can
+produce. That is a fourth deliberate divergence from the authoritative
+visual spec, so it gets ADR-018 and an in-place annotation first
+(T-260902-12), the same treatment Pipeline, Settings and company images got.
+
+Also worth stating: **the Todos sparkline needed a query, not a component.**
+`tasks.completed_at` has existed since the table did and nothing reads it;
+the mockup draws that card over a literal `[2,4,3,6,5,…]`. T-260902-19 is
+that query.
+
+**Order.** T-260902-12 → -15 is the company page. T-260902-13 → -14 and
+-13 → -16 are the rail, and -13 must land before -14 (a collapsed rail has
+to decide what a nav *group* looks like as one icon). T-260902-17 → -18 and
+-19 → -20 are each a query and the view over it. Nothing else is coupled;
+-13 is the cheapest and unblocks the most.
+
+**T-260901-31 lands inside T-260902-15.** The logo/banner control cluster
+is on the header that task rebuilds, so the open design decision is that
+task's to make rather than a tenth item.

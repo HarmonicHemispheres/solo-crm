@@ -145,6 +145,66 @@
   color: var(--faint);
 }
 
+/* ── subgroups (T-260902-13) ──────────────────────────────────────────────
+ *
+ * A header row and the rows under it. The header borrows `.nav` wholesale —
+ * same padding, radius, hover and `.on` treatment — so a group reads as one
+ * more row of the rail rather than a second kind of control, and only the
+ * caret and the children's indent are new here.
+ */
+.nav-subgroup .chev {
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .55;
+  transition: transform var(--motion-hover);
+}
+
+.nav-subgroup[aria-expanded='true'] .chev {
+  transform: rotate(90deg);
+}
+
+/* The guide line is what makes the nesting legible without a second colour:
+ * it starts under the header's glyph, so the children hang off the icon
+ * column rather than floating at an arbitrary indent. */
+.nav-children {
+  margin: 2px 0 2px 17px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Slightly quieter than a top-level row: a child is one step down, and the
+ * `.on` state (which restores full contrast) is what should draw the eye. */
+.nav-nested {
+  font-size: 12.5px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.nav-nested .ic {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+}
+
+/* X-06/§8: the caret's rotation is decoration on top of `aria-expanded` and
+ * the children's presence, so removing the transition removes nothing the
+ * state depends on. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-subgroup .chev {
+    transition: none;
+  }
+}
+
 .rail-foot {
   margin-top: auto;
   padding: 13px 17px;

@@ -113,6 +113,7 @@ const BASE_SNAPSHOT: SettingsSnapshot = {
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
   'view.data.snippets': [],
+  'nav.reportsExpanded': true,
   'onboarding.tourSeen': false
 }
 

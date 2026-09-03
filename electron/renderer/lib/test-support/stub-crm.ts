@@ -450,6 +450,7 @@ const STUB_SETTINGS_SNAPSHOT = {
   'view.people.mode': 'card' as const,
   'view.todos.groupBy': 'date' as const,
   'view.data.snippets': [],
+  'nav.reportsExpanded': true,
   // The one value here that deliberately does NOT match its registry default
   // (`false`, electron/shared/settings.ts). This stub stands in for a
   // workspace that is already up and running — every harness that reaches

@@ -41,6 +41,7 @@ const DEFAULT_SNAPSHOT: SettingsSnapshot = {
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
   'view.data.snippets': [],
+  'nav.reportsExpanded': true,
   // `true` — this harness is an established workspace, not a first run. The
   // flag's three states are Tour.test.tsx's subject; here it only has to
   // stay out of the way of the cards this file is about.
@@ -379,7 +380,12 @@ describe('WorkspaceSettings', () => {
       // overlay owns the write — there is no switch on this page that reads
       // or sets the flag, and a "mark the tour unseen" toggle would be a way
       // to make the app nag on the next restart.
-      'onboarding.tourSeen'
+      'onboarding.tourSeen',
+      // T-260902-13's Reports group. Chrome state, written by the rail's own
+      // disclosure button — the same reasoning as the `view.*` keys above:
+      // the control that sets it is where the operator sees it, and a second
+      // switch on this page would be two places to disagree about one group.
+      'nav.reportsExpanded'
     ])
     expect([...SETTINGS_KEYS].sort()).toEqual([...covered].sort())
     // The section the rebuild put each key in is asserted above; this stays a

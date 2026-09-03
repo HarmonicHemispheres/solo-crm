@@ -100,6 +100,7 @@ describe('ShellLayout', () => {
           'view.people.mode': 'card' as const,
           'view.todos.groupBy': 'date' as const,
           'view.data.snippets': [],
+          'nav.reportsExpanded': true,
           // `true`: this test is about `data-motion` at boot, and a
           // first-run overlay on top of it would be testing two things.
           'onboarding.tourSeen': true

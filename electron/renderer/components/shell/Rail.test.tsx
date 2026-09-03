@@ -37,6 +37,7 @@ const SETTINGS_SNAPSHOT: SettingsSnapshot = {
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
   'view.data.snippets': [],
+  'nav.reportsExpanded': true,
   // `true` — this file is about the rail, not about first run. The tour's
   // three conditions are asserted in Tour.test.tsx.
   'onboarding.tourSeen': true
@@ -143,6 +144,141 @@ describe('Rail', () => {
       const link = screen.getByRole('link', { name: label })
       expect(link.querySelector('.count')).toBeNull()
     }
+  })
+
+  /**
+   * T-260902-13. Revenue is one report and the engagement timeline (P3-12) is
+   * the second, so the rail's flat Revenue item became a Reports group with
+   * Revenue nested under it.
+   */
+  describe('the Reports subgroup', () => {
+    /**
+     * A `settings` pair that actually remembers. `optimisticUpdate` refetches
+     * the snapshot on settle (`invalidate.settings`), so a static
+     * `settings:getAll` would answer with the *old* value a beat after every
+     * successful write and undo it — the stub, not the rail, would be the
+     * thing under test. `stored` is main's row.
+     */
+    function settingsStore(initial: boolean, { failWrites = false, gate }: { failWrites?: boolean; gate?: Promise<void> } = {}) {
+      let stored = initial
+      return {
+        'settings:getAll': vi.fn(async () => ({
+          ok: true as const,
+          data: { ...SETTINGS_SNAPSHOT, 'nav.reportsExpanded': stored }
+        })),
+        'settings:set': vi.fn(async (payload: { key: string; value: unknown }) => {
+          // A write held open, so the optimistic window is a real window and
+          // not a race with the assertion.
+          if (gate) await gate
+          if (failWrites) {
+            return {
+              ok: true as const,
+              data: { ok: false as const, error: { code: 'validation' as const, message: 'nope' } }
+            }
+          }
+          if (payload.key === 'nav.reportsExpanded') stored = payload.value as boolean
+          return { ok: true as const, data: { ok: true as const, data: payload } }
+        })
+      } as unknown as Partial<CrmApi>
+    }
+
+    function deferred() {
+      let release!: () => void
+      const promise = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return { promise, release }
+    }
+
+    it('draws Reports as a header, not a link — it has no route of its own', () => {
+      renderRail('/')
+      expect(screen.getByRole('button', { name: /Reports/ })).toBeTruthy()
+      expect(screen.queryByRole('link', { name: 'Reports' })).toBeNull()
+    })
+
+    it('nests Revenue inside the group rather than leaving it at the top level', () => {
+      renderRail('/')
+      expect(screen.getByRole('link', { name: 'Revenue' }).className).toContain('nav-nested')
+    })
+
+    it('hides its children when collapsed, so an out-of-view link is not a Tab stop', async () => {
+      renderRail('/', vi.fn(), settingsStore(false))
+      await waitFor(() => expect(screen.queryByRole('link', { name: 'Revenue' })).toBeNull())
+      expect(screen.getByRole('button', { name: /Reports/ }).getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('expands on click and writes the new state through settings:set', async () => {
+      renderRail('/', vi.fn(), settingsStore(false))
+      const header = screen.getByRole('button', { name: /Reports/ })
+      await waitFor(() => expect(header.getAttribute('aria-expanded')).toBe('false'))
+
+      fireEvent.click(header)
+
+      await waitFor(() => expect(screen.getByRole('link', { name: 'Revenue' })).toBeTruthy())
+      expect(window.crm['settings:set']).toHaveBeenCalledWith({ key: 'nav.reportsExpanded', value: true })
+      // Still open after the settle refetch — the write reached the store,
+      // so the reconciliation agrees with the optimistic value.
+      await waitFor(() => expect(header.getAttribute('aria-expanded')).toBe('true'))
+    })
+
+    it('collapses on click, and does not spring open again just because Revenue is the active route', async () => {
+      // The failure this guards: forcing the group open whenever a child is
+      // active makes the collapse control do nothing at all while you are
+      // standing on Revenue — which is exactly when it gets reached for.
+      renderRail('/revenue', vi.fn(), settingsStore(true))
+      const header = screen.getByRole('button', { name: /Reports/ })
+      expect(header.getAttribute('aria-expanded')).toBe('true')
+
+      fireEvent.click(header)
+
+      await waitFor(() => expect(screen.queryByRole('link', { name: 'Revenue' })).toBeNull())
+      expect(window.crm['settings:set']).toHaveBeenCalledWith({ key: 'nav.reportsExpanded', value: false })
+      expect(header.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('reopens collapsed on the next launch — the state is in settings, not in component state', async () => {
+      // The acceptance's "quit and relaunch": a fresh mount reading the row
+      // the previous session wrote.
+      renderRail('/', vi.fn(), settingsStore(false))
+      await waitFor(() => expect(screen.queryByRole('link', { name: 'Revenue' })).toBeNull())
+      expect(window.crm['settings:set']).not.toHaveBeenCalled()
+    })
+
+    it('marks the header active while collapsed over the active route, so a collapsed group still says where you are', async () => {
+      renderRail('/revenue', vi.fn(), settingsStore(false))
+      const header = screen.getByRole('button', { name: /Reports/ })
+      await waitFor(() => expect(header.getAttribute('aria-expanded')).toBe('false'))
+      expect(header.className).toContain('on')
+      // `true`, not `page`: the header is not itself the page.
+      expect(header.getAttribute('aria-current')).toBe('true')
+    })
+
+    it('leaves the header unmarked when expanded — the child carries the highlight', () => {
+      renderRail('/revenue')
+      expect(screen.getByRole('button', { name: /Reports/ }).getAttribute('aria-current')).toBeNull()
+      expect(screen.getByRole('link', { name: 'Revenue' }).getAttribute('aria-current')).toBe('page')
+    })
+
+    it('rolls back to collapsed when the write fails, rather than claiming a state main never stored', async () => {
+      const write = deferred()
+      renderRail('/', vi.fn(), settingsStore(false, { failWrites: true, gate: write.promise }))
+      const header = screen.getByRole('button', { name: /Reports/ })
+      await waitFor(() => expect(header.getAttribute('aria-expanded')).toBe('false'))
+
+      fireEvent.click(header)
+      // Optimistic, while the write is still in flight.
+      await waitFor(() => expect(screen.getByRole('link', { name: 'Revenue' })).toBeTruthy())
+
+      write.release()
+
+      await waitFor(() => expect(screen.queryByRole('link', { name: 'Revenue' })).toBeNull())
+      expect(header.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    it('defaults to expanded while settings:getAll is still in flight, so a cold start never hides the only report', () => {
+      renderRail('/', vi.fn(), { 'settings:getAll': vi.fn(() => new Promise(() => {})) as unknown as CrmApi['settings:getAll'] })
+      expect(screen.getByRole('link', { name: 'Revenue' })).toBeTruthy()
+    })
   })
 
   it('applies the off-canvas "open" class only when told to', () => {

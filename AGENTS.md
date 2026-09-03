@@ -51,7 +51,12 @@ in `.dev/`, never into the working tree.
   [ADR-014](.dev/decisions/ADR-014-settings-layout.md), annotated in place at
   `views.settings` — because the grid reflows by window width and the page
   outgrew the region ceiling; the cards' contents are still the spec, and Data
-  stays its own view.
+  stays its own view. A fourth exception: the mockup's rail draws **Revenue**
+  as a flat Work item. The shipped rail draws a **Reports** subgroup in that
+  position with Revenue nested inside it — T-260902-13, annotated in place —
+  because Revenue is one report and the engagement timeline (P3-12) is the
+  second. No ADR: a rearrangement of one nav item, the same weight as the
+  brand block above.
 - [planning/solo-crm-requirements.md](planning/solo-crm-requirements.md) — scope,
   data model, integrations, non-functional requirements.
 - [CONVENTIONS.md](CONVENTIONS.md) — date, timestamp and money representations.
