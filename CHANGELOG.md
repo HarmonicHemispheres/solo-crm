@@ -5,6 +5,14 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.6
+
+- ⚡ **Revenue moved into a Reports group** — the sidebar's Revenue item is
+  now a **Reports** heading you expand, with Revenue inside it and room for
+  the reports still to come; it stays how you leave it between launches.
+
+*1 task closed, 0 follow-up fixes, 95 min median.*
+
 ## 0.6.5
 
 - 🐛 **Fixed-scope engagements show up on Revenue** — a fixed scope with no
