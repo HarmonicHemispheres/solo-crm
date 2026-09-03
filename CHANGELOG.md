@@ -5,7 +5,7 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
-## Unreleased
+## 0.6.8
 
 - ✨ **Mark a line invoiced or paid** — the Revenue page lists the lines
   behind its chart, and each one moves between projected, invoiced and paid.
