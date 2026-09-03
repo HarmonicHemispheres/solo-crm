@@ -5,6 +5,21 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.7
+
+- ✨ **The engagement timeline** — every engagement as a bar across the
+  months under **Reports → Timeline**, grouped by who pays. A rolling
+  engagement fades at the right edge instead of ending on a date nobody
+  entered, work you have not signed is drawn dashed, and a fixed scope's
+  milestones sit at the month each is expected — filled once completed.
+  Filter to active only, and switch between this year, the next twelve
+  months, and everything. Click a bar to open the engagement.
+- 🐛 **End clients are in the company list again** — a company you bill
+  through a partner used to disappear from Companies the moment you created
+  it, findable only by search or by opening the partner. Every company is
+  listed now, an end client marked with the partner it bills through, with a
+  **Direct only** switch for the partners on their own.
+
 ## 0.6.6
 
 - ⚡ **Revenue moved into a Reports group** — the sidebar's Revenue item is
