@@ -3,9 +3,12 @@ import type { SearchKind } from '../shared/search'
 import type { SettingKey } from '../shared/settings'
 
 /**
- * The ten views the mockup ships, minus Pipeline (ADR-005, T-260828-02) — the
- * rail's three nav groups, unchanged. `id` matches the mockup's own
- * `data-view` values so this table reads against the mockup 1:1.
+ * The ten views the mockup ships, minus Pipeline (ADR-005, T-260828-02), plus
+ * the engagement timeline the mockup draws as a toggle on Engagements and
+ * this app gives its own route (T-260902-16, P3-12) — the rail's three nav
+ * groups. `id` matches the mockup's own `data-view` values so this table
+ * reads against the mockup 1:1, `timeline` excepted: the mockup has no
+ * `data-view` for it.
  *
  * Plain data/logic, no JSX — split out of `routes.tsx` so that file can stay
  * component-only (`react-refresh/only-export-components` disallows mixing
@@ -17,6 +20,7 @@ export type NavId =
   | 'today'
   | 'todos'
   | 'revenue'
+  | 'timeline'
   | 'activity'
   | 'companies'
   | 'people'
@@ -89,6 +93,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'today', label: 'Today', path: '/', group: 'Work' },
   { id: 'todos', label: 'Todos', path: '/todos', group: 'Work' },
   { id: 'revenue', label: 'Revenue', path: '/revenue', group: 'Work', parent: 'reports' },
+  { id: 'timeline', label: 'Timeline', path: '/timeline', group: 'Work', parent: 'reports' },
   { id: 'activity', label: 'Activity', path: '/activity', group: 'Work' },
   { id: 'companies', label: 'Companies', path: '/companies', group: 'Records' },
   { id: 'people', label: 'People', path: '/people', group: 'Records' },
@@ -119,6 +124,7 @@ export const ROUTE_META: readonly RouteMeta[] = [
   // 'Reports / Revenue', the way '/workspace/data' reads 'Workspace / Data':
   // the crumb names the rail group the route sits in, not only the page.
   { path: '/revenue', navId: 'revenue', breadcrumb: 'Reports / Revenue' },
+  { path: '/timeline', navId: 'timeline', breadcrumb: 'Reports / Timeline' },
   { path: '/activity', navId: 'activity', breadcrumb: 'Activity' },
   { path: '/companies', navId: 'companies', breadcrumb: 'Companies' },
   { path: '/company/:id', navId: 'companies', breadcrumb: 'Companies /' },

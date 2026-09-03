@@ -1,0 +1,244 @@
+/* The engagement timeline (T-260902-16, P3-12) —
+   planning/solo-crm-mockup.html's `.gantt` block (~line 347), ported with
+   three changes, each noted where it is made:
+
+   - `.gplot` is `position: relative` per row, as in the mockup, but the
+     "now" line is drawn once for the whole card rather than once per row.
+     Sixty rows meant sixty absolutely-positioned dividers stacked on the
+     same pixel column.
+   - `.gbar` is an `<a>`, not a `<div onclick>`, so it is a Tab stop and
+     Enter activates it — the mockup's bar is reachable by mouse only.
+   - `.gms` ticks sit at their milestone's own `expected_month`, not evenly
+     spaced across the bar (the mockup divides by milestone count). That is
+     this task's acceptance and it is the whole point of the tick. */
+
+.tl-controls {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.gantt {
+  position: relative;
+  padding: 0 15px 15px;
+}
+
+.ghead {
+  display: flex;
+}
+
+.ghead .sp {
+  width: var(--gantt-label);
+  flex: 0 0 var(--gantt-label);
+}
+
+.gmonths {
+  display: flex;
+  flex: 1;
+  position: relative;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 9px;
+}
+
+.gmonths span {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--faint);
+  text-align: center;
+  padding: 5px 0;
+  border-left: 1px solid var(--border);
+  letter-spacing: .5px;
+}
+
+/* January carries the year instead of a month initial, so a multi-year
+   window reads without a second header row. */
+.gmonths span.yr {
+  color: var(--slate);
+  border-left-color: var(--border-bright);
+}
+
+/* The billing-party heading each run of rows hangs under. */
+.ghroup {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 0 5px;
+}
+
+.ghroup-n {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.gwrap {
+  display: flex;
+  align-items: center;
+}
+
+.glabel {
+  width: var(--gantt-label);
+  flex: 0 0 var(--gantt-label);
+  padding-right: 12px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mute);
+}
+
+.gplot {
+  position: relative;
+  flex: 1;
+  height: 30px;
+  min-width: 0;
+}
+
+.gbar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 19px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--papyrus);
+}
+
+.gbar:hover {
+  filter: brightness(1.18);
+}
+
+.gbar-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Colour by billing model, the mockup's own four. Colour is never the only
+   carrier of a distinction here: signed/unsigned is the dash, rolling is the
+   fade, and the model is also stated on the engagement's own card. */
+.gbar.g-retainer {
+  background: color-mix(in srgb, var(--verdigris) 24%, transparent);
+  border: 1px solid var(--verdigris);
+}
+
+.gbar.g-fixed {
+  background: color-mix(in srgb, var(--lapis) 22%, transparent);
+  border: 1px solid var(--lapis);
+}
+
+.gbar.g-tm {
+  background: color-mix(in srgb, var(--slate) 20%, transparent);
+  border: 1px solid var(--slate);
+}
+
+.gbar.g-equity {
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+  border: 1px solid var(--gold);
+}
+
+/* `billing_model` null or 'none' — a bar with no model still has a term to
+   draw, so it gets the neutral surface rather than being left invisible. */
+.gbar.g-none {
+  background: var(--surface-3);
+  border: 1px solid var(--border-bright);
+}
+
+/* Not signed: dashed and faded, so it survives a greyscale print and a
+   colour-vision deficiency — the same rule RevenueChart's projected
+   segments follow. */
+.gbar.ghost {
+  opacity: .55;
+  border-style: dashed;
+}
+
+/* `ends_on = NULL`. The bar runs to the right edge of the window and fades
+   out, rather than ending on a date nobody entered. */
+.gbar.rolling::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 34px;
+  background: linear-gradient(90deg, transparent, var(--surface));
+  pointer-events: none;
+}
+
+/* A fixed scope's milestone, at the month it is expected. Hollow until it is
+   completed, filled after. */
+.gms {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  transform: translate(-50%, -50%);
+  background: var(--surface);
+  border: 1.5px solid currentColor;
+}
+
+.gms.on {
+  background: currentColor;
+}
+
+/* One divider for the card, not one per row — see this file's header. It
+   spans the plot column only, which is why it is inset by the label width. */
+.gnow-wrap {
+  position: absolute;
+  left: calc(15px + var(--gantt-label));
+  right: 15px;
+  top: 34px;
+  bottom: 15px;
+  pointer-events: none;
+}
+
+.gnow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--gold);
+  opacity: .75;
+}
+
+.gnow::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -2.5px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--gold);
+}
+
+/* The label column is a fixed width so every row's bars share one origin;
+   below 900px that width is what the plot cannot afford, so it shrinks
+   rather than the plot scrolling sideways (ui-design.md: the page body never
+   scrolls horizontally). */
+.gantt {
+  --gantt-label: 190px;
+}
+
+@media (max-width: 900px) {
+  .gantt {
+    --gantt-label: 120px;
+  }
+}
+
+@media (max-width: 700px) {
+  .gantt {
+    --gantt-label: 92px;
+  }
+
+  .glabel {
+    font-size: 11px;
+    padding-right: 8px;
+  }
+}

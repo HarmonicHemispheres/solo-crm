@@ -113,6 +113,21 @@ export function DataIcon(props: ShellIconProps) {
 }
 
 /**
+ * The engagement timeline's glyph (T-260902-16, P3-12). Three bars of
+ * different lengths at different offsets — the shape the page itself draws,
+ * which is what tells it apart from `RevenueIcon`'s bars rising from a
+ * shared baseline. The mockup has no rail item for this view and so no glyph
+ * to copy.
+ */
+export function TimelineIcon(props: ShellIconProps) {
+  return (
+    <svg {...DEFAULT_PROPS} {...props}>
+      <path d="M3 7h10M7 12h13M3 17h8" />
+    </svg>
+  )
+}
+
+/**
  * The Reports subgroup header's glyph (T-260902-13). The mockup has no
  * subgroups and so no glyph to copy — this is a sheet with two ruled lines,
  * deliberately *not* the bar chart `RevenueIcon` draws: the header and the

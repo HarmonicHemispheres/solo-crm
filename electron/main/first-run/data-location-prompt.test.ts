@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DATA_ROOT_POINTER_FILENAME, resolveDataRoot } from '../db/data-root'
 import { PORTABLE_EXECUTABLE_DIR_ENV, type PortableLaunchProbe } from '../db/portable'
@@ -362,20 +361,23 @@ describe('a chosen folder is proven writable before the pointer is committed', (
   })
 })
 
-describe('the "use the default" behaviour and ADR-006 agree', () => {
-  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-  const adrPath = join(repoRoot, '.dev', 'decisions', 'ADR-006-data-root-pointer-file.md')
-
-  it('ADR-006 still states that no pointer file present is the default', () => {
-    // The code below writes no pointer for "use the default" *because* the
-    // ADR says this. If the ADR is ever amended to pin the default instead,
-    // this fails and the two are reconciled deliberately rather than
-    // drifting apart in silence (T-260828-57's Acceptance).
-    const adr = readFileSync(adrPath, 'utf-8')
-    expect(adr).toContain('No pointer file present is the default')
-  })
-
-  it('and the chooser writes no pointer for that choice', async () => {
+/**
+ * **The rule, stated here because the document that used to state it is
+ * gone.** "Use the default" writes no pointer file: absence *is* the
+ * default, so an installed build follows `app.getPath('userData')` wherever
+ * the platform puts it, and a machine that later moves is not pinned to a
+ * path it recorded once. Pinning the default instead would be a deliberate
+ * change to make, and this test is what makes it deliberate.
+ *
+ * This used to be two tests, the first reading
+ * `.dev/decisions/ADR-006-data-root-pointer-file.md` and asserting the
+ * sentence above appeared in it, so code and decision could not drift apart
+ * silently. That directory was removed from the repository, and a test that
+ * reads a missing file guards nothing — it only fails. The behavioural half
+ * below is the half that was ever load-bearing.
+ */
+describe('"use the default" writes no pointer file', () => {
+  it('the chooser writes no pointer for that choice', async () => {
     const userDataDir = trackedTmpDir('solo-crm-firstrun-userdata-')
     const dialog = scriptedDialog([0])
 

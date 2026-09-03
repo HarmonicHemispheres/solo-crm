@@ -40,6 +40,7 @@ const ROUTES = [
   ['today', '/'],
   ['todos', '/todos'],
   ['revenue', '/revenue'],
+  ['timeline', '/timeline'],
   ['activity', '/activity'],
   ['companies', '/companies'],
   ['company', { from: '/companies', match: '/company/' }],

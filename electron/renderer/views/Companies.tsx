@@ -137,10 +137,39 @@ const BAND_COLOR: Record<DecayBand, string> = {
 // nor table re-derives them.
 // ---------------------------------------------------------------------------
 
+/** Which companies the grid draws. `all` includes end clients — companies
+ * you deliver to but invoice through someone else — marked `via <partner>`;
+ * `direct` is the billing-partner list on its own. */
+const SCOPE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'direct', label: 'Direct only' }
+] as const
+type CompanyScope = (typeof SCOPE_OPTIONS)[number]['value']
+
+/** "via Acme", or an honest fallback when the partner is not in the list —
+ * never a blank, which would read as a company that bills directly. */
+function viaLabel(billedVia: string | null): string {
+  return billedVia === null ? 'via another company' : `via ${billedVia}`
+}
+
 interface CompanyRow {
   company: Company
   activeEngagements: number
   endClients: number
+  /**
+   * Whether this company is billed through another one — read from the id,
+   * not from whether the name resolved. A partner missing from the list
+   * would otherwise silently reclassify its end client as direct and hide it
+   * from `Direct only`, which is the exact failure this whole row shape
+   * exists to stop.
+   */
+  isEndClient: boolean
+  /**
+   * The billing partner's name, when the list holds it. Carried on the row
+   * so a card and a table row both say "via Acme" from one lookup rather
+   * than each resolving the id again.
+   */
+  billedVia: string | null
   /**
    * Computed once per row, in the same memo as the counts and for the same
    * reason: the card and the table row are two presentations of one company,
@@ -213,6 +242,7 @@ export function Companies() {
   const queryClient = useQueryClient()
   const { openSheet } = useLayerManager()
   const [sort, setSort] = useState<SortState | null>(null)
+  const [scope, setScope] = useState<CompanyScope>('all')
 
   // Read once per mount, not per render — the same reasoning Today.tsx and
   // CompanyDetail.tsx state for their own clocks: an inline `new Date()`
@@ -298,24 +328,41 @@ export function Companies() {
       if (company.billedViaCompanyId == null) continue
       endClientsByParent.set(company.billedViaCompanyId, (endClientsByParent.get(company.billedViaCompanyId) ?? 0) + 1)
     }
-    // End clients are excluded from the top level (this task's Scope): a
-    // company billed via another one belongs on that company's detail page,
-    // not as a peer row here.
-    return companies
-      .filter((company) => company.billedViaCompanyId == null)
-      .map((company) => ({
-        company,
-        activeEngagements: activeByBiller.get(company.id) ?? 0,
-        endClients: endClientsByParent.get(company.id) ?? 0,
-        decay: decayForCompany(company, settings, now)
-      }))
+    // This list used to drop every company with a `billedViaCompanyId` — an
+    // end client "belongs on that company's detail page, not as a peer row
+    // here". The tidiness was real and the cost was worse: a company created
+    // as billed-through-another vanished from the only place you browse
+    // companies, reachable afterwards only by search or by already knowing
+    // which parent to open. A record you cannot find is not a tidier list.
+    //
+    // So every company is a row, and `scope` below decides which are drawn.
+    // An end client is marked `via <partner>` rather than presented as a
+    // peer, which is what the original exclusion was really protecting.
+    const namesById = new Map(companies.map((company) => [company.id, company.name] as const))
+    return companies.map((company) => ({
+      company,
+      activeEngagements: activeByBiller.get(company.id) ?? 0,
+      endClients: endClientsByParent.get(company.id) ?? 0,
+      isEndClient: company.billedViaCompanyId != null,
+      billedVia: company.billedViaCompanyId == null ? null : (namesById.get(company.billedViaCompanyId) ?? null),
+      decay: decayForCompany(company, settings, now)
+    }))
   }, [companiesQuery.data, engagementsQuery.data, settingsQuery.data, now])
 
+  // Default `all`: the failure this replaces was a company nobody could
+  // find, so the state that shows everything is the one a fresh launch lands
+  // on. `direct` is there for the operator who wants the billing-partner
+  // list on its own.
+  const scopedRows = useMemo(
+    () => (scope === 'direct' ? rows.filter((row) => !row.isEndClient) : rows),
+    [rows, scope]
+  )
+
   const sortedRows = useMemo(() => {
-    if (!sort) return rows
+    if (!sort) return scopedRows
     const sign = sort.direction === 'asc' ? 1 : -1
-    return [...rows].sort((a, b) => sign * compareRows(a, b, sort.column))
-  }, [rows, sort])
+    return [...scopedRows].sort((a, b) => sign * compareRows(a, b, sort.column))
+  }, [scopedRows, sort])
 
   function handleSort(column: SortColumn) {
     setSort((previous) => {
@@ -336,9 +383,10 @@ export function Companies() {
       icon={<CompaniesGlyph />}
       accent="var(--lapis)"
       title="Companies"
-      description="End clients are companies you deliver to but do not invoice. They carry their own contacts, budget and touchpoints while revenue rolls up to the billing partner."
+      description="End clients are companies you deliver to but do not invoice. They carry their own contacts, budget and touchpoints while revenue rolls up to the billing partner — they are listed here too, marked with the partner they bill through. Switch to Direct only for the billing partners on their own."
       actions={
         <>
+          <Toggle aria-label="Which companies to list" options={SCOPE_OPTIONS} value={scope} onChange={setScope} />
           <Toggle
             aria-label="Companies view presentation"
             options={PRESENTATION_OPTIONS}
@@ -368,6 +416,20 @@ export function Companies() {
       <div>
         {header}
         <EmptyState>{loadError.message}</EmptyState>
+      </div>
+    )
+  }
+
+  // Every company is an end client, and the scope is hiding all of them.
+  // "No companies yet" would be a lie, and the fix is one click away, so say
+  // which one rather than offering to create a company that already exists.
+  if (sortedRows.length === 0 && rows.length > 0) {
+    return (
+      <div>
+        {header}
+        <EmptyState>
+          Every company here bills through a partner. Switch to <strong>All</strong> to see them.
+        </EmptyState>
       </div>
     )
   }
@@ -503,7 +565,7 @@ function CompanyCard({
   images: CompanyImages
   onOpen: (id: string) => void
 }) {
-  const { company, activeEngagements, endClients, decay } = row
+  const { company, activeEngagements, endClients, isEndClient, billedVia, decay } = row
   const banner = images?.banner?.dataUrl ?? null
   return (
     // `.has-banner` is what carries every rule the wash needs — the stacking
@@ -536,7 +598,10 @@ function CompanyCard({
         <CompanyMark name={company.name} size={38} logo={images?.logo?.dataUrl} />
         <div className="grow">
           <div className="nm trunc">{company.name}</div>
-          <div className="meta">{company.website ?? '—'}</div>
+          {/* The partner replaces the website rather than adding a third
+              line: for an end client, who invoices it is the fact that
+              explains why it is not a peer of the row above. */}
+          <div className="meta trunc">{isEndClient ? viaLabel(billedVia) : (company.website ?? '—')}</div>
         </div>
         <Ring pct={decay.pct} size={30} color={BAND_COLOR[decay.band]} />
       </div>
@@ -637,7 +702,7 @@ function CompanyTableRow({
   images: CompanyImages
   onOpen: (id: string) => void
 }) {
-  const { company, activeEngagements, endClients, decay } = row
+  const { company, activeEngagements, endClients, isEndClient, billedVia, decay } = row
   const activate = () => onOpen(company.id)
   const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -658,8 +723,12 @@ function CompanyTableRow({
           <CompanyMark name={company.name} size={26} logo={images?.logo?.dataUrl} />
           <div className="grow">
             <div className="trunc nm">{company.name}</div>
-            <div className="meta">
-              {endClients > 0 ? `${endClients} end client${endClients > 1 ? 's' : ''}` : (company.website ?? '—')}
+            <div className="meta trunc">
+              {isEndClient
+                ? viaLabel(billedVia)
+                : endClients > 0
+                  ? `${endClients} end client${endClients > 1 ? 's' : ''}`
+                  : (company.website ?? '—')}
             </div>
           </div>
         </div>

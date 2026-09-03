@@ -85,9 +85,11 @@ function renderRail(path: string, onNavigate = vi.fn(), crmOverrides: Partial<Cr
 }
 
 describe('Rail', () => {
-  it('renders all ten views across three groups, and nothing for the dropped Pipeline view', () => {
+  it('renders all eleven views across three groups, and nothing for the dropped Pipeline view', () => {
     renderRail('/')
-    expect(NAV_ITEMS).toHaveLength(10)
+    // Ten from the mockup, minus Pipeline (ADR-005), plus the engagement
+    // timeline the mockup draws as a toggle on Engagements (T-260902-16).
+    expect(NAV_ITEMS).toHaveLength(11)
     for (const item of NAV_ITEMS) {
       expect(screen.getByRole('link', { name: item.label })).toBeTruthy()
     }

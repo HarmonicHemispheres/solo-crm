@@ -8,13 +8,14 @@ import { PersonDetail } from './views/PersonDetail'
 import { Engagements } from './views/Engagements'
 import { Offerings } from './views/Offerings'
 import { Revenue } from './views/Revenue'
+import { Timeline } from './views/Timeline'
 import { Today } from './views/Today'
 import { Todos } from './views/Todos'
 import { WorkspaceSettings } from './views/WorkspaceSettings'
 import { WorkspaceData } from './views/WorkspaceData'
 
 /**
- * The route tree: the ten views, the two detail routes, and Settings/Data
+ * The route tree: the eleven views, the two detail routes, and Settings/Data
  * nested under `/workspace` per X-01 rather than as top-level entries. Every
  * leaf here has a matching row in `nav.ts`'s `ROUTE_META` — `routes.test.tsx`
  * checks the two tables agree.
@@ -26,6 +27,7 @@ export function AppRoutes() {
         <Route index element={<Today />} />
         <Route path="todos" element={<Todos />} />
         <Route path="revenue" element={<Revenue />} />
+        <Route path="timeline" element={<Timeline />} />
         <Route path="activity" element={<Activity />} />
         <Route path="companies" element={<Companies />} />
         <Route path="company/:id" element={<CompanyDetail />} />

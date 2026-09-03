@@ -21,6 +21,7 @@ import {
   ReportsIcon,
   RevenueIcon,
   SettingsIcon,
+  TimelineIcon,
   TodayIcon,
   TodosIcon,
   type ShellIconProps
@@ -54,6 +55,7 @@ const NAV_ICONS: Record<NavId, (props: ShellIconProps) => ReactElement> = {
   today: TodayIcon,
   todos: TodosIcon,
   revenue: RevenueIcon,
+  timeline: TimelineIcon,
   activity: ActivityIcon,
   companies: CompaniesIcon,
   people: PeopleIcon,

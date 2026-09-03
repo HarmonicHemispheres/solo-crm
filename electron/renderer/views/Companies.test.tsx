@@ -190,16 +190,60 @@ function expectRealCompanyForm(dialog: HTMLElement): void {
 }
 
 describe('Companies', () => {
-  it('excludes a company that only appears as another one\'s end client — the seed fixture\'s W+K and Programetrix', async () => {
-    renderCompanies()
-    await waitFor(() => expect(screen.getByText('EZDeploy')).toBeTruthy())
+  /**
+   * This list used to drop every company with a `billedViaCompanyId`. The
+   * tidiness was real and the cost was worse: a company created as billed
+   * through another one vanished from the only place you browse companies,
+   * findable afterwards only by search or by already knowing which parent to
+   * open. These four cover the replacement.
+   */
+  describe('end clients', () => {
+    it('lists an end client alongside its billing partner rather than hiding it', async () => {
+      renderCompanies()
+      await waitFor(() => expect(screen.getByText('EZDeploy')).toBeTruthy())
 
-    expect(screen.getByText('Rinvii')).toBeTruthy()
-    expect(screen.queryByText('W+K')).toBeNull()
-    expect(screen.queryByText('Programetrix')).toBeNull()
-    // Surfaced instead as EZDeploy's own end-client count (both W+K and
-    // Programetrix are billed via EZDeploy).
-    expect(screen.getByText('2 end clients')).toBeTruthy()
+      expect(screen.getByText('Rinvii')).toBeTruthy()
+      // The two the old filter dropped. Both are billed via EZDeploy.
+      expect(screen.getByText('W+K')).toBeTruthy()
+      expect(screen.getByText('Programetrix')).toBeTruthy()
+    })
+
+    it('marks an end client with the partner it bills through, so it does not read as a peer', async () => {
+      renderCompanies()
+      await waitFor(() => expect(screen.getByText('W+K')).toBeTruthy())
+      expect(screen.getAllByText('via EZDeploy')).toHaveLength(2)
+      // And the partner still states how many hang off it.
+      expect(screen.getByText('2 end clients')).toBeTruthy()
+    })
+
+    it('hides them again under Direct only', async () => {
+      renderCompanies()
+      await waitFor(() => expect(screen.getByText('W+K')).toBeTruthy())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Direct only' }))
+
+      await waitFor(() => expect(screen.queryByText('W+K')).toBeNull())
+      expect(screen.queryByText('Programetrix')).toBeNull()
+      expect(screen.getByText('EZDeploy')).toBeTruthy()
+      expect(screen.getByText('2 end clients')).toBeTruthy()
+    })
+
+    it('says which control is hiding them when Direct only empties the list, rather than "no companies yet"', async () => {
+      renderCompanies({ companies: [WK, PROGRAMETRIX] })
+      await waitFor(() => expect(screen.getByText('W+K')).toBeTruthy())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Direct only' }))
+
+      await waitFor(() => expect(screen.getByText(/Every company here bills through a partner/)).toBeTruthy())
+      expect(screen.queryByText(/No companies yet/)).toBeNull()
+    })
+
+    it('carries the marker into the list presentation too', async () => {
+      renderCompanies({ mode: 'list' })
+      await waitFor(() => expect(screen.getByRole('columnheader', { name: /company/i })).toBeTruthy())
+      expect(screen.getByText('W+K')).toBeTruthy()
+      expect(screen.getAllByText('via EZDeploy')).toHaveLength(2)
+    })
   })
 
   it('renders the same record set — same count, same default order — in both presentations', async () => {
@@ -217,7 +261,11 @@ describe('Companies', () => {
   })
 
   it('sorts the list on a column click, and the order survives switching to cards and back', async () => {
-    renderCompanies({ mode: 'list' })
+    // The two direct companies only. This test is about ordering, and the
+    // default fixture's end clients carry "via EZDeploy" in their metadata
+    // line, which the row-name matcher below would pick up as a third and
+    // fourth "EZDeploy".
+    renderCompanies({ mode: 'list', companies: [EZDEPLOY, RINVII] })
     await waitFor(() => expect(screen.getByRole('columnheader', { name: /company/i })).toBeTruthy())
 
     const rowsInOrder = () => screen.getAllByRole('row').slice(1).map((row) => within(row).getAllByText(/EZDeploy|Rinvii/)[0].textContent)

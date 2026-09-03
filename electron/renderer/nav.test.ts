@@ -95,7 +95,7 @@ describe('railRowsFor', () => {
       'activity'
     ])
     const reports = rows.find((row) => row.kind === 'subgroup')
-    expect(reports?.kind === 'subgroup' && reports.items.map((item) => item.id)).toEqual(['revenue'])
+    expect(reports?.kind === 'subgroup' && reports.items.map((item) => item.id)).toEqual(['revenue', 'timeline'])
   })
 
   it('emits a subgroup once however many members it has', () => {
