@@ -225,9 +225,20 @@ function renderEngagements({
 }
 
 function cardFor(name: string): HTMLElement {
-  const card = screen.getByText(name).closest('.eng')
-  if (!card) throw new Error(`no .eng ancestor for "${name}"`)
+  const card = screen.getByText(name).closest('.engrow')
+  if (!card) throw new Error(`no .engrow ancestor for "${name}"`)
   return card as HTMLElement
+}
+
+/** The page opens grouped by client; three tests below are about the status
+ * grouping specifically and switch to it first. */
+function groupBy(label: 'Client' | 'Status' | 'Model'): void {
+  fireEvent.click(within(screen.getByRole('group', { name: 'Group by' })).getByRole('button', { name: label }))
+}
+
+/** The amount column's text, with the unit ("/ mo") that sits in a child span of the same figure. */
+function amountIn(card: HTMLElement): string {
+  return (card.querySelector('.engrow-value') as HTMLElement | null)?.textContent?.trim() ?? ''
 }
 
 /**
@@ -254,15 +265,18 @@ describe('Engagements', () => {
     renderEngagements()
     await screen.findByText('Advisory retainer')
 
-    // 20 hrs x $165.
-    expect(within(cardFor('Advisory retainer')).getByText('$3300.00 / mo')).toBeTruthy()
+    // 20 hrs x $165. The figure and its unit are one amount in two
+    // elements — the unit is set apart so a column of prices lines up on the
+    // digits.
+    expect(amountIn(cardFor('Advisory retainer'))).toContain('$3300.00')
+    expect(amountIn(cardFor('Advisory retainer'))).toContain('/ mo')
     expect(within(cardFor('Advisory retainer')).getByText('20 hrs × $165.00')).toBeTruthy()
 
-    expect(within(cardFor('Fixed-scope build')).getByText('$18000.00')).toBeTruthy()
+    expect(amountIn(cardFor('Fixed-scope build'))).toContain('$18000.00')
     expect(await within(cardFor('Fixed-scope build')).findByText('1 of 3 milestones')).toBeTruthy()
 
     // 30 hrs x $165 is $4,950, under the $5,000 cap, so the cap does not bite.
-    expect(within(cardFor('Platform advisory')).getByText('$4950.00')).toBeTruthy()
+    expect(amountIn(cardFor('Platform advisory'))).toContain('$4950.00')
     expect(within(cardFor('Platform advisory')).getByText('~30 hrs × $165.00 / hr')).toBeTruthy()
   })
 
@@ -274,8 +288,8 @@ describe('Engagements', () => {
     })
     await screen.findByText('Capped work')
 
-    expect(within(cardFor('Capped work')).getByText('$5000.00')).toBeTruthy()
-    expect(within(cardFor('Capped work')).queryByText('$6600.00')).toBeNull()
+    expect(amountIn(cardFor('Capped work'))).toContain('$5000.00')
+    expect(amountIn(cardFor('Capped work'))).not.toContain('$6600.00')
   })
 
   it('an unpriced engagement says so rather than showing a zero', async () => {
@@ -313,7 +327,7 @@ describe('Engagements', () => {
           billingModel: 'retainer',
           offeringVersionId: 'ver-advisory-2',
           offeringId: 'off-advisory',
-          offeringName: 'Advisory retainer',
+          offeringName: 'Advisory package',
           agreedRateCents: 350_000
         }),
         retainerEngagement
@@ -321,15 +335,19 @@ describe('Engagements', () => {
     })
     await screen.findByText('Sold advisory')
 
+    // The offering's name behind a price-tag glyph — the words "sold as"
+    // were two more to read on a row that now says it with an icon.
     const sold = cardFor('Sold advisory')
-    expect(sold.querySelector('.sold-as')?.textContent).toContain('sold as Advisory retainer')
+    expect(within(sold).getByText('Advisory package')).toBeTruthy()
     // No price on the card. `agreedRateCents` is 350000 on this fixture and
     // the offering is quoted somewhere else entirely; neither belongs here
-    // (P3-03 — the card labels the sale, it does not report a rate).
+    // (P3-03 — the row labels the sale, it does not report a rate).
     expect(sold.textContent).not.toMatch(/3500|\$/)
 
-    // Sold from nothing renders no label at all, not an empty one.
-    expect(cardFor('Advisory retainer').querySelector('.sold-as')).toBeNull()
+    // Sold from nothing names no offering: this row's only facts are its
+    // term and its price.
+    const unsold = cardFor('Advisory retainer')
+    expect(unsold.querySelectorAll('.engrow-fact')).toHaveLength(1)
   })
 
   it('renders no progress shape at all for equity or none — the shape reserved for a model it does not apply to', async () => {
@@ -339,10 +357,14 @@ describe('Engagements', () => {
     const equityCard = cardFor('Equity position')
     expect(equityCard.querySelector('.bar')).toBeNull()
     expect(equityCard.querySelector('.prog')).toBeNull()
+    // And no amount column content: there is no price to state, and
+    // inventing "No price set" on every equity deal is text for nothing.
+    expect(amountIn(equityCard)).toBe('')
 
     const noneCard = cardFor('Grant advisory')
     expect(noneCard.querySelector('.bar')).toBeNull()
     expect(noneCard.querySelector('.prog')).toBeNull()
+    expect(amountIn(noneCard)).toBe('')
   })
 
   it('claims no hours at all — no "Provisional", no consumed figure, no empty bar', async () => {
@@ -372,6 +394,9 @@ describe('Engagements', () => {
   it('names both companies when billing and client differ, and just one when they match', async () => {
     renderEngagements()
     await screen.findByText('Advisory retainer')
+    // Grouped by status, so the payer is the row's to name — grouped by
+    // client it is the card's heading, and the next test covers that.
+    groupBy('Status')
 
     const sameCard = cardFor('Advisory retainer')
     expect(within(sameCard).getByRole('link', { name: 'Acme' })).toBeTruthy()
@@ -383,9 +408,113 @@ describe('Engagements', () => {
     expect(differentCard.textContent).toContain('for')
   })
 
+  it('groups by the billing party by default, one card per payer, and never repeats the payer on its rows', async () => {
+    // The default the page changed to. Acme bills five of the seven
+    // fixtures; Biller Co bills the split-billing one.
+    renderEngagements()
+    await screen.findByText('Advisory retainer')
+
+    const acmeCard = screen.getByRole('heading', { name: 'Acme' }).closest('.card') as HTMLElement
+    expect(within(acmeCard).getAllByText(/Advisory retainer|Platform advisory|Equity position|Grant advisory|Discovery audit|VedX support agent/)).toHaveLength(6)
+    // The heading names the payer — and is a link to it — so no *row*
+    // inside repeats it.
+    expect(within(acmeCard).getAllByRole('link', { name: 'Acme' })).toHaveLength(1)
+    for (const row of acmeCard.querySelectorAll('.engrow')) {
+      expect(within(row as HTMLElement).queryByRole('link', { name: 'Acme' })).toBeNull()
+    }
+
+    const billerCard = screen.getByRole('heading', { name: 'Biller Co' }).closest('.card') as HTMLElement
+    expect(within(billerCard).getByText('Fixed-scope build')).toBeTruthy()
+    // Work delivered for someone else still files under its payer, and the
+    // row says who it is for.
+    expect(within(billerCard).getByRole('link', { name: 'Client Co' })).toBeTruthy()
+  })
+
+  it('groups by model, with an engagement filed under the model it is priced by', async () => {
+    renderEngagements()
+    await screen.findByText('Advisory retainer')
+    groupBy('Model')
+
+    const fixedCard = screen.getByRole('heading', { name: 'Fixed' }).closest('.card') as HTMLElement
+    // Three fixed-scope fixtures: the build, the lost audit, the delivered agent.
+    expect(within(fixedCard).getByText('Fixed-scope build')).toBeTruthy()
+    expect(within(fixedCard).getByText('Discovery audit')).toBeTruthy()
+    expect(within(fixedCard).getByText('VedX support agent')).toBeTruthy()
+    // The heading names the model, so no row repeats the pill.
+    expect(fixedCard.querySelectorAll('.modeltag')).toHaveLength(0)
+  })
+
+  it('filters by status, and each chip says how many rows choosing it leaves', async () => {
+    renderEngagements()
+    await screen.findByText('Advisory retainer')
+
+    // Two of the seven are active.
+    fireEvent.click(screen.getByRole('button', { name: 'Active, 2' }))
+
+    expect(screen.getByText('Advisory retainer')).toBeTruthy()
+    expect(screen.getByText('Fixed-scope build')).toBeTruthy()
+    expect(screen.queryByText('Platform advisory')).toBeNull()
+    expect(screen.getByText('2 of 7 engagements')).toBeTruthy()
+  })
+
+  it('keeps a filtered axis showing its row even when it drops to one option, so the filter can be cleared', async () => {
+    // Hiding a single-option row is right when nothing on that axis is
+    // filtered and a trap when something is: the control that would clear it
+    // would be the control that disappeared.
+    renderEngagements({ engagements: [equityEngagement, retainerEngagement] })
+    await screen.findByText('Equity position')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Held, 1' }))
+    expect(screen.queryByText('Advisory retainer')).toBeNull()
+    // Only equity survives the Held filter, so Model is down to one option —
+    // and Status is down to one too, but it is the filtered axis, so its row
+    // stays.
+    expect(screen.getByRole('button', { name: /^All status/ })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /^All status/ }))
+    expect(screen.getByText('Advisory retainer')).toBeTruthy()
+  })
+
+  it('counts a status chip against the model filter, so the number is what pressing it produces', async () => {
+    // The property that makes the counts worth showing: with Fixed chosen,
+    // "Active" must say 1 (the build) and not 2, because pressing it leaves
+    // one row.
+    renderEngagements()
+    await screen.findByText('Advisory retainer')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fixed, 3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Active, 1' }))
+
+    expect(screen.getByText('Fixed-scope build')).toBeTruthy()
+    expect(screen.queryByText('Advisory retainer')).toBeNull()
+    expect(screen.getByText('1 of 7 engagements')).toBeTruthy()
+  })
+
+  it('never offers a chip that would empty the page', async () => {
+    // The point of counting each axis against the other: every chip on
+    // screen leaves at least one row, so there is no combination to click
+    // your way into that shows nothing and no explanation. Choosing Equity
+    // leaves one held engagement, and Active stops being offered at all.
+    renderEngagements()
+    await screen.findByText('Advisory retainer')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Equity, 1' }))
+    expect(screen.getByText('Equity position')).toBeTruthy()
+    // The one equity engagement is held, so status has nothing left to
+    // choose between and the whole row goes rather than offering a single
+    // chip that is always on.
+    expect(screen.queryByRole('button', { name: /^Active, / })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^All status/ })).toBeNull()
+
+    // The All chip is the way back.
+    fireEvent.click(screen.getByRole('button', { name: /^All model/ }))
+    expect(screen.getByText('Advisory retainer')).toBeTruthy()
+  })
+
   it('shows all six status groups when populated, lost included', async () => {
     renderEngagements()
     await screen.findByText('Advisory retainer')
+    groupBy('Status')
 
     expect(screen.getByRole('heading', { name: 'Active' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Pending' })).toBeTruthy()
@@ -398,6 +527,7 @@ describe('Engagements', () => {
   it('omits an empty status group rather than rendering it with a zero count', async () => {
     renderEngagements({ engagements: ALL_ENGAGEMENTS.filter((engagement) => engagement.status !== 'delivered') })
     await screen.findByText('Advisory retainer')
+    groupBy('Status')
 
     expect(screen.queryByRole('heading', { name: 'Delivered' })).toBeNull()
     // The rest are unaffected.
@@ -407,6 +537,7 @@ describe('Engagements', () => {
   it('every company name is a real link — Tab/Enter reach it and it navigates to that company', async () => {
     renderEngagements()
     await screen.findByText('Advisory retainer')
+    groupBy('Status')
 
     const link = within(cardFor('Advisory retainer')).getByRole('link', { name: 'Acme' })
     expect(link.tagName).toBe('A')
@@ -476,7 +607,7 @@ describe('Engagements', () => {
     renderEngagements()
     await screen.findByText('Advisory retainer')
 
-    expect(within(cardFor('Advisory retainer')).getByText('$3300.00 / mo')).toBeTruthy()
+    expect(amountIn(cardFor('Advisory retainer'))).toContain('$3300.00')
     // No annual figure anywhere: 20 x 165 x 12 = $39,600.
     expect(screen.queryByText(/39600/)).toBeNull()
     expect(screen.queryByText(/\/ *yr/)).toBeNull()
@@ -517,9 +648,9 @@ describe('Engagements', () => {
       // `display: none` would take it out of the tab order entirely, which
       // is the difference between "hover-revealed" and "unreachable". The
       // 700px rule in Engagements.css is the other half of the same point.
-      const actions = cardFor('Advisory retainer').querySelector('.eng-actions')
+      const actions = cardFor('Advisory retainer').querySelector('.engrow-actions')
       expect(actions).not.toBeNull()
-      expect(actions?.className).toBe('eng-actions')
+      expect(actions?.className).toBe('engrow-actions')
     })
 
     it('opens the engagement sheet in edit mode on that card\'s record, populated', async () => {

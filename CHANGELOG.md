@@ -5,6 +5,18 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## Unreleased
+
+- ⚡ **Engagements, grouped by client** — one card per company you invoice,
+  with its logo on it, and Status and Model groupings a click away. Filter
+  by status and by billing model; each chip says how many engagements
+  choosing it leaves, and a combination that would show nothing is never
+  offered.
+- ⚡ **An engagement is a row, not a paragraph** — a status dot, the name and
+  its pills, one line of facts each behind its own icon, and the price in a
+  column of its own on the right where prices can be compared. Cards pack
+  against each other instead of leaving a hole beside a tall neighbour.
+
 ## 0.6.8
 
 - ✨ **Mark a line invoiced or paid** — the Revenue page lists the lines

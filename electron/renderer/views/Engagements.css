@@ -1,101 +1,357 @@
 /*
- * Engagements view — planning/solo-crm-mockup.html's `views.engagements`
- * (mockup lines ~1660-1685) and its progress/model rules (lines ~287-299).
- * `.card`/`.card-h`/`.tag`/`.modeltag` are already styled by their own
- * primitives (Card.css, Tag.css, ModelTag.css); `.eng`/`.eng-t`/`.via` are
- * ported again here rather than imported from CompanyDetail.css —
- * CompanyDetail.css's own header explains why: no shared home for that trio
- * exists yet, so each consuming view keeps its own copy. `.status-grid`,
- * `.bar`/`.prog`/`.prog-meta` have no shared primitive either and are this
- * view's own port.
+ * Engagements view.
+ *
+ * The row used to be `.eng` — the same six-stacked-lines block CompanyDetail
+ * draws, ported here. On a page whose whole content is engagements, three
+ * cards of that read as a wall of text: every fact was a paragraph line, the
+ * price sat at the bottom of one, and nothing on the left edge told two rows
+ * apart at a glance.
+ *
+ * `.engrow` is a *row*: a glyph, a name with its pills, one wrapping line of
+ * metadata with an icon per fact, and the amount in a right-aligned column
+ * of its own. Prices are compared down a column. CompanyDetail keeps `.eng`,
+ * where a company page shows two or three engagements inside a narrow card
+ * and the stacked shape is right; the two are deliberately separate classes
+ * for that reason, not one shared block bent to both.
+ *
+ * `.cmark` is styles/identity-mark.css (global, loaded from main.tsx).
+ * `.card`/`.card-h`, `.chip`, `.tag`, `.modeltag` and `.toggle` are their
+ * own primitives.
  */
 
+/* Columns, not a grid.
+ *
+ * Grouping by client makes cards of wildly different heights — one client
+ * with six engagements beside one with a single proposal — and a grid puts
+ * every card in a *row* as tall as the tallest in it, so a short card leaves
+ * a hole the height of its neighbour. The page was a third whitespace.
+ *
+ * CSS columns pack them: a card flows under the one above it, and
+ * `break-inside: avoid` keeps it whole. The reading order becomes
+ * column-major (down the first column, then the second), which is the right
+ * order for an alphabetical list of clients and is what a masonry layout
+ * gives anyway. */
 .status-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
-  align-items: start;
+  columns: 430px;
+  column-gap: 14px;
 }
 
-/* ── engagement rows ─────────────────── */
+.status-grid > * {
+  break-inside: avoid;
+  /* Multi-column has no row gap, so the space under each card is its own. */
+  margin-bottom: 14px;
+}
 
-.eng {
-  padding: 12px 15px;
+/* ── the filter bar ───────────────────
+ *
+ * Two labelled chip rows above the grid rather than controls in the header:
+ * the header already holds the grouping toggle and the create button, and a
+ * filter belongs next to what it filters. Each row disappears entirely when
+ * its axis has fewer than two values in use — see `FilterRow`. */
+.engfilters {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.engfilter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.engfilter-k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--faint);
+  width: 52px;
+  flex: 0 0 52px;
+}
+
+/* The count on a chip is subordinate to its label — it says how big the
+   result is, it is not what you are choosing. */
+.engfilter-n {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.on .engfilter-n {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.engcount {
+  margin: 0 0 10px;
+}
+
+/* ── a group's header ────────────────── */
+
+.enggroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.enggroup a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.enggroup a:hover,
+.enggroup a:focus-visible {
+  color: var(--verdigris);
+}
+
+/* The model swatch, in `ModelTag`'s own colours so a group header and the
+   pills inside it agree about what "fixed" looks like. */
+.enggroup-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+  background: var(--slate);
+}
+
+.enggroup-swatch.m-retainer {
+  background: var(--verdigris);
+}
+
+.enggroup-swatch.m-fixed {
+  background: var(--lapis);
+}
+
+.enggroup-swatch.m-tm {
+  background: var(--mute);
+}
+
+.enggroup-swatch.m-equity {
+  background: var(--gold);
+}
+
+/* ── one engagement, as a row ───────── */
+
+.engrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 15px;
   border-bottom: 1px solid var(--border);
 }
 
-.eng:last-child {
+.engrow:last-child {
   border-bottom: 0;
 }
 
-.eng-t {
+.engrow:hover {
+  background: var(--surface-2);
+}
+
+/* The status dot, carried when the group header already names the company.
+   Colour is never the only carrier: the row's status tag says the word, and
+   this repeats it as a scannable left rail. */
+.engrow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  margin-top: 6px;
+  background: var(--slate);
+}
+
+.engrow-dot.s-active {
+  background: var(--green);
+}
+
+.engrow-dot.s-pending {
+  background: var(--gold);
+}
+
+.engrow-dot.s-proposed {
+  background: var(--lapis);
+}
+
+.engrow-dot.s-held {
+  background: var(--orange);
+}
+
+.engrow-dot.s-delivered {
+  background: var(--verdigris);
+}
+
+.engrow-dot.s-lost {
+  background: var(--red);
+}
+
+.engrow-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.engrow-t {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   flex-wrap: wrap;
 }
 
-.eng-t .nm {
+.engrow-t .nm {
   font-weight: 600;
   font-size: 13px;
-  flex: 1;
-  min-width: 120px;
+  min-width: 0;
 }
 
-/* The per-row edit affordance (T-260901-10). Revealed on hover or on focus
-   within the row, so it stays keyboard-reachable — `opacity` rather than
-   `display: none`, which would take it out of the tab order entirely and
-   make "keyboard-reachable" false. Same shape as Row.css's `.row-actions`,
-   including the 700px rule below; the two have no shared home yet for the
-   same reason `.eng`/`.eng-t`/`.via` don't (this file's header). */
-.eng-actions {
+/* Every fact on one wrapping line, each with its own glyph. The icons are
+   what let this be one line instead of four: a calendar, a redirect arrow
+   and a price tag are recognised without being read, where "SOLD AS
+   CONSULTING" has to be. */
+.engrow-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 5px;
+}
+
+.engrow-fact {
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.engrow-fact svg {
+  flex: none;
+}
+
+.engrow-fact.via {
+  color: var(--lapis);
+}
+
+.engrow-fact a {
+  color: inherit;
+}
+
+.engrow-co {
+  font-size: 11.5px;
+  color: var(--verdigris);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.engrow-co:hover,
+.engrow-co:focus-visible {
+  text-decoration: underline;
+}
+
+/* ── the amount column ───────────────── */
+
+.engrow-value {
+  text-align: right;
+  flex: none;
+  min-width: 92px;
+}
+
+.engrow-amt {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--papyrus);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* An unpriced engagement states that, quietly — it is the absence of a
+   figure, not a figure. */
+.engrow-amt-none {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--faint);
+  white-space: normal;
+}
+
+.engrow-unit {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--faint);
+  margin-left: 3px;
+}
+
+.engrow-basis {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+/* ── row actions ─────────────────────── */
+
+/* Revealed on hover or on focus within the row, so it stays
+   keyboard-reachable — `opacity` rather than `display: none`, which would
+   take it out of the tab order entirely and make "keyboard-reachable"
+   false. Same shape as Row.css's `.row-actions`, including the 700px rule
+   below. */
+.engrow-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
   opacity: 0;
   transition: opacity var(--motion-fade);
 }
 
-.eng:hover .eng-actions,
-.eng:focus-within .eng-actions {
+.engrow:hover .engrow-actions,
+.engrow:focus-within .engrow-actions {
   opacity: 1;
 }
 
 /* No hover on touch: below the mockup's 700px breakpoint (--bp-mobile in
-   tokens.css — a media query can't read a custom property in its condition,
-   so this literal is kept in sync by hand, exactly as Row.css notes) the
-   action stays revealed rather than requiring a hover that cannot happen. */
+   tokens.css — a media query cannot read a custom property in its
+   condition, so this literal is kept in sync by hand, exactly as Row.css
+   notes) the actions stay revealed rather than requiring a hover that
+   cannot happen. The amount column drops its minimum there too, so a long
+   engagement name is not squeezed to two words. */
 @media (max-width: 700px) {
-  .eng-actions {
+  .engrow-actions {
     opacity: 1;
+  }
+
+  .engrow-value {
+    min-width: 0;
+  }
+
+  .engfilter-k {
+    width: auto;
+    flex: none;
   }
 }
 
-/* `.sold-as` shares `.via`'s shape rather than inventing a second one: both
-   are a small glyph plus a few mono uppercase words qualifying the row above
-   them (`for <company>`, `sold as <offering>`), and the mockup draws that
-   treatment once. It stays a separate class name because the two say
-   different things and a later restyle of one must not silently restyle the
-   other. */
-.via,
-.sold-as {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-top: 6px;
-}
+/* ── milestone pips ──────────────────── */
 
-/* ── progress & models ───────────────── */
-
+/* Narrow on purpose: these are a count of milestone rows, and at full row
+   width they read as a progress bar for the whole engagement — which is the
+   hours bar this view deliberately does not have. The value column states
+   the same count in words beside them. */
 .prog {
   display: flex;
   gap: 3px;
-  margin-top: 8px;
+  margin-top: 7px;
+  max-width: 110px;
 }
 
 .prog i {
@@ -107,63 +363,4 @@
 
 .prog i.on {
   background: var(--verdigris);
-}
-
-.bar {
-  height: 5px;
-  border-radius: 3px;
-  background: var(--surface-3);
-  overflow: hidden;
-  margin-top: 8px;
-}
-
-/*
- * The fill is a flat zero, not a computed percentage — this file's header
- * explains why (no `time_entries` channel exists to plot a real "hours
- * used" against yet). A future task wiring real hours in replaces this
- * static rule with a per-engagement inline width; until then there is
- * nothing here to animate or reduce motion for.
- */
-.bar i {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--verdigris);
-}
-
-.prog-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-
-/* ── the terms line (T-260902-10) ──
- *
- * Replaces the hours bar and its "Provisional" tag. The price is the one
- * thing on the card that is a *number about money*, so it takes the
- * emphasis; the basis behind it ("10 hrs x $165", "3 of 4 milestones") is
- * metadata and reads as metadata — mono, small, --faint, per
- * .claude/rules/ui-design.md. Nothing here is a sentence.
- */
-.eng-terms {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 6px;
-}
-
-.eng-terms strong {
-  font-weight: 600;
-  color: var(--papyrus);
-  font-variant-numeric: tabular-nums;
-}
-
-.eng-terms-basis {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
 }
