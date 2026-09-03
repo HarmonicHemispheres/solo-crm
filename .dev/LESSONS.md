@@ -19,3 +19,4 @@ useful old one, and that is a deliberate judgement made in the same commit.
 12. A UTC-midnight date compared against a local clock is off by a day west of UTC from about 17:00.
 13. A partial update that does not name a column can silently NULL it. Diff against what the form was seeded with, not the record.
 14. A test that fires a blur after the keydown that unmounted the field, or asserts `not.toHaveBeenCalled` before an async mutation could run, passes against no fix at all. Use `keyDownWithUnmountBlur`, and prove a new test red on the old code first.
+15. Writing a "new" file replaces whatever was already at that path. Check the path exists first — an overwritten test file loses its assertions and the run stays green.
