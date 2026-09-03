@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode, type SVGProps } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type SVGProps } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { nowTimestamp, parseDateOnly, parseTimestamp } from '../../shared/format'
@@ -23,13 +23,13 @@ import { ModelTag, type BillingModel as ModelTagBillingModel } from '../componen
 import { Tag, type TagVariant } from '../components/primitives/Tag'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { ConfirmDelete } from '../components/primitives/ConfirmDelete'
-import { DecayMeter } from '../components/primitives/DecayMeter'
 import { Toast } from '../components/primitives/Toast'
-import { QuickAdd } from '../components/primitives/QuickAdd'
+import { Toggle } from '../components/primitives/Toggle'
 import { Row } from '../components/primitives/Row'
 import { IconButton } from '../components/primitives/IconButton'
+import { PlusIcon } from '../components/icons'
 import { LinksCard } from '../components/links/LinksCard'
-import { useLayerManager } from '../components/shell/layer-manager-context'
+import { useLayerManager, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
 import './detail-header.css'
 import './CompanyDetail.css'
 
@@ -404,79 +404,114 @@ function withinAffiliationWindow(occurredAt: string, affiliation: PersonAffiliat
 // question there is a decision that has not been made yet.
 // ---------------------------------------------------------------------------
 
-type TextFieldKey = 'website' | 'cadenceDays' | 'since' | 'budgetNote' | 'notes'
-
-const TEXT_FIELD_LABEL: Record<TextFieldKey, string> = {
-  website: 'Website',
-  cadenceDays: 'Cadence',
-  since: 'Since',
-  budgetNote: 'Budget',
-  notes: 'Notes'
-}
-
-/** The stored value as a plain string — `''` stands in for `null` in every
- * case, which `displayValueOf` below renders as an em dash rather than as an
- * empty row. */
-function rawValueOf(company: Company, key: TextFieldKey): string {
-  switch (key) {
-    case 'website':
-      return company.website ?? ''
-    case 'cadenceDays':
-      return company.cadenceDays != null ? String(company.cadenceDays) : ''
-    case 'since':
-      return company.since ?? ''
-    case 'budgetNote':
-      return company.budgetNote ?? ''
-    case 'notes':
-      return company.notes ?? ''
-  }
-}
-
-function displayValueOf(company: Company, key: TextFieldKey): ReactNode {
-  const raw = rawValueOf(company, key)
-  if (raw === '') return '—'
-  if (key === 'cadenceDays') return `${raw} days`
-  return raw
-}
+/**
+ * **What this card holds, and what the header holds instead.**
+ *
+ * The card used to list all nine stored fields, every unset one an em-dash
+ * row — so a company with three facts recorded drew nine rows, six of them
+ * saying nothing, and the four that identify a relationship (when it
+ * started, how often to reach out, when you last did, who invoices) were
+ * buried among them at the bottom of the page.
+ *
+ * Those four are now the header's own fact line, which is where someone
+ * arriving on the page looks. What is left here is the reference material:
+ * kind, site, budget, who introduced them. **An unset field is not a row.**
+ * It joins the one "+ Add …" line at the foot, which opens the same edit
+ * sheet every other write on this page opens — so nothing is hidden, and
+ * nothing empty takes a row's worth of height to say so.
+ */
+const OPTIONAL_FIELD_LABEL = {
+  website: 'website',
+  budgetNote: 'budget',
+  introducedByCompanyId: 'introduced by'
+} as const
+type OptionalFieldKey = keyof typeof OPTIONAL_FIELD_LABEL
 
 function DetailsCard({ company, companiesById }: { company: Company; companiesById: Map<string, Company> }) {
-  const billedVia = company.billedViaCompanyId != null ? companiesById.get(company.billedViaCompanyId) : undefined
+  const { editSheet } = useLayerManager()
   const introducedBy = company.introducedByCompanyId != null ? companiesById.get(company.introducedByCompanyId) : undefined
+  const missing = (Object.keys(OPTIONAL_FIELD_LABEL) as OptionalFieldKey[]).filter((key) => company[key] == null)
 
   return (
     <Card>
-      <Card.Header title="Details" />
+      <Card.Header title="Details" actions={<EditLink company={company} onEdit={editSheet} label={`Edit ${company.name}'s details`} />} />
       <div className="field">
         <span className="k">Kind</span>
-        <span className="v">{company.kind != null ? KIND_LABEL[company.kind] : '—'}</span>
+        <span className="v">{company.kind != null ? KIND_LABEL[company.kind] : 'Not set'}</span>
       </div>
-      {(['website', 'cadenceDays', 'since', 'budgetNote', 'notes'] as const).map((key) => (
-        <div className="field" key={key}>
-          <span className="k">{TEXT_FIELD_LABEL[key]}</span>
-          <span className="v">{displayValueOf(company, key)}</span>
+      {company.website != null && (
+        <div className="field">
+          <span className="k">Website</span>
+          <span className="v mono">{company.website}</span>
         </div>
-      ))}
-      <div className="field">
-        <span className="k">Billed via</span>
-        <span className="v">
-          {company.billedViaCompanyId != null ? (
-            <Link to={`/company/${company.billedViaCompanyId}`}>{billedVia?.name ?? company.billedViaCompanyId}</Link>
-          ) : (
-            '—'
-          )}
-        </span>
-      </div>
-      <div className="field">
-        <span className="k">Introduced by</span>
-        <span className="v">
-          {company.introducedByCompanyId != null ? (
+      )}
+      {company.budgetNote != null && (
+        <div className="field">
+          <span className="k">Budget</span>
+          <span className="v">{company.budgetNote}</span>
+        </div>
+      )}
+      {company.introducedByCompanyId != null && (
+        <div className="field">
+          <span className="k">Introduced by</span>
+          <span className="v">
             <Link to={`/company/${company.introducedByCompanyId}`}>{introducedBy?.name ?? company.introducedByCompanyId}</Link>
-          ) : (
-            '—'
-          )}
-        </span>
-      </div>
+          </span>
+        </div>
+      )}
+      {missing.length > 0 && (
+        <button
+          type="button"
+          className="field-add"
+          onClick={(event) => editSheet('company', company.id, event.currentTarget)}
+        >
+          + Add {missing.map((key) => OPTIONAL_FIELD_LABEL[key]).join(', ')}…
+        </button>
+      )}
     </Card>
+  )
+}
+
+/**
+ * Notes, out of the field list and into their own card.
+ *
+ * A note is prose — the sentence explaining why invoices go through someone
+ * else, what the client actually wants — and it was rendered in a
+ * `.field`'s value cell, a column sized for "90 days". It read as a
+ * squeezed fragment of something longer. Its own card gives it the width of
+ * the column and lets it wrap, and gives the empty case somewhere to invite
+ * a first note rather than printing an em dash.
+ */
+function NotesCard({ company }: { company: Company }) {
+  const { editSheet } = useLayerManager()
+  return (
+    <Card>
+      <Card.Header title="Notes" actions={<EditLink company={company} onEdit={editSheet} label={`Edit ${company.name}'s notes`} />} />
+      {company.notes != null && company.notes.trim() !== '' ? (
+        <p className="notes-body">{company.notes}</p>
+      ) : (
+        <button type="button" className="field-add" onClick={(event) => editSheet('company', company.id, event.currentTarget)}>
+          + Add a note
+        </button>
+      )}
+    </Card>
+  )
+}
+
+/** The quiet "Edit" a card header carries — the same edit sheet the hero's button opens, reached from the card whose contents it changes. */
+function EditLink({
+  company,
+  onEdit,
+  label
+}: {
+  company: Company
+  onEdit: LayerManagerContextValue['editSheet']
+  label: string
+}) {
+  return (
+    <button type="button" className="card-edit" aria-label={label} onClick={(event) => onEdit('company', company.id, event.currentTarget)}>
+      Edit
+    </button>
   )
 }
 
@@ -528,9 +563,23 @@ function EngagementCard({
   engagements: readonly EngagementWithOffering[]
   viaLabelFor: (engagement: EngagementWithOffering) => string | null
 }) {
+  const { openSheet } = useLayerManager()
   return (
     <Card>
-      <Card.Header title={title} count={count} />
+      <Card.Header
+        title={title}
+        count={count}
+        actions={
+          <button
+            type="button"
+            className="card-more"
+            aria-label={`New engagement`}
+            onClick={(event) => openSheet('engagement', event.currentTarget)}
+          >
+            + New engagement
+          </button>
+        }
+      />
       {engagements.length === 0 ? (
         <EmptyState>Nothing here yet.</EmptyState>
       ) : (
@@ -644,6 +693,10 @@ function TodoRow({
         <CheckIcon />
       </button>
       <span className="tx">
+        {/* The same `.tli-k` chip an activity row carries, so a reader can
+            tell a plan from a record at a glance now that the two share one
+            list — the checkbox alone is a control, not a label. */}
+        <span className="tli-k todo-k">Todo</span>
         {task.title}
         <span className="sub">
           <span className={`due ${due.cls}`}>{due.label}</span>
@@ -652,18 +705,72 @@ function TodoRow({
       <IconButton aria-label={`Set "${task.title}" as next step`} onClick={() => onPromote(task.id)}>
         <NextStepIcon />
       </IconButton>
+      <span className="tli-when">{formatActivityDate(task.createdAt)}</span>
     </div>
   )
 }
 
 /**
- * `tasks:list({ companyId })` (this task's Touches — no `open` filter: that
- * flag's `OPEN_STATUS_SQL` excludes `waiting` too, but the mockup's own
- * `todosFor()` — and requirements §6.6, "waiting items age visibly" — keeps
- * waiting tasks in this card, just styled distinctly (`.check.wait`,
- * `.due.wait`). Only `done` drops out, filtered client-side below.
+ * **One feed, not two cards.**
+ *
+ * Todos and touches were two cards side by side, each with its own list,
+ * its own count and its own quick-add strip — and between them they told
+ * one story out of order. What happened with this company, most recent
+ * first, is a single sequence: you called them, you sent the summary, you
+ * owe them a scope. Splitting it by whether an entry is a *plan* or a
+ * *record* meant reading two columns and interleaving them by eye.
+ *
+ * So this card holds both, sorted newest first on one clock: an activity
+ * row by when it happened (`occurred_at`), a todo by when it was written
+ * (`created_at`). A todo also carries its due label, which is the thing a
+ * plan has that a record does not.
+ *
+ * **The two writes stay two writes.** The quick-add strip has a Touch/Todo
+ * switch, and each side calls exactly the channel it always did —
+ * `activity:log` (append-only, G8, and the only writer of
+ * `companies.last_touch_at`) or `tasks:create`. Merging the *display* of
+ * two tables must not merge their vocabularies: nothing here writes an
+ * activity row to represent a todo, or the reverse.
+ *
+ * The task list is unfiltered by `open` on purpose — that flag's
+ * `OPEN_STATUS_SQL` excludes `waiting` too, and §6.6 ("waiting items age
+ * visibly") keeps them here, styled distinctly. Only `done` drops out.
  */
-function TodosCard({ companyId, companyName, tasks, now }: { companyId: string; companyName: string; tasks: readonly Task[]; now: number }) {
+type FeedEntry =
+  | { readonly kind: 'task'; readonly id: string; readonly at: string; readonly task: Task }
+  | { readonly kind: 'activity'; readonly id: string; readonly at: string; readonly activity: Activity }
+
+/** ISO-8601 UTC timestamps sort correctly as plain strings, so this is a compare, not a parse. */
+function newestFirst(a: FeedEntry, b: FeedEntry): number {
+  return b.at.localeCompare(a.at)
+}
+
+const QUICK_ADD_MODES = [
+  { value: 'touch', label: 'Touch' },
+  { value: 'todo', label: 'Todo' }
+] as const
+type QuickAddMode = (typeof QUICK_ADD_MODES)[number]['value']
+
+function ActivityCard({
+  companyId,
+  companyName,
+  tasks,
+  items,
+  now,
+  mode,
+  onModeChange,
+  inputRef
+}: {
+  companyId: string
+  companyName: string
+  tasks: readonly Task[]
+  items: readonly Activity[]
+  now: number
+  /** Lifted to the view so the hero's "Log touch" button can put the composer into touch mode and focus it, rather than opening a second composer that would not know which company it is on. */
+  mode: QuickAddMode
+  onModeChange: (mode: QuickAddMode) => void
+  inputRef: RefObject<HTMLInputElement | null>
+}) {
   const queryClient = useQueryClient()
 
   const completeTask = useMutation({
@@ -678,66 +785,6 @@ function TodosCard({ companyId, companyName, tasks, now }: { companyId: string; 
     mutationFn: (title: string) => ipcMutationFn('tasks:create')({ title, companyId }).then(unwrapMutationResult),
     onSuccess: () => invalidate.tasks(queryClient)
   })
-
-  const openTasks = tasks.filter((task) => task.status !== 'done')
-  const nextStep = openTasks.find((task) => task.isNextStep) ?? null
-  const otherTasks = openTasks.filter((task) => task !== nextStep)
-  const activeError = completeTask.isError ? completeTask.error : promoteTask.isError ? promoteTask.error : createTask.isError ? createTask.error : null
-
-  return (
-    <Card>
-      <Card.Header title="Todos" count={openTasks.length} />
-      {nextStep != null && (
-        <NextStepBlock task={nextStep} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
-      )}
-      {otherTasks.length === 0 && nextStep == null ? (
-        <EmptyState>Nothing open.</EmptyState>
-      ) : (
-        otherTasks.map((task) => (
-          <TodoRow key={task.id} task={task} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
-        ))
-      )}
-      <QuickAdd placeholder={`Add a todo for ${companyName}`} onAdd={(value) => createTask.mutate(value)} />
-      <Toast
-        message={activeError?.message ?? null}
-        onDismiss={() => {
-          completeTask.reset()
-          promoteTask.reset()
-          createTask.reset()
-        }}
-      />
-    </Card>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Activity — T-260828-30. Append-only (G8): this card's only mutation is
-// `activity:log` (a create); there is no update or delete channel to call
-// and this card renders no button that implies either. `items` arrives
-// already merged and sorted — see the view's own comment on why three
-// `activity:list` calls feed it instead of one.
-// ---------------------------------------------------------------------------
-
-function ActivityRow({ activity }: { activity: Activity }) {
-  return (
-    <div className="tli">
-      <span className="bul">
-        <ActivityKindIcon kind={activity.kind} />
-      </span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span className="t">{activity.title}</span>
-        <span className="d">
-          {ACTIVITY_KIND_LABEL[activity.kind]} · {formatActivityDate(activity.occurredAt)}
-        </span>
-        {activity.body != null && <div className="note">{activity.body}</div>}
-      </span>
-    </div>
-  )
-}
-
-function ActivityCard({ companyId, companyName, items }: { companyId: string; companyName: string; items: readonly Activity[] }) {
-  const queryClient = useQueryClient()
-
   const logActivity = useMutation({
     mutationFn: (title: string) =>
       ipcMutationFn('activity:log')({
@@ -749,28 +796,153 @@ function ActivityCard({ companyId, companyName, items }: { companyId: string; co
         source: 'manual'
       }).then(unwrapMutationResult),
     // T-260901-23: `activity:log` advances `companies.last_touch_at` in the
-    // same transaction (repositories/activity.ts), and this page's header
-    // meter, the grid and Today all read that column from the `companies`
-    // cache at `staleTime: Infinity` — so the company is stale too, not
-    // just the activity list. QuickLog invalidates the same pair for the
-    // same reason. Not awaited, for the reason QuickLog gives.
+    // same transaction (repositories/activity.ts), and this page's header,
+    // the grid and Today all read that column from the `companies` cache at
+    // `staleTime: Infinity` — so the company is stale too, not just the
+    // activity list. QuickLog invalidates the same pair for the same
+    // reason. Not awaited, for the reason QuickLog gives.
     onSuccess: () => {
       void Promise.all([invalidate.activity(queryClient), invalidate.companies(queryClient)])
     }
   })
 
+  const openTasks = tasks.filter((task) => task.status !== 'done')
+  const nextStep = openTasks.find((task) => task.isNextStep) ?? null
+
+  // The next step is drawn above the feed in its own block, so it is not
+  // also drawn inside it — one todo, one row.
+  const feed: FeedEntry[] = [
+    ...openTasks.filter((task) => task !== nextStep).map((task): FeedEntry => ({ kind: 'task', id: task.id, at: task.createdAt, task })),
+    ...items.map((activity): FeedEntry => ({ kind: 'activity', id: activity.id, at: activity.occurredAt, activity }))
+  ].sort(newestFirst)
+
+  const activeError = completeTask.isError
+    ? completeTask.error
+    : promoteTask.isError
+      ? promoteTask.error
+      : createTask.isError
+        ? createTask.error
+        : logActivity.isError
+          ? logActivity.error
+          : null
+
   return (
     <Card>
-      <Card.Header title="Activity" count={items.length} />
-      <div className="tl">
-        {items.length === 0 ? <EmptyState>Nothing logged.</EmptyState> : items.map((activity) => <ActivityRow key={activity.id} activity={activity} />)}
+      <Card.Header
+        title={
+          <>
+            <span>Activity</span> <span className="card-sub">todos and touches, newest first</span>
+          </>
+        }
+        /* Rows in the card, which is what a count beside a list means
+           everywhere else in the app. Not "open todos": that number was the
+           Todos card's, and reading it off a card that also holds five
+           touches would be a count of something the reader cannot see. */
+        count={feed.length + (nextStep == null ? 0 : 1)}
+        actions={
+          <Link className="card-more" to="/activity">
+            View all
+          </Link>
+        }
+      />
+      <div className="feed-add">
+        <Toggle options={QUICK_ADD_MODES} value={mode} onChange={onModeChange} aria-label="What to add" />
+        <FeedComposer
+          key={mode}
+          inputRef={inputRef}
+          placeholder={mode === 'touch' ? `Log a touch for ${companyName}` : `Add a todo for ${companyName}`}
+          submitLabel={mode === 'touch' ? 'Log' : 'Add'}
+          onSubmit={(value) => (mode === 'touch' ? logActivity.mutate(value) : createTask.mutate(value))}
+        />
       </div>
-      <QuickAdd placeholder={`Log a touch for ${companyName}`} onAdd={(value) => logActivity.mutate(value)} />
-      <Toast message={logActivity.isError ? logActivity.error.message : null} onDismiss={() => logActivity.reset()} />
+      {nextStep != null && <NextStepBlock task={nextStep} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />}
+      <div className="tl">
+        {feed.length === 0 && nextStep == null ? (
+          <EmptyState>Nothing logged, nothing open.</EmptyState>
+        ) : (
+          feed.map((entry) =>
+            entry.kind === 'activity' ? (
+              <ActivityRow key={entry.id} activity={entry.activity} />
+            ) : (
+              <TodoRow key={entry.id} task={entry.task} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
+            )
+          )
+        )}
+      </div>
+      <Toast
+        message={activeError?.message ?? null}
+        onDismiss={() => {
+          completeTask.reset()
+          promoteTask.reset()
+          createTask.reset()
+          logActivity.reset()
+        }}
+      />
     </Card>
   )
 }
 
+/**
+ * The composer beside the Touch/Todo switch. Not `QuickAdd`: that primitive
+ * is Enter-only with a decorative plus, which is right for a strip that
+ * closes a list and wrong for the one control that does two different
+ * things — the mode is a choice the operator just made, and a visible
+ * button says which of the two pressing Enter will do.
+ */
+function FeedComposer({
+  placeholder,
+  submitLabel,
+  onSubmit,
+  inputRef
+}: {
+  placeholder: string
+  submitLabel: string
+  onSubmit: (value: string) => void
+  inputRef: RefObject<HTMLInputElement | null>
+}) {
+  const [value, setValue] = useState('')
+  const submit = () => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    onSubmit(trimmed)
+    setValue('')
+  }
+  return (
+    <div className="feed-composer">
+      <input
+        ref={inputRef}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit()
+        }}
+      />
+      <Button variant="ghost" onClick={submit} disabled={value.trim() === ''}>
+        {submitLabel}
+      </Button>
+    </div>
+  )
+}
+
+function ActivityRow({ activity }: { activity: Activity }) {
+  return (
+    <div className="tli">
+      <span className="bul">
+        <ActivityKindIcon kind={activity.kind} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span className="t">
+          <span className="tli-k">{ACTIVITY_KIND_LABEL[activity.kind]}</span>
+          {activity.title}
+        </span>
+        {activity.body != null && <div className="note">{activity.body}</div>}
+      </span>
+      <span className="tli-when">{formatActivityDate(activity.occurredAt)}</span>
+    </div>
+  )
+}
 // ---------------------------------------------------------------------------
 // Contacts — T-260828-30. Current affiliations only in the main list; a
 // person whose only tie to this company has `ended` shows solely under the
@@ -915,14 +1087,117 @@ function ImageSlotControls({
   )
 }
 
+/**
+ * A small "…" menu for the actions that are not the two anyone came here to
+ * press. Local rather than a `LayerManager` layer for the same reason the
+ * delete confirmation below is: the topbar's `menu` layer is the New menu's,
+ * and a second one would have to share that single slot.
+ *
+ * Closes on Escape, on an outside click, and on choosing anything.
+ */
+function OverflowMenu({ label, open, onOpenChange, children }: { label: string; open: boolean; onOpenChange: (open: boolean) => void; children: ReactNode }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) onOpenChange(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      onOpenChange(false)
+      buttonRef.current?.focus()
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open, onOpenChange])
+
+  return (
+    <div className="hero-menu" ref={wrapRef}>
+      <Button ref={buttonRef} variant="ghost" aria-label={label} aria-expanded={open} aria-haspopup="menu" onClick={() => onOpenChange(!open)}>
+        <MoreIcon />
+      </Button>
+      {open && (
+        <div className="hero-menu-panel" role="menu" aria-label={label}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The three-dot glyph — drawn here rather than imported for the reason `ViaIcon` is. */
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={15} height={15} fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="19" cy="12" r="1.7" />
+    </svg>
+  )
+}
+
+const SINCE_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+
+/**
+ * The header's fact line — since, cadence, last touch, who invoices.
+ *
+ * These four used to be rows in the Details card at the bottom of the page,
+ * and the header carried a `DecayMeter` instead: a coloured bar and a word
+ * ("never"), which is a *state* without the facts that produce it. Someone
+ * looking at a company wants to know when the relationship started, how
+ * often they meant to be in touch, when they last were, and who is on the
+ * invoice — in that order, in one line, above the fold.
+ *
+ * "Last touch" carries the band as a class, so the colour still says overdue
+ * where the word says a date. `decay.touched` is what distinguishes "never"
+ * — an honest statement about the activity log — from a bar that used to
+ * render every new company as maximally late (see `lib/decay.ts`).
+ */
+function HeaderFacts({ company, decay, billedVia }: { company: Company; decay: Decay; billedVia: Company | undefined }) {
+  const since = company.since != null ? parseDateOnly(company.since) : null
+  return (
+    <div className="dfacts">
+      {since != null && (
+        <span>
+          Since <b>{SINCE_FORMAT.format(since)}</b>
+        </span>
+      )}
+      <span>
+        Cadence <b>{decay.cadenceDays > 0 ? `${decay.cadenceDays} days` : 'not set'}</b>
+      </span>
+      <span title={decay.description}>
+        Last touch <b className={`dfact-${decay.band}`}>{decay.touched ? decay.label : 'never'}</b>
+      </span>
+      {company.billedViaCompanyId != null && (
+        <span>
+          Billed via{' '}
+          <Link to={`/company/${company.billedViaCompanyId}`}>
+            <b>{billedVia?.name ?? company.billedViaCompanyId}</b>
+          </Link>
+        </span>
+      )}
+    </div>
+  )
+}
+
 function CompanyHeader({
   company,
   companiesById,
-  decay
+  decay,
+  hasActiveEngagement,
+  onLogTouch
 }: {
   company: Company
   companiesById: Map<string, Company>
   decay: Decay
+  hasActiveEngagement: boolean
+  onLogTouch: () => void
 }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -932,6 +1207,12 @@ function CompanyHeader({
   // returns here. Routing it through the layer stack would mean a new
   // `LayerKind` and a `SheetKind` for a dialog that is not a form.
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // Owned here rather than inside `OverflowMenu`: choosing Delete has to
+  // close the menu, and the image controls inside it deliberately must not
+  // — a refusal ("that file is 12 MB") is rendered beside the control that
+  // was pressed, and a menu that closed on every click would take the
+  // message with it.
+  const [menuOpen, setMenuOpen] = useState(false)
   const accent = hue(company.name)
 
   // The one read that carries originals, one company at a time (ADR-015) —
@@ -987,17 +1268,31 @@ function CompanyHeader({
       <div className="dhead">
         <CompanyMark name={company.name} size={50} color={accent} imageUrl={logo.state === 'present' ? logo.dataUrl : null} />
         <div style={{ flex: 1, minWidth: 200 }}>
-          <h1>{company.name}</h1>
-          <div className="dmeta">
+          <div className="dtitle">
+            <h1>{company.name}</h1>
             {company.kind != null && <Tag variant={KIND_TAG_VARIANT[company.kind]}>{KIND_LABEL[company.kind]}</Tag>}
-            {company.billedViaCompanyId != null && (
-              <Tag variant="lapis">billed through {companiesById.get(company.billedViaCompanyId)?.name ?? company.billedViaCompanyId}</Tag>
-            )}
+            {/* Not a stored column: "active" here means at least one
+                engagement on this company is `active`, which is what the
+                grid's own badge counts. Nothing is drawn when there are
+                none — an absent tag, not an "inactive" one. */}
+            {hasActiveEngagement && <Tag variant="green">Active</Tag>}
             {company.budgetNote != null && <Tag variant="gold">{company.budgetNote}</Tag>}
-            <DecayMeter pct={decay.pct} label={decay.label} />
           </div>
+          <HeaderFacts
+            company={company}
+            decay={decay}
+            billedVia={company.billedViaCompanyId != null ? companiesById.get(company.billedViaCompanyId) : undefined}
+          />
         </div>
         <div className="dhead-actions">
+          {/* The one thing this page exists to make easy — and it drives the
+              composer already on the page rather than opening ⌘L's QuickLog,
+              which has its own company picker and would ask again which
+              company this is. One composer, one writer of `activity` rows. */}
+          <Button variant="primary" aria-label={`Log a touch for ${company.name}`} onClick={onLogTouch}>
+            <PlusIcon />
+            Log touch
+          </Button>
           {/* The whole point of this control: a company has always been
               editable, but only through a card called "Details" below the
               fold with no cue that anything on the page could be changed.
@@ -1005,29 +1300,35 @@ function CompanyHeader({
               only thing announced on a page full of buttons; the visible
               text stays a prefix of it, which is what keeps voice control
               working. */}
-          <Button
-            variant="primary"
-            aria-label={`Edit ${company.name}`}
-            onClick={(event) => editSheet('company', company.id, event.currentTarget)}
-          >
+          <Button variant="ghost" aria-label={`Edit ${company.name}`} onClick={(event) => editSheet('company', company.id, event.currentTarget)}>
             Edit
           </Button>
-          {/* Ghost, not danger: this button only opens the question. The red
-              one is inside the dialog, on the control that actually deletes
-              — a destructive-looking button in a header is a button people
-              learn to click past. */}
-          <Button variant="ghost" aria-label={`Delete ${company.name}`} onClick={() => setConfirmingDelete(true)}>
-            Delete
-          </Button>
-          {COMPANY_IMAGE_SLOTS.map((slot) => (
-            <ImageSlotControls
-              key={slot}
-              state={images[slot]}
-              message={failure?.slot === slot ? failure.message : undefined}
-              onChoose={() => chooseImage.mutate(slot)}
-              onClear={() => clearImage.mutate(slot)}
-            />
-          ))}
+          {/* Images and delete move behind "…": four buttons of chrome sat
+              across the header, and none of them is why anyone opens a
+              company. Delete is not red here either — this only opens the
+              question; the destructive control is inside the dialog. */}
+          <OverflowMenu label={`More actions for ${company.name}`} open={menuOpen} onOpenChange={setMenuOpen}>
+            {COMPANY_IMAGE_SLOTS.map((slot) => (
+              <ImageSlotControls
+                key={slot}
+                state={images[slot]}
+                message={failure?.slot === slot ? failure.message : undefined}
+                onChoose={() => chooseImage.mutate(slot)}
+                onClear={() => clearImage.mutate(slot)}
+              />
+            ))}
+            <button
+              type="button"
+              role="menuitem"
+              className="hero-menu-danger"
+              onClick={() => {
+                setMenuOpen(false)
+                setConfirmingDelete(true)
+              }}
+            >
+              Delete {company.name}
+            </button>
+          </OverflowMenu>
         </div>
       </div>
       {confirmingDelete && (
@@ -1062,6 +1363,10 @@ export function CompanyDetail() {
   // on this page (`taskDueInfo`, `daysSinceTimestamp`, …) and converting
   // those is not this change; deriving it here keeps the page on one clock.
   const [nowDate] = useState(() => new Date(now))
+  // The merged feed's composer, owned here so the hero's "Log touch"
+  // button can aim at it — see ActivityCard's `mode` prop.
+  const [feedMode, setFeedMode] = useState<QuickAddMode>('touch')
+  const composerRef = useRef<HTMLInputElement>(null)
 
   const companyQuery = useQuery({
     queryKey: queryKeys.companies.detail(companyId),
@@ -1207,7 +1512,25 @@ export function CompanyDetail() {
   // direction the filter already established, not a reversal of it.
   const deliveredElsewhere = (clientHereQuery.data ?? []).filter((engagement) => engagement.billingCompanyId !== company.id)
 
+  // **Two ways to be an end client, and the card needs both.**
+  //
+  // This used to derive the list from engagements alone: a company was an
+  // end client of this one if some engagement billed *here* named it as the
+  // client. That is the right list for "who is the work for", and it is not
+  // the relationship the Companies grid counts — that one reads
+  // `companies.billed_via_company_id`, the standing fact that this company
+  // is the one on the invoice. A sub-client created and not yet given an
+  // engagement satisfied the second and not the first, so it appeared as
+  // "1 end client" on the grid and nowhere at all on the parent's page: the
+  // exact record an operator goes looking for after creating it.
+  //
+  // So the card is the union, keyed by company id, and `engagementCount` is
+  // what it always was — engagements billed here for that company, which is
+  // legitimately `0` for one whose only tie is the billing column.
   const endClientCounts = new Map<string, number>()
+  for (const candidate of companiesListQuery.data ?? []) {
+    if (candidate.billedViaCompanyId === company.id && candidate.id !== company.id) endClientCounts.set(candidate.id, 0)
+  }
   for (const engagement of billedHere) {
     if (engagement.clientCompanyId != null && engagement.clientCompanyId !== company.id) {
       endClientCounts.set(engagement.clientCompanyId, (endClientCounts.get(engagement.clientCompanyId) ?? 0) + 1)
@@ -1219,6 +1542,7 @@ export function CompanyDetail() {
       return endClientCompany ? { company: endClientCompany, engagementCount } : null
     })
     .filter((entry): entry is { company: Company; engagementCount: number } => entry != null)
+    .sort((a, b) => b.engagementCount - a.engagementCount || a.company.name.localeCompare(b.company.name))
 
   // Merge + dedupe (an activity row can carry both a matching companyId and
   // a matching personId/engagementId, landing in more than one of the three
@@ -1248,11 +1572,30 @@ export function CompanyDetail() {
       <Link className="back" to="/companies">
         ← Companies
       </Link>
-      <CompanyHeader company={company} companiesById={companiesById} decay={decay} />
+      <CompanyHeader
+        company={company}
+        companiesById={companiesById}
+        decay={decay}
+        hasActiveEngagement={[...billedHere, ...deliveredElsewhere].some((engagement) => engagement.status === 'active')}
+        onLogTouch={() => {
+          setFeedMode('touch')
+          composerRef.current?.focus()
+        }}
+      />
 
       <div className="company-detail-grid">
+        {/* **The split-billing distinction stays, and stops taking a column
+            to say nothing.** These are still two independently server-filtered
+            reads, never one list sliced two ways (§5, and the bug whose page
+            still looks plausible) — but a company with no work delivered for
+            someone else drew an empty card headed "Delivered here, billed
+            elsewhere", which is a third of the page spent on a distinction
+            that does not apply to it. The second card appears when there is
+            something in it, and the first is called what it is: with nothing
+            billed elsewhere, "Billed here" is just this company's
+            engagements. The mockup does the same (`views.company`). */}
         <EngagementCard
-          title="Billed here"
+          title={deliveredElsewhere.length > 0 ? 'Billed here' : 'Engagements'}
           count={billedHere.length}
           engagements={billedHere}
           viaLabelFor={(engagement) =>
@@ -1261,19 +1604,30 @@ export function CompanyDetail() {
               : null
           }
         />
-        <EngagementCard
-          title="Delivered here, billed elsewhere"
-          count={deliveredElsewhere.length}
-          engagements={deliveredElsewhere}
-          viaLabelFor={(engagement) =>
-            engagement.billingCompanyId != null ? `billed to ${companiesById.get(engagement.billingCompanyId)?.name ?? engagement.billingCompanyId}` : null
-          }
-        />
+        {deliveredElsewhere.length > 0 && (
+          <EngagementCard
+            title="Delivered here, billed elsewhere"
+            count={deliveredElsewhere.length}
+            engagements={deliveredElsewhere}
+            viaLabelFor={(engagement) =>
+              engagement.billingCompanyId != null ? `billed to ${companiesById.get(engagement.billingCompanyId)?.name ?? engagement.billingCompanyId}` : null
+            }
+          />
+        )}
         {endClients.length > 0 && <EndClientsCard companyName={company.name} endClients={endClients} />}
-        <TodosCard companyId={company.id} companyName={company.name} tasks={tasksQuery.data ?? []} now={now} />
-        <ActivityCard companyId={company.id} companyName={company.name} items={activityItems} />
+        <ActivityCard
+          companyId={company.id}
+          companyName={company.name}
+          tasks={tasksQuery.data ?? []}
+          items={activityItems}
+          now={now}
+          mode={feedMode}
+          onModeChange={setFeedMode}
+          inputRef={composerRef}
+        />
         <ContactsCard current={currentContacts} historical={historicalContacts} />
         <DetailsCard company={company} companiesById={companiesById} />
+        <NotesCard company={company} />
         {/* §6.10's links, in the mockup's own position — the card immediately
             after Details in the right-hand column (mockup line ~1596). */}
         <LinksCard entityType="company" entityId={company.id} />

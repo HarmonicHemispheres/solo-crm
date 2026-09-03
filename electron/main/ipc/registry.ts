@@ -68,7 +68,7 @@ import {
   uncompleteMilestone,
   updateMilestone
 } from '../db/repositories/milestones'
-import { revenueSummary } from '../db/repositories/revenue'
+import { listRevenueLines, revenueSummary, setRevenueLineStatus } from '../db/repositories/revenue'
 import { getFavicon } from '../favicons'
 import { chooseBrandingImage, getBrandingSlotState, getBrandingSnapshot } from '../branding'
 import { clearBrandingSlot } from '../db/repositories/branding'
@@ -433,6 +433,14 @@ export const registry = {
   'revenue:summary': defineChannel({
     ...CHANNEL_CONTRACTS['revenue:summary'],
     handler: (input) => revenueSummary(getDatabase(), input ?? {})
+  }),
+  'revenue:lines': defineChannel({
+    ...CHANNEL_CONTRACTS['revenue:lines'],
+    handler: (input) => listRevenueLines(getDatabase(), input)
+  }),
+  'revenue:setLineStatus': defineChannel({
+    ...CHANNEL_CONTRACTS['revenue:setLineStatus'],
+    handler: (input) => runMutation(() => setRevenueLineStatus(getDatabase(), input))
   }),
 
   // ---------------------------------------------------------------------

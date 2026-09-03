@@ -55,7 +55,13 @@ import {
   updateAffiliationInputSchema,
   updatePersonInputSchema
 } from './people'
-import { revenueSummaryRequestSchema, revenueSummarySchema } from './revenue'
+import {
+  listRevenueLinesInputSchema,
+  revenueLineSchema,
+  revenueSummaryRequestSchema,
+  revenueSummarySchema,
+  setRevenueLineStatusInputSchema
+} from './revenue'
 import type { CHANNEL_NAMES as CHANNEL_NAMES_LIST } from './channel-names'
 import { deleteRequestSchema, deletionImpactSchema } from './deletion'
 import { SEARCH_KINDS, searchQueryInputSchema } from './search'
@@ -570,6 +576,15 @@ export const CHANNEL_CONTRACTS = {
   // second path around it. The request's optional `now` is for tests
   // (`revenueSummaryRequestSchema`); the view never sends it.
   'revenue:summary': { request: revenueSummaryRequestSchema.optional(), response: revenueSummarySchema },
+  // The lines the summary was computed from, and the operator's one column
+  // on them. `status` had exactly one writer in the plan — the Stripe
+  // adapter (§7) — so until that exists every line reads `projected` and the
+  // chart draws every month, past ones included, as a forecast. This is the
+  // second writer, and it writes nothing else: an amount, a month, a kind
+  // and an engagement are the generator's, from the engagement's terms
+  // (ADR-003). See `setRevenueLineStatusInputSchema`.
+  'revenue:lines': { request: listRevenueLinesInputSchema, response: z.array(revenueLineSchema).readonly() },
+  'revenue:setLineStatus': { request: setRevenueLineStatusInputSchema, response: mutationResultSchema(revenueLineSchema) },
 
   // -- offerings + categories (T-260901-07) --------------------------------
   //

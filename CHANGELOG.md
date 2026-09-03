@@ -5,6 +5,34 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## Unreleased
+
+- ✨ **Mark a line invoiced or paid** — the Revenue page lists the lines
+  behind its chart, and each one moves between projected, invoiced and paid.
+  Until now every month was drawn as a forecast, because nothing but a
+  Stripe connection could say otherwise; a marked line also stops being
+  regenerated, so it survives the next edit to the engagement.
+- ✨ **Report on any period** — Revenue and Today share one control:
+  monthly, annual or a custom range, with arrows to step to the window
+  before or after. Annual draws one bar per year.
+- ✨ **Total revenue** — the money recognised in whatever period you have
+  selected, on both Today and Revenue.
+- ✨ **A company's end clients are on its page** — every company you bill on
+  behalf of, not just the ones that already have an engagement, so a
+  sub-client you have just created is where you would look for it.
+- ⚡ **Monthly Revenue is full width** — the chart was sharing a row with the
+  rollup table, at roughly 35 pixels of column per month.
+- ⚡ **The company page, tidied** — todos and touches are one feed, newest
+  first, with one box that writes either. Since, cadence, last touch and who
+  invoices moved up into the header. Notes have their own card, unset fields
+  no longer take a row each to say nothing, and the image and delete
+  controls moved behind a "…" so the header holds Log touch and Edit.
+- 🐛 **A brand-new company is no longer overdue** — every company started
+  with a full red cadence bar labelled "never", because nothing had been
+  logged against it yet. The wait is measured from when you added it, so a
+  company added today reads on track and one untouched for a year still
+  reads late; hovering the bar says which.
+
 ## 0.6.7
 
 - ✨ **The engagement timeline** — every engagement as a bar across the

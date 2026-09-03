@@ -25,7 +25,7 @@ function daysBefore(now: Date, days: number): string {
 }
 
 function company(overrides: Partial<DecayInput> = {}): DecayInput {
-  return { kind: 'client', cadenceDays: 7, lastTouchAt: daysBefore(NOW, 1), ...overrides }
+  return { kind: 'client', cadenceDays: 7, lastTouchAt: daysBefore(NOW, 1), createdAt: daysBefore(NOW, 400), ...overrides }
 }
 
 describe('decayForCompany', () => {
@@ -84,17 +84,42 @@ describe('decayForCompany', () => {
     expect(decayForCompany(untouchedFor21Days, DEFAULT_SETTINGS, NOW).band).toBe('late')
   })
 
-  it('makes a never-touched company maximally stale, with a determinate state and no NaN', () => {
-    // ADR-001 rule 5 and P2-04's "a company never touched shows a determinate
-    // state, not NaN". `Infinity` is what `DecayMeter` maps to a full late bar.
+  it('measures an untouched company from when it was added, not from the beginning of time', () => {
+    // The reported defect: every company starts with no touch, so every new
+    // company greeted its author with a full red bar labelled "never". An
+    // untouched company's wait is the time since it was added — 400 days
+    // against a 7-day cadence here, which is still emphatically late.
     const decay = decayForCompany(company({ lastTouchAt: null }), DEFAULT_SETTINGS, NOW)
 
-    expect(decay.days).toBeNull()
-    expect(decay.pct).toBe(Number.POSITIVE_INFINITY)
+    expect(decay.days).toBe(400)
+    expect(decay.touched).toBe(false)
     expect(Number.isNaN(decay.pct)).toBe(false)
     expect(decay.band).toBe('late')
-    expect(decay.label).toBe('never')
+    expect(decay.label).toBe('400d')
     expect(decay.cadenceDays).toBe(7)
+  })
+
+  it('reads a company added today with nothing logged as on track, labelled "new"', () => {
+    // The other half of the same defect, and the half an operator meets
+    // first: a company created moments ago is not overdue, and saying so in
+    // red is the software failing to tell neglect from newness.
+    const decay = decayForCompany(company({ lastTouchAt: null, createdAt: daysBefore(NOW, 0) }), DEFAULT_SETTINGS, NOW)
+
+    expect(decay.days).toBe(0)
+    expect(decay.touched).toBe(false)
+    expect(decay.band).toBe('ok')
+    expect(decay.label).toBe('new')
+    expect(decay.description).toContain('nothing logged yet')
+  })
+
+  it('keeps a touch as the clock whenever there is one, whatever created_at says', () => {
+    // created_at is the fallback, never a competitor: a company added a year
+    // ago and touched yesterday is one day into its cadence.
+    const decay = decayForCompany(company({ lastTouchAt: daysBefore(NOW, 1), createdAt: daysBefore(NOW, 365) }), DEFAULT_SETTINGS, NOW)
+
+    expect(decay.days).toBe(1)
+    expect(decay.touched).toBe(true)
+    expect(decay.band).toBe('ok')
   })
 
   it('counts elapsed instants, not calendar dates — an hour across midnight is still today', () => {
@@ -195,7 +220,7 @@ describe('band thresholds', () => {
     })
   }
 
-  it('agrees with DecayMeter that a never-touched company is late', () => {
+  it('agrees with DecayMeter that a long-untouched company is late', () => {
     const decay = decayForCompany(company({ lastTouchAt: null }), DEFAULT_SETTINGS, NOW)
 
     const { container } = render(createElement(DecayMeter, { pct: decay.pct, label: decay.label }))

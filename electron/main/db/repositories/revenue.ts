@@ -1,15 +1,22 @@
 import type Database from 'better-sqlite3'
-import { addMonths, localPeriodMonth } from '../../../shared/format'
+import { addMonths, localPeriodMonth, nowTimestamp } from '../../../shared/format'
 import { periodMonthSchema } from '../../../shared/types'
 import type { PeriodMonth } from '../../../shared/types'
 import type { BillingModel } from '../../../shared/engagements'
 import {
+  listRevenueLinesInputSchema,
   revenueSummaryRequestSchema,
+  setRevenueLineStatusInputSchema,
+  type RevenueBucket,
+  type RevenueLine,
+  type RevenueLineKind,
+  type RevenueLineStatus,
   type RevenueRollup,
   type RevenueRollupRow,
   type RevenueSeriesPoint,
   type RevenueSummary
 } from '../../../shared/revenue'
+import { NotFoundError } from './errors'
 import { getSetting } from './settings'
 import { parseInput } from './input'
 
@@ -178,13 +185,39 @@ function rollupRows(db: Database.Database, rollup: RevenueRollup, currentMonth: 
     .sort((a, b) => b.ytdCents - a.ytdCents || a.name.localeCompare(b.name))
 }
 
+/**
+ * The SQL expression a bucketed `GROUP BY` uses for `period_month`.
+ *
+ * `period_month` is stored as a `YYYY-MM-DD` first-of-month string
+ * (CONVENTIONS.md), so a year bucket is that string's first four characters
+ * with `-01-01` after them — string arithmetic on a value whose format the
+ * schema fixes, and no date parsing in SQLite. The `month` bucket is the
+ * column itself, so the two paths are one query with a different key rather
+ * than a branch producing two different shapes.
+ *
+ * **This lives here, not in the renderer.** Folding twelve months into a
+ * year is an attribution of money to a period, which ADR-003 puts in one
+ * `SUM … GROUP BY` in main — the same rule that keeps `× 12` out of the
+ * view.
+ */
+function bucketExpression(bucket: RevenueBucket): string {
+  return bucket === 'year' ? "substr(period_month, 1, 4) || '-01-01'" : 'period_month'
+}
+
 export function revenueSummary(db: Database.Database, input: unknown): RevenueSummary {
   const parsed = parseInput(revenueSummaryRequestSchema, input)
   const currentMonth = localPeriodMonth(parsed.now ? new Date(parsed.now) : new Date())
   const yearStart = fiscalYearStart(currentMonth, getSetting(db, 'workspace.fiscalYearStartMonth'))
   const nextYearEnd = addMonths(currentMonth, NEXT_YEAR_MONTHS - 1)
-  const windowFrom = addMonths(currentMonth, -CHART_MONTHS_BEFORE)
-  const windowTo = addMonths(windowFrom, CHART_MONTHS - 1)
+  const bucket: RevenueBucket = parsed.bucket ?? 'month'
+  const bucketKey = bucketExpression(bucket)
+  // The default window is what this channel has always answered with, so a
+  // caller that sends none gets the same twelve months it did before the
+  // request grew a window. A window sent backwards (`to` before `from`) is
+  // read as the single month `from`, rather than as an empty chart with no
+  // explanation: `eachMonth` in the renderer would yield nothing for it.
+  const windowFrom = parsed.window?.from ?? addMonths(currentMonth, -CHART_MONTHS_BEFORE)
+  const windowTo = parsed.window ? (parsed.window.to < windowFrom ? windowFrom : parsed.window.to) : addMonths(windowFrom, CHART_MONTHS - 1)
 
   const lineCount = (db.prepare('SELECT COUNT(*) AS count FROM revenue_lines').get() as { count: number }).count
 
@@ -211,7 +244,7 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
   const series: RevenueSeriesPoint[] = []
   const seriesRows = db
     .prepare(
-      `SELECT period_month,
+      `SELECT ${bucketKey} AS period_month,
               CASE kind WHEN 'tm_estimate' THEN 'tm' WHEN 'tm_actual' THEN 'tm' ELSE kind END AS kind,
               CASE WHEN status IN ('invoiced', 'paid') THEN 'actual' ELSE 'projected' END AS status,
               SUM(amount_cents) AS cents
@@ -237,7 +270,7 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
   const months: RevenueSummary['months'][number][] = []
   const monthRows = db
     .prepare(
-      `SELECT period_month, SUM(amount_cents) AS cents FROM revenue_lines
+      `SELECT ${bucketKey} AS period_month, SUM(amount_cents) AS cents FROM revenue_lines
        WHERE period_month BETWEEN ? AND ? AND kind <> 'expense' AND kind IS NOT NULL
        GROUP BY 1 ORDER BY 1`
     )
@@ -246,6 +279,11 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
     const periodMonth = periodMonthSchema.safeParse(row.period_month)
     if (periodMonth.success) months.push({ periodMonth: periodMonth.data, cents: row.cents })
   }
+
+  // The window's own total — every line in it, expenses included, so it is
+  // net the way the rollup's columns are net rather than gross the way the
+  // chart is. One `SUM`, not a fold over `months`.
+  const windowTotal = sum(db, 'period_month BETWEEN ? AND ?', [windowFrom, windowTo])
 
   return {
     currentMonth,
@@ -265,6 +303,8 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
       }
     },
     window: { from: windowFrom, to: windowTo },
+    bucket,
+    windowTotalCents: windowTotal.cents ?? 0,
     series,
     months,
     rollups,
@@ -273,5 +313,110 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
       backlogCents: rollups.billing.reduce((total, row) => total + row.backlogCents, 0),
       ytdCents: rollups.billing.reduce((total, row) => total + row.ytdCents, 0)
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The lines themselves, and the operator's one column
+// ---------------------------------------------------------------------------
+
+interface RevenueLineRow {
+  readonly id: string
+  readonly engagement_id: string | null
+  readonly engagement_name: string | null
+  readonly billing_company_name: string | null
+  readonly period_month: string
+  readonly kind: string | null
+  readonly status: string
+  readonly amount_cents: number
+}
+
+/**
+ * Every line in a window, newest month first, with the two names needed to
+ * say which engagement it belongs to.
+ *
+ * This is a *list of rows*, not a figure: it sums nothing and attributes
+ * nothing, so ADR-003 has no quarrel with it — the decision is about where
+ * revenue is computed, and reading back the rows it was computed from is
+ * how the operator sees what there is to mark. Every total on the page
+ * still comes from `revenueSummary` above.
+ *
+ * A line whose `period_month` or `status` the schema rejects (nothing in
+ * SQLite forbids a hand-edited one) is skipped rather than thrown on, for
+ * the reason `revenueSummary`'s series loop gives: one bad row must not
+ * blank a page.
+ */
+export function listRevenueLines(db: Database.Database, input: unknown): readonly RevenueLine[] {
+  const { from, to } = parseInput(listRevenueLinesInputSchema, input)
+  const rows = db
+    .prepare(
+      `SELECT r.id, r.engagement_id, e.name AS engagement_name, c.name AS billing_company_name,
+              r.period_month, r.kind, r.status, r.amount_cents
+       FROM revenue_lines r
+       LEFT JOIN engagements e ON e.id = r.engagement_id
+       LEFT JOIN companies c ON c.id = e.billing_company_id
+       WHERE r.period_month BETWEEN ? AND ?
+       ORDER BY r.period_month DESC, e.name COLLATE NOCASE, r.kind`
+    )
+    .all(from, to) as RevenueLineRow[]
+
+  const lines: RevenueLine[] = []
+  for (const row of rows) {
+    const periodMonth = periodMonthSchema.safeParse(row.period_month)
+    if (!periodMonth.success) continue
+    if (row.status !== 'projected' && row.status !== 'invoiced' && row.status !== 'paid') continue
+    lines.push({
+      id: row.id,
+      engagementId: row.engagement_id,
+      engagementName: row.engagement_name,
+      billingCompanyName: row.billing_company_name,
+      periodMonth: periodMonth.data,
+      kind: (row.kind as RevenueLineKind | null) ?? null,
+      status: row.status as RevenueLineStatus,
+      amountCents: row.amount_cents
+    })
+  }
+  return lines
+}
+
+/**
+ * Move one line between `projected`, `invoiced` and `paid`.
+ *
+ * One column, on a row that already exists. Nothing here writes an amount, a
+ * month, a kind or an engagement — those are the generator's, read from the
+ * engagement's terms, and a channel that let the renderer set them would be
+ * the second path around ADR-003 that `revenue:summary` was built to avoid.
+ *
+ * The consequence beyond the chart: the generator owns `projected` rows
+ * only, so marking a line `invoiced` also takes it out of the generator's
+ * hands — the next edit to the engagement will not overwrite it, and will
+ * not put a fresh projection in the same month beside it.
+ */
+export function setRevenueLineStatus(db: Database.Database, input: unknown): RevenueLine {
+  const { id, status } = parseInput(setRevenueLineStatusInputSchema, input)
+  const changed = db
+    .prepare('UPDATE revenue_lines SET status = ?, updated_at = ? WHERE id = ?')
+    .run(status, nowTimestamp(), id).changes
+  if (changed === 0) throw new NotFoundError('revenue line', id)
+
+  const row = db
+    .prepare(
+      `SELECT r.id, r.engagement_id, e.name AS engagement_name, c.name AS billing_company_name,
+              r.period_month, r.kind, r.status, r.amount_cents
+       FROM revenue_lines r
+       LEFT JOIN engagements e ON e.id = r.engagement_id
+       LEFT JOIN companies c ON c.id = e.billing_company_id
+       WHERE r.id = ?`
+    )
+    .get(id) as RevenueLineRow
+  return {
+    id: row.id,
+    engagementId: row.engagement_id,
+    engagementName: row.engagement_name,
+    billingCompanyName: row.billing_company_name,
+    periodMonth: periodMonthSchema.parse(row.period_month),
+    kind: (row.kind as RevenueLineKind | null) ?? null,
+    status: row.status as RevenueLineStatus,
+    amountCents: row.amount_cents
   }
 }

@@ -34,6 +34,8 @@ function summaryFor(overrides: Partial<RevenueSummary> = {}): RevenueSummary {
   return {
     currentMonth: '2026-09-01',
     yearStart: '2026-01-01',
+    bucket: 'month',
+    windowTotalCents: 0,
     lineCount: 40,
     metrics: {
       recurringMonthCents: 830_000,
@@ -114,7 +116,11 @@ describe('Revenue', () => {
     expect(screen.getByRole('group', { name: 'Roll revenue up by' })).toBeTruthy()
 
     expect(within(statFor('Recurring / month')).getByText('$8,300')).toBeTruthy()
-    expect(statFor('Recurring / month').classList.contains('hero')).toBe(true)
+    // The hero is Total revenue now — the one figure that is *of* the
+    // reporting period, and the reason the period control exists. "Recurring
+    // per month" is still a statement about now, which is why the period
+    // does not move it.
+    expect(statFor('Total revenue').classList.contains('hero')).toBe(true)
     expect(statFor('Recurring / month').textContent).toContain('2 retainers · $99,600 next 12 mo')
     expect(within(statFor('Fixed backlog')).getByText('$7,200')).toBeTruthy()
     expect(statFor('Fixed backlog').textContent).toContain('2 unbilled milestones')
@@ -124,7 +130,7 @@ describe('Revenue', () => {
     expect(statFor('Concentration').querySelectorAll('.conc i')).toHaveLength(2)
 
     expect(document.querySelectorAll('.stat.hero')).toHaveLength(1)
-    expect(screen.getByRole('heading', { name: 'Recognised by month' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Monthly revenue' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Rollup' })).toBeTruthy()
 
     // The chart's scale comes from the payload's tallest month ($16,850 ->
@@ -244,5 +250,150 @@ describe('Revenue', () => {
     )
     await screen.findByText('$8,300')
     expect(summary).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * The reporting period, and the operator's one column on a line.
+ *
+ * Both of these are answers to reported defects, and both are about a
+ * boundary rather than a rendering: the window and bucket must reach main
+ * (folding months into a year is a `GROUP BY` there, ADR-003), and marking a
+ * line must write one column and no figure.
+ */
+describe('Revenue — the reporting period', () => {
+  function lastWindowSent(summary: ReturnType<typeof vi.fn>) {
+    const calls = summary.mock.calls as unknown[][]
+    return calls[calls.length - 1]?.[0] as { window?: { from: string; to: string }; bucket?: string } | undefined
+  }
+
+  it('asks main for the window it is showing, not for a window it filters here', async () => {
+    const { summary } = renderRevenue()
+    await screen.findByText('$8,300')
+
+    const sent = lastWindowSent(summary)
+    expect(sent?.window).toBeDefined()
+    expect(sent?.bucket).toBe('month')
+    // A whole calendar year: the window has to have a name for the arrows
+    // to mean anything.
+    expect(sent?.window?.from.slice(5)).toBe('01-01')
+    expect(sent?.window?.to.slice(5)).toBe('12-01')
+  })
+
+  it('steps to the previous window and reads it, rather than filtering what it already has', async () => {
+    const { summary } = renderRevenue()
+    await screen.findByText('$8,300')
+    const before = lastWindowSent(summary)
+    const year = Number(before?.window?.from.slice(0, 4))
+
+    fireEvent.click(screen.getByRole('button', { name: /^Previous period/ }))
+
+    await waitFor(() => expect(Number(lastWindowSent(summary)?.window?.from.slice(0, 4))).toBe(year - 1))
+    expect(screen.getByText(String(year - 1))).toBeTruthy()
+  })
+
+  it('asks for year buckets on Annual — the fold happens in main, not here', async () => {
+    // The ADR-003 line: twelve monthly figures added into one bar is an
+    // attribution to a period. If this ever starts passing with
+    // `bucket: 'month'`, the view has started summing.
+    const { summary } = renderRevenue()
+    await screen.findByText('$8,300')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annual' }))
+
+    await waitFor(() => expect(lastWindowSent(summary)?.bucket).toBe('year'))
+    const sent = lastWindowSent(summary)
+    expect(Number(sent?.window?.to.slice(0, 4)) - Number(sent?.window?.from.slice(0, 4))).toBe(4)
+  })
+
+  it('reads Total revenue off the payload’s window total and names the window under it', async () => {
+    renderRevenue(summaryFor({ windowTotalCents: 6_400_000 }))
+    await screen.findByText('$8,300')
+
+    const total = statFor('Total revenue')
+    expect(within(total).getByText('$64,000')).toBeTruthy()
+    // The period's own name, so the figure says what it is a total of.
+    expect(total.textContent).toContain(String(new Date().getFullYear()))
+  })
+})
+
+describe('Revenue — marking a line invoiced', () => {
+  const LINES = [
+    {
+      id: 'line-1',
+      engagementId: 'eng-1',
+      engagementName: 'EZDeploy retainer',
+      billingCompanyName: 'EZDeploy',
+      periodMonth: '2026-09-01',
+      kind: 'retainer' as const,
+      status: 'projected' as const,
+      amountCents: 830_000
+    }
+  ]
+
+  function renderWithLines() {
+    const summary = vi.fn(async () => ({ ok: true as const, data: summaryFor() }))
+    const lines = vi.fn(async () => ({ ok: true as const, data: LINES }))
+    const setStatus = vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { ...LINES[0], status: 'invoiced' as const } } }))
+    window.crm = stubCrm({ 'revenue:summary': summary, 'revenue:lines': lines, 'revenue:setLineStatus': setStatus })
+    const queryClient = createQueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/revenue']}>
+          <Routes>
+            <Route path="/revenue" element={<Revenue />} />
+            <Route path="/company/:id" element={<DetailStub />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    return { lines, setStatus }
+  }
+
+  it('lists the window’s lines with the engagement, month, kind and amount', async () => {
+    renderWithLines()
+    await screen.findByText('EZDeploy retainer')
+
+    const row = screen.getByText('EZDeploy retainer').closest('.rev-line') as HTMLElement
+    expect(row.textContent).toContain('Sep 2026')
+    expect(row.textContent).toContain('Retainer')
+    expect(within(row).getByText('$8,300')).toBeTruthy()
+  })
+
+  it('writes exactly one column — the status — and never an amount', async () => {
+    // The whole point of routing this through `setLineStatus` rather than a
+    // general line update: the amount, month, kind and engagement are the
+    // generator's, read from the engagement's terms (ADR-003).
+    const { setStatus } = renderWithLines()
+    await screen.findByText('EZDeploy retainer')
+
+    const row = screen.getByText('EZDeploy retainer').closest('.rev-line') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Invoiced' }))
+
+    await waitFor(() => expect(setStatus).toHaveBeenCalledWith({ id: 'line-1', status: 'invoiced' }))
+    expect(setStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-reads the summary after a mark, so the chart stops calling that money a forecast', async () => {
+    // The reported defect. The status axis is computed in main, so the mark
+    // only reaches the chart through a refetch.
+    const { setStatus } = renderWithLines()
+    await screen.findByText('EZDeploy retainer')
+    const summaryReads = vi.mocked(window.crm['revenue:summary']).mock.calls.length
+
+    const row = screen.getByText('EZDeploy retainer').closest('.rev-line') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Paid' }))
+
+    await waitFor(() => expect(setStatus).toHaveBeenCalled())
+    await waitFor(() => expect(vi.mocked(window.crm['revenue:summary']).mock.calls.length).toBeGreaterThan(summaryReads))
+  })
+
+  it('shows the line’s current status as the chosen segment, so the control says where the row is', async () => {
+    renderWithLines()
+    await screen.findByText('EZDeploy retainer')
+
+    const row = screen.getByText('EZDeploy retainer').closest('.rev-line') as HTMLElement
+    expect(within(row).getByRole('button', { name: 'Projected' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(row).getByRole('button', { name: 'Paid' }).getAttribute('aria-pressed')).toBe('false')
   })
 })

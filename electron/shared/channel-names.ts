@@ -87,6 +87,8 @@ export const CHANNEL_NAMES = [
 
   // -- revenue -----------------------------------------------------------
   'revenue:summary',
+  'revenue:lines',
+  'revenue:setLineStatus',
 
   // -- offerings ---------------------------------------------------------
   'offerings:listCategories',

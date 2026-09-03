@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ViewHeader } from '../components/primitives/ViewHeader'
@@ -23,6 +23,8 @@ import { invalidate, queryKeys } from '../lib/query-keys'
 import { decayForCompany, type Decay } from '../lib/decay'
 import { identityColor, initials } from '../lib/identity'
 import { RevenueChart, RevenueLegend } from '../components/revenue/RevenueChart'
+import { PeriodPicker } from '../components/revenue/PeriodPicker'
+import { defaultPeriod, periodLabel, periodScope, type Period } from '../components/revenue/period'
 import { formatMoney, plural } from './offerings-display'
 // Imported, never restated — see this file's header and T-260829-14's Risks.
 import { localToday, dueMeta, sortByDue } from './todo-urgency'
@@ -209,7 +211,18 @@ export function Today() {
   // below: the dashboard's todos and cadence have nothing to do with a
   // revenue line, and a hand-edited row that broke the summary must not
   // blank them — the two tiles read "—" and the card says what happened.
-  const revenueQuery = useQuery({ queryKey: queryKeys.revenue.summary(), queryFn: ipcQueryFn('revenue:summary') })
+  //
+  // The period is this page's one filter over money. Everything else on the
+  // dashboard — todos, cadence, the activity feed — is about now by
+  // definition and has no window to be read through; the three revenue
+  // figures do, and Total revenue is the one that is entirely of the range.
+  // The other two are deliberately still about now: "recurring per month"
+  // restated about 2024 would be a different claim wearing the same label.
+  const [period, setPeriod] = useState<Period>(() => defaultPeriod(new Date()))
+  const revenueQuery = useQuery({
+    queryKey: queryKeys.revenue.summary(periodScope(period)),
+    queryFn: ipcQueryFn('revenue:summary', { window: { from: period.from, to: period.to }, bucket: period.bucket })
+  })
 
   // ---- Completion — the same contract Todos.tsx's own completion uses: the
   // open list and the countOpen summary are both rewritten in onMutate so
@@ -323,10 +336,13 @@ export function Today() {
       title="Today"
       description="Every relationship is scored against the cadence you set for it, not a global rule. A retainer client at eight days is a problem; a referral channel at eight days is fine."
       actions={
-        <Button variant="ghost" onClick={(event) => openLayer('log', event.currentTarget)}>
-          <PlusIcon />
-          Log a touch
-        </Button>
+        <>
+          <PeriodPicker period={period} onChange={setPeriod} label="Revenue period" />
+          <Button variant="ghost" onClick={(event) => openLayer('log', event.currentTarget)}>
+            <PlusIcon />
+            Log a touch
+          </Button>
+        </>
       }
     />
   )
@@ -369,9 +385,14 @@ export function Today() {
       {header}
       <div className="grid stats today-stats">
         <Stat
+          label="Total revenue"
+          value={recognised ? formatMoney(revenue.windowTotalCents) : '—'}
+          tone="hero"
+          meta={recognised ? periodLabel(period) : 'nothing recognised yet'}
+        />
+        <Stat
           label="Recurring / month"
           value={recognised ? formatMoney(revenue.metrics.recurringMonthCents) : '—'}
-          tone="hero"
           meta={
             recognised
               ? `${plural(revenue.metrics.recurringEngagements, 'retainer')} · ${formatMoney(revenue.metrics.recurringNextYearCents)} next 12 mo`
@@ -417,7 +438,7 @@ export function Today() {
                 trailing={
                   <>
                     <KindTag kind={company.kind} />
-                    <DecayMeter pct={decay.pct} label={decay.label} />
+                    <DecayMeter pct={decay.pct} label={decay.label} description={decay.description} />
                   </>
                 }
               />
@@ -427,10 +448,24 @@ export function Today() {
 
         {/* The mockup's order: Going quiet, then the chart, then Next up. */}
         <Card>
-          <Card.Header title="Revenue" actions={<RevenueLegend compact />} />
+          <Card.Header
+            title={
+              <>
+                <span>Revenue</span> <span className="card-sub">{periodLabel(period)}</span>
+              </>
+            }
+            actions={<RevenueLegend compact />}
+          />
           {recognised ? (
             <div className="today-chart">
-              <RevenueChart window={revenue.window} series={revenue.series} months={revenue.months} currentMonth={revenue.currentMonth} height={150} />
+              <RevenueChart
+                window={revenue.window}
+                series={revenue.series}
+                months={revenue.months}
+                currentMonth={revenue.currentMonth}
+                bucket={revenue.bucket}
+                height={150}
+              />
             </div>
           ) : revenueQuery.error ? (
             <EmptyState>{revenueQuery.error.message}</EmptyState>

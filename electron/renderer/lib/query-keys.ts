@@ -88,17 +88,27 @@ export const queryKeys = {
     sum: (engagementId: string) => ['milestones', 'sum', engagementId] as const
   },
   /**
-   * `revenue:summary` (T-260902-04). One read, one entry: the payload
-   * carries all three rollups, so the Revenue view's toggle and Today's
-   * tiles share it and a toggle flip is a lookup, not a fetch. Nothing
-   * writes `revenue_lines` from the renderer; the entity is invalidated by
-   * the engagement and milestone mutations that regenerate it in main, and
-   * by a settings write, since the fiscal year start is one of them (see
-   * the three `invalidate` helpers that fold it in).
+   * `revenue:summary` (T-260902-04). The payload carries all three rollups,
+   * so the Revenue view's toggle and Today's tiles share an entry and a
+   * toggle flip is a lookup, not a fetch.
+   *
+   * The **window and bucket** are part of the key, because they are part of
+   * the answer: stepping the report back a year is a different set of
+   * months, and caching it under the same key as the default view would
+   * hand the chart the wrong twelve. `undefined` — the default window — has
+   * its own entry, which is the one Today reads, so the two pages do not
+   * evict each other every time the operator moves the chart.
+   *
+   * `revenue:setLineStatus` is the one renderer write in this entity
+   * (`invalidate.revenue`); the engagement and milestone mutations that
+   * regenerate lines in main invalidate it too, as does a settings write,
+   * since the fiscal year start is one of them.
    */
   revenue: {
     all: () => ['revenue'] as const,
-    summary: () => ['revenue', 'summary'] as const
+    summary: (scope?: { from: string; to: string; bucket: string }) =>
+      scope === undefined ? (['revenue', 'summary'] as const) : (['revenue', 'summary', scope.from, scope.to, scope.bucket] as const),
+    lines: (from: string, to: string) => ['revenue', 'lines', from, to] as const
   },
   /**
    * `offerings:*` (T-260901-07). The entity is the channel's own namespace, so

@@ -7,11 +7,12 @@ import type Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
 import { seedFixture } from '../seed'
-import { fiscalYearStart, revenueSummary } from './revenue'
+import { fiscalYearStart, listRevenueLines, revenueSummary, setRevenueLineStatus } from './revenue'
 import { setSetting } from './settings'
-import { ValidationError } from './errors'
+import { NotFoundError, ValidationError } from './errors'
 import { nowTimestamp } from '../../../shared/format'
-import { REVENUE_ROLLUPS, revenueSummarySchema, type RevenueSummary } from '../../../shared/revenue'
+import { REVENUE_ROLLUPS, revenueLineSchema, revenueSummarySchema, type RevenueSummary } from '../../../shared/revenue'
+import { regenerateAllRevenueLines } from './revenue-generator'
 
 /**
  * T-260902-04 (P3-06): the rollups over the seeded fixture, pinned to one
@@ -284,6 +285,217 @@ describe('revenueSummary: §8 performance', () => {
       for (let i = 0; i < 3; i += 1) revenueSummary(db, { now: NOW_ISO })
       const elapsed = (performance.now() - started) / 3
       expect(elapsed).toBeLessThan(100)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The reporting window, the annual bucket, and the operator's one column
+// ---------------------------------------------------------------------------
+
+describe('the reporting window', () => {
+  it('answers the twelve months around now when no window is sent, exactly as it always did', () => {
+    // Every existing caller sends none. This is the guarantee that adding
+    // the field changed no answer.
+    withDatabase((db) => {
+      const summary = seeded(db)
+      expect(summary.window).toEqual({ from: '2026-06-01', to: '2027-05-01' })
+      expect(summary.bucket).toBe('month')
+    })
+  })
+
+  it('reports the window it was asked for, and nothing outside it reaches the chart', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const summary = revenueSummary(db, { now: NOW_ISO, window: { from: '2026-01-01', to: '2026-03-01' } })
+
+      expect(summary.window).toEqual({ from: '2026-01-01', to: '2026-03-01' })
+      for (const point of summary.series) {
+        expect(point.periodMonth >= '2026-01-01' && point.periodMonth <= '2026-03-01').toBe(true)
+      }
+      for (const month of summary.months) {
+        expect(month.periodMonth >= '2026-01-01' && month.periodMonth <= '2026-03-01').toBe(true)
+      }
+    })
+  })
+
+  it('leaves the four metrics alone when the window moves — they are statements about now', () => {
+    // The whole reason the window is not a filter on everything: stepping
+    // the chart back to 2020 must not make "recurring / month" a claim
+    // about 2020 while still calling itself "/ month".
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const here = revenueSummary(db, { now: NOW_ISO })
+      const longAgo = revenueSummary(db, { now: NOW_ISO, window: { from: '2020-01-01', to: '2020-12-01' } })
+
+      expect(longAgo.metrics).toEqual(here.metrics)
+      expect(longAgo.totals).toEqual(here.totals)
+      expect(longAgo.currentMonth).toBe(here.currentMonth)
+    })
+  })
+
+  it('totals the window itself, and only the window', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const oneMonth = revenueSummary(db, { now: NOW_ISO, window: { from: '2026-09-01', to: '2026-09-01' } })
+      const monthRow = oneMonth.months.find((month) => month.periodMonth === '2026-09-01')
+
+      expect(oneMonth.windowTotalCents).toBeGreaterThan(0)
+      // The window holds one month and the fixture writes no expense rows,
+      // so the window total and that month's gross total are the same money.
+      expect(oneMonth.windowTotalCents).toBe(monthRow?.cents)
+    })
+  })
+
+  it('reads a window sent backwards as the single month it opens on, not as an empty chart', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const summary = revenueSummary(db, { now: NOW_ISO, window: { from: '2026-09-01', to: '2026-01-01' } })
+      expect(summary.window).toEqual({ from: '2026-09-01', to: '2026-09-01' })
+    })
+  })
+})
+
+describe('the annual bucket', () => {
+  it('folds a year of months into one point, keyed by that year’s January', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const byYear = revenueSummary(db, { now: NOW_ISO, window: { from: '2026-01-01', to: '2026-12-01' }, bucket: 'year' })
+
+      expect(byYear.bucket).toBe('year')
+      expect(byYear.months).toHaveLength(1)
+      expect(byYear.months[0].periodMonth).toBe('2026-01-01')
+      for (const point of byYear.series) expect(point.periodMonth).toBe('2026-01-01')
+    })
+  })
+
+  it('sums to the same money as the months it folded — the bucket is a grouping, not a filter', () => {
+    // The property that matters, and the one a fold in the renderer would
+    // have made a matter of care rather than construction (ADR-003).
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const window = { from: '2026-01-01', to: '2026-12-01' } as const
+      const byMonth = revenueSummary(db, { now: NOW_ISO, window, bucket: 'month' })
+      const byYear = revenueSummary(db, { now: NOW_ISO, window, bucket: 'year' })
+
+      const total = (summary: RevenueSummary) => summary.months.reduce((sum, month) => sum + month.cents, 0)
+      expect(total(byYear)).toBe(total(byMonth))
+      expect(byYear.windowTotalCents).toBe(byMonth.windowTotalCents)
+
+      const seriesTotal = (summary: RevenueSummary) => summary.series.reduce((sum, point) => sum + point.cents, 0)
+      expect(seriesTotal(byYear)).toBe(seriesTotal(byMonth))
+    })
+  })
+
+  it('keeps the kind and status axes intact while folding the period one', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const byYear = revenueSummary(db, { now: NOW_ISO, window: { from: '2026-01-01', to: '2027-12-01' }, bucket: 'year' })
+      // One point per (year, kind, status), so the same year appears more
+      // than once — the fold is over the period axis alone.
+      const kinds = new Set(byYear.series.map((point) => point.kind))
+      expect(kinds.size).toBeGreaterThan(1)
+      expect(() => revenueSummarySchema.parse(byYear)).not.toThrow()
+    })
+  })
+})
+
+describe('listRevenueLines and setRevenueLineStatus', () => {
+  function anyLine(db: Database.Database) {
+    const lines = listRevenueLines(db, { from: '2026-01-01', to: '2027-12-01' })
+    expect(lines.length).toBeGreaterThan(0)
+    return lines[0]
+  }
+
+  it('lists the lines in a window with the names needed to say which engagement they are', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const lines = listRevenueLines(db, { from: '2026-09-01', to: '2026-09-01' })
+
+      expect(lines.length).toBeGreaterThan(0)
+      for (const line of lines) {
+        expect(line.periodMonth).toBe('2026-09-01')
+        expect(() => revenueLineSchema.parse(line)).not.toThrow()
+      }
+      expect(lines.some((line) => line.engagementName !== null)).toBe(true)
+    })
+  })
+
+  it('lists nothing for a window with no lines, rather than refusing', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      expect(listRevenueLines(db, { from: '2019-01-01', to: '2019-12-01' })).toEqual([])
+    })
+  })
+
+  it('refuses a stray key and a malformed month', () => {
+    withDatabase((db) => {
+      expect(() => listRevenueLines(db, { from: '2026-01-01', to: '2026-02-01', rollup: 'billing' })).toThrow(ValidationError)
+      expect(() => listRevenueLines(db, { from: '2026-01', to: '2026-02-01' })).toThrow(ValidationError)
+      expect(() => setRevenueLineStatus(db, { id: 'x', status: 'settled' })).toThrow(ValidationError)
+    })
+  })
+
+  it('moves one line between the three statuses and changes nothing else about it', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const before = anyLine(db)
+
+      const invoiced = setRevenueLineStatus(db, { id: before.id, status: 'invoiced' })
+      expect(invoiced.status).toBe('invoiced')
+      // Everything the generator owns is untouched: this channel writes one
+      // column, and an amount typed by hand is exactly what ADR-003 forbids.
+      expect({ ...invoiced, status: before.status }).toEqual(before)
+
+      expect(setRevenueLineStatus(db, { id: before.id, status: 'paid' }).status).toBe('paid')
+      expect(setRevenueLineStatus(db, { id: before.id, status: 'projected' }).status).toBe('projected')
+    })
+  })
+
+  it('refuses a line that does not exist rather than silently doing nothing', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      expect(() => setRevenueLineStatus(db, { id: randomUUID(), status: 'paid' })).toThrow(NotFoundError)
+    })
+  })
+
+  it('moves the line from the chart’s projected series into its actual one', () => {
+    // The reported defect, end to end: every bar drew as a forecast because
+    // nothing could say otherwise.
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const window = { from: '2026-09-01', to: '2026-09-01' } as const
+      const line = listRevenueLines(db, window).find((candidate) => candidate.kind === 'retainer')
+      expect(line).toBeDefined()
+
+      const projectedBefore = revenueSummary(db, { now: NOW_ISO, window }).series.filter((point) => point.status === 'projected')
+      expect(projectedBefore.length).toBeGreaterThan(0)
+
+      setRevenueLineStatus(db, { id: line!.id, status: 'invoiced' })
+
+      const after = revenueSummary(db, { now: NOW_ISO, window })
+      const actual = after.series.find((point) => point.status === 'actual' && point.kind === 'retainer')
+      expect(actual).toBeDefined()
+      expect(actual?.cents).toBeGreaterThanOrEqual(line!.amountCents)
+    })
+  })
+
+  it('takes a marked line out of the generator’s hands, so regeneration does not undo the mark', () => {
+    // The property that makes the mark worth making. The generator owns
+    // `projected` rows of its own kinds; an invoiced one is a fact about
+    // money that has moved, and re-reading the engagement's terms must not
+    // overwrite it or put a second projection beside it.
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const line = listRevenueLines(db, { from: '2026-09-01', to: '2026-09-01' }).find((candidate) => candidate.kind === 'retainer')
+      expect(line).toBeDefined()
+      setRevenueLineStatus(db, { id: line!.id, status: 'paid' })
+
+      regenerateAllRevenueLines(db, { now: NOW })
+
+      const after = listRevenueLines(db, { from: '2026-09-01', to: '2026-09-01' }).find((candidate) => candidate.id === line!.id)
+      expect(after?.status).toBe('paid')
+      expect(after?.amountCents).toBe(line!.amountCents)
     })
   })
 })

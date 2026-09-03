@@ -169,3 +169,65 @@
   height: 100%;
   background: var(--verdigris);
 }
+
+/* ── the reporting period's own row ──
+ *
+ * The chart is a full-width card of its own above `.rev-cards`, which is
+ * the whole point of the change: it was sharing a two-column grid with the
+ * rollup table, and at a typical window each got about 420px — roughly 35px
+ * of column for a year of revenue. */
+.rev-chart {
+  padding: 15px 15px 6px;
+}
+
+/* ── lines, and the operator's one column on them ── */
+.rev-lines {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.rev-lines-note {
+  padding: 14px 15px;
+}
+
+.rev-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rev-line:last-child {
+  border-bottom: 0;
+}
+
+.rev-line-id {
+  flex: 1;
+  min-width: 150px;
+}
+
+.rev-line-id .nm {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.rev-line-amt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The status control is three words wide; at the card's narrowest it takes
+   its own line under the amount rather than squeezing the engagement name
+   to nothing. */
+.rev-line .toggle {
+  flex: 0 0 auto;
+}
+
+.rev-line .toggle button {
+  font-size: 9.5px;
+  padding: 3px 7px;
+}

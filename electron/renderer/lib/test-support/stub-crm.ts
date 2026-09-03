@@ -122,6 +122,8 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
     // T-260902-04. The default is an empty table — `lineCount: 0`, the
     // shape the Revenue view shows its empty state for.
     'revenue:summary': vi.fn(async () => ({ ok: true as const, data: STUB_REVENUE_SUMMARY })),
+    'revenue:lines': vi.fn(async () => ({ ok: true as const, data: [] })),
+    'revenue:setLineStatus': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: STUB_REVENUE_LINE } })),
 
     // T-260901-07's catalogue. Empty lists and `null` for the three reads,
     // successful envelopes for the seven writes — and each write's `data` is a
@@ -266,10 +268,23 @@ const STUB_REVENUE_SUMMARY = {
     concentration: { share: null, name: null, payers: [] }
   },
   window: { from: '2026-05-01', to: '2027-04-01' },
+  bucket: 'month' as const,
+  windowTotalCents: 0,
   series: [],
   months: [],
   rollups: { billing: [], client: [], model: [] },
   totals: { monthlyCents: 0, backlogCents: 0, ytdCents: 0 }
+}
+
+const STUB_REVENUE_LINE = {
+  id: 'stub-revenue-line-id',
+  engagementId: 'stub-id',
+  engagementName: 'Stub engagement',
+  billingCompanyName: 'Stub company',
+  periodMonth: '2026-08-01',
+  kind: 'retainer' as const,
+  status: 'projected' as const,
+  amountCents: 0
 }
 
 const STUB_MILESTONE = {

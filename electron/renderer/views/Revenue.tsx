@@ -1,23 +1,25 @@
 import { useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { Card } from '../components/primitives/Card'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { Stat } from '../components/primitives/Stat'
+import { Toast } from '../components/primitives/Toast'
 import { Toggle } from '../components/primitives/Toggle'
 import { ModelTag } from '../components/primitives/ModelTag'
 import { RevenueChart, RevenueLegend } from '../components/revenue/RevenueChart'
-import { ipcQueryFn } from '../lib/ipc'
-import { queryKeys } from '../lib/query-keys'
+import { PeriodPicker } from '../components/revenue/PeriodPicker'
+import { defaultPeriod, formatPeriodMonth, periodLabel, periodScope, type Period } from '../components/revenue/period'
+import { ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
+import { invalidate, queryKeys } from '../lib/query-keys'
 import { identityColor, initials } from '../lib/identity'
 import { formatMoney, plural } from './offerings-display'
-import type { RevenueRollup, RevenueRollupRow, RevenueSummary } from '../../shared/revenue'
+import type { RevenueLine, RevenueLineStatus, RevenueRollup, RevenueRollupRow, RevenueSummary } from '../../shared/revenue'
 import './Revenue.css'
 
 /**
- * `/revenue` — §6.7's view (T-260902-05, P3-10), replacing T-260902-01's
- * honest empty body now that there is something to read.
+ * `/revenue` — §6.7's view (T-260902-05, P3-10).
  *
  * Every number on this page arrives from one `revenue:summary` call and is
  * rendered as it came: the four metrics, the chart's series, the three
@@ -28,9 +30,25 @@ import './Revenue.css'
  * which of the payload's three row sets is shown — who the same money is
  * attributed to — and never a total, and never fetches.
  *
- * The one thing that is still deliberately absent is the mockup's animated
- * count-up on the stat values; base.css's motion rules cover transitions,
- * and a number that is changing is a number that cannot be read.
+ * **The reporting period is part of the request, not a filter here.** The
+ * picker sends its window and bucket to `revenue:summary`; folding twelve
+ * months into an annual bar is a `GROUP BY` in main for the same reason
+ * every other figure is. The four metrics are deliberately *not* scoped by
+ * it — "recurring per month" and "T&M run rate" are statements about now,
+ * and stepping the chart back a year must not quietly restate them about
+ * 2025. The one figure that is of the range is Total revenue, and the
+ * summary states it (`windowTotalCents`).
+ *
+ * **Marking a line invoiced or paid** is the page's one write. Until it
+ * existed the whole chart was drawn dashed — `status` had a single writer
+ * in the plan, the Stripe adapter, so every generated line read `projected`
+ * whatever had actually happened. The Lines card is where the operator says
+ * otherwise; it writes one column on one row (`revenue:setLineStatus`) and
+ * never an amount.
+ *
+ * The one thing still deliberately absent is the mockup's animated count-up
+ * on the stat values; base.css's motion rules cover transitions, and a
+ * number that is changing is a number that cannot be read.
  */
 
 const ROLLUP_OPTIONS = [
@@ -45,6 +63,26 @@ const ROLLUP_COLUMN: Record<RevenueRollup, string> = {
   model: 'Model'
 }
 
+const LINE_KIND_LABEL: Record<string, string> = {
+  retainer: 'Retainer',
+  milestone: 'Milestone',
+  tm_estimate: 'T&M estimate',
+  tm_actual: 'T&M actual',
+  expense: 'Expense'
+}
+
+/**
+ * The three states of a line, in the order money moves through them. The
+ * control is a Toggle rather than a single cycling button: three states is
+ * one too many to cycle through blind, and a segmented control shows where
+ * the row is as well as where it can go.
+ */
+const LINE_STATUS_OPTIONS = [
+  { value: 'projected', label: 'Projected' },
+  { value: 'invoiced', label: 'Invoiced' },
+  { value: 'paid', label: 'Paid' }
+] as const satisfies ReadonlyArray<{ value: RevenueLineStatus; label: string }>
+
 function percent(share: number): string {
   return `${Math.round(share * 100)}%`
 }
@@ -52,10 +90,18 @@ function percent(share: number): string {
 export function Revenue() {
   const navigate = useNavigate()
   const [rollup, setRollup] = useState<RevenueRollup>('billing')
+  // The clock is read once per mount, not live during render — `Date.now()`
+  // is an impure call react-hooks/purity refuses inline, and a report does
+  // not need to jump to a new year while it is open.
+  const [period, setPeriod] = useState<Period>(() => defaultPeriod(new Date()))
 
   // One read carries all three rollups; the toggle picks one out of the
-  // payload already held, and Today reads the same entry.
-  const summaryQuery = useQuery({ queryKey: queryKeys.revenue.summary(), queryFn: ipcQueryFn('revenue:summary') })
+  // payload already held. The window is part of the key because it is part
+  // of the answer — see `queryKeys.revenue`.
+  const summaryQuery = useQuery({
+    queryKey: queryKeys.revenue.summary(periodScope(period)),
+    queryFn: ipcQueryFn('revenue:summary', { window: { from: period.from, to: period.to }, bucket: period.bucket })
+  })
   const summary: RevenueSummary | undefined = summaryQuery.data
 
   const header = (
@@ -64,7 +110,7 @@ export function Revenue() {
       accent="var(--gold)"
       title="Revenue"
       description="Revenue rolls up by whoever is on the invoice. Switch to end client to see who the work is actually for — the totals are the same, the attribution is not."
-      actions={<Toggle options={ROLLUP_OPTIONS} value={rollup} onChange={setRollup} aria-label="Roll revenue up by" />}
+      actions={<PeriodPicker period={period} onChange={setPeriod} />}
     />
   )
 
@@ -95,7 +141,7 @@ export function Revenue() {
       <>
         {header}
         <Card>
-          <Card.Header title="Recognised by month" />
+          <Card.Header title="Monthly revenue" />
           <EmptyState>
             Nothing to show yet. Revenue is recognised from each signed engagement's terms — retainers by the month, fixed
             scopes by milestone, T&amp;M by estimated hours — and no active, pending or delivered engagement has a price
@@ -115,9 +161,14 @@ export function Revenue() {
       {header}
       <div className="grid stats rev-stats">
         <Stat
+          label="Total revenue"
+          value={formatMoney(summary.windowTotalCents)}
+          tone="hero"
+          meta={periodLabel(period)}
+        />
+        <Stat
           label="Recurring / month"
           value={formatMoney(metrics.recurringMonthCents)}
-          tone="hero"
           meta={`${plural(metrics.recurringEngagements, 'retainer')} · ${formatMoney(metrics.recurringNextYearCents)} next 12 mo`}
         />
         <Stat label="Fixed backlog" value={formatMoney(metrics.backlogCents)} meta={`${plural(metrics.backlogMilestones, 'unbilled milestone')}`} />
@@ -136,16 +187,27 @@ export function Revenue() {
         />
       </div>
 
+      {/* Full width, and its own row: the chart is the page's argument, and
+          it was sharing a two-column grid with the rollup table — at a
+          typical window each got about 420px, which is 35px a column for a
+          year. */}
+      <Card>
+        <Card.Header title="Monthly revenue" actions={<RevenueLegend />} />
+        <div className="rev-chart">
+          <RevenueChart
+            window={summary.window}
+            series={summary.series}
+            months={summary.months}
+            currentMonth={summary.currentMonth}
+            bucket={summary.bucket}
+            height={230}
+          />
+        </div>
+      </Card>
+
       <div className="grid rev-cards">
         <Card>
-          <Card.Header title="Recognised by month" actions={<RevenueLegend />} />
-          <div className="rev-chart">
-            <RevenueChart window={summary.window} series={summary.series} months={summary.months} currentMonth={summary.currentMonth} height={190} />
-          </div>
-        </Card>
-
-        <Card>
-          <Card.Header title="Rollup" count={rows.length} />
+          <Card.Header title="Rollup" count={rows.length} actions={<Toggle options={ROLLUP_OPTIONS} value={rollup} onChange={setRollup} aria-label="Roll revenue up by" />} />
           <div className="rev-scroll">
             <table className="rev-tbl">
               <thead>
@@ -172,8 +234,78 @@ export function Revenue() {
             </table>
           </div>
         </Card>
+
+        <LinesCard period={period} />
       </div>
     </>
+  )
+}
+
+/**
+ * The lines behind the chart, and the one column an operator owns on them.
+ *
+ * Its own query rather than a field on the summary: it is a list of rows,
+ * not a figure, and it is long — every month of the window times every
+ * priced engagement. Loading it beside the totals would make the four
+ * metrics wait on it.
+ */
+function LinesCard({ period }: { period: Period }) {
+  const queryClient = useQueryClient()
+  const linesQuery = useQuery({
+    queryKey: queryKeys.revenue.lines(period.from, period.to),
+    queryFn: ipcQueryFn('revenue:lines', { from: period.from, to: period.to })
+  })
+
+  const setStatus = useMutation({
+    mutationFn: (input: { id: string; status: RevenueLineStatus }) => ipcMutationFn('revenue:setLineStatus')(input).then(unwrapMutationResult),
+    // The whole entity: the chart's projected/actual split, the rollup's
+    // backlog column and this list are three readings of the column just
+    // written.
+    onSuccess: () => invalidate.revenue(queryClient)
+  })
+
+  const lines: readonly RevenueLine[] = linesQuery.data ?? []
+
+  return (
+    <Card>
+      <Card.Header
+        title={
+          <>
+            <span>Lines</span> <span className="card-sub">mark what has been invoiced</span>
+          </>
+        }
+        count={linesQuery.isPending ? undefined : lines.length}
+      />
+      {linesQuery.isPending ? (
+        <p className="meta rev-lines-note">Loading lines…</p>
+      ) : linesQuery.error ? (
+        <EmptyState>{linesQuery.error.message}</EmptyState>
+      ) : lines.length === 0 ? (
+        <EmptyState>No revenue lines fall in {periodLabel(period)}.</EmptyState>
+      ) : (
+        <div className="rev-lines">
+          {lines.map((line) => (
+            <div className="rev-line" key={line.id}>
+              <div className="rev-line-id">
+                <div className="nm trunc">{line.engagementName ?? 'No engagement'}</div>
+                <div className="meta">
+                  {formatPeriodMonth(line.periodMonth)} · {line.kind === null ? 'Unclassified' : (LINE_KIND_LABEL[line.kind] ?? line.kind)}
+                  {line.billingCompanyName !== null && ` · ${line.billingCompanyName}`}
+                </div>
+              </div>
+              <div className="rev-line-amt num">{formatMoney(line.amountCents)}</div>
+              <Toggle
+                options={LINE_STATUS_OPTIONS}
+                value={line.status}
+                onChange={(status) => setStatus.mutate({ id: line.id, status })}
+                aria-label={`Status of ${line.engagementName ?? 'this line'}, ${formatPeriodMonth(line.periodMonth)}`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      <Toast message={setStatus.isError ? setStatus.error.message : null} onDismiss={() => setStatus.reset()} />
+    </Card>
   )
 }
 

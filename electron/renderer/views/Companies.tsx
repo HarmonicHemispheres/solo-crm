@@ -615,7 +615,7 @@ function CompanyCard({
         )}
       </div>
       <div className="foot">
-        <DecayMeter pct={decay.pct} label={decay.label} />
+        <DecayMeter pct={decay.pct} label={decay.label} description={decay.description} />
         {/* `decay.cadenceDays` — the cadence actually used, so a company
             with none of its own reads its kind's inherited default here
             rather than "no cadence set" beside a bar measured against that
@@ -739,7 +739,7 @@ function CompanyTableRow({
       <td className="mono eng">{activeEngagements} active</td>
       <td className="num">{decay.cadenceDays > 0 ? `${decay.cadenceDays}d` : '—'}</td>
       <td className="last-touch">
-        <DecayMeter pct={decay.pct} label={decay.label} />
+        <DecayMeter pct={decay.pct} label={decay.label} description={decay.description} />
       </td>
     </tr>
   )

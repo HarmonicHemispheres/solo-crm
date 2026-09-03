@@ -24,15 +24,22 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export type DecayBand = 'ok' | 'warn' | 'late'
 
 export interface Decay {
-  /** Whole days since the last touch. `null` when never touched. */
-  readonly days: number | null
-  /** days ÷ effective cadence. 1 or more is late. `Infinity` when never touched. */
+  /**
+   * Whole days of the current wait — since the last touch, or, when nothing
+   * has ever been logged, since the company was added to the workspace.
+   */
+  readonly days: number
+  /** days ÷ effective cadence. 1 or more is late. */
   readonly pct: number
   readonly band: DecayBand
   /** The cadence actually used — the company's own, or its kind's default. */
   readonly cadenceDays: number
-  /** DecayMeter's `label` — "today", "9d", or "never" for an untouched company. */
+  /** DecayMeter's `label` — "today", "9d", or "new" for a company added today with nothing logged. */
   readonly label: string
+  /** False when no activity has ever been logged against this company — the wait is measured from `created_at` instead. */
+  readonly touched: boolean
+  /** The sentence a meter's tooltip states, so the bar's colour is never the only account of itself. */
+  readonly description: string
 }
 
 /**
@@ -42,7 +49,7 @@ export interface Decay {
  * fifteen-field one whose other twelve fields imply a relevance they do not
  * have.
  */
-export type DecayInput = Pick<Company, 'kind' | 'cadenceDays' | 'lastTouchAt'>
+export type DecayInput = Pick<Company, 'kind' | 'cadenceDays' | 'lastTouchAt' | 'createdAt'>
 
 /**
  * The mockup's own `decay()` thresholds — `>= 1` late, `>= .7` warn, else ok.
@@ -105,28 +112,55 @@ function wholeDaysSince(lastTouchAt: string, now: Date): number {
   return Math.floor((now.getTime() - new Date(lastTouchAt).getTime()) / DAY_MS)
 }
 
+/**
+ * **A company with no logged touch is not automatically overdue.**
+ *
+ * It used to be: `last_touch_at IS NULL` returned `Infinity`, which
+ * `DecayMeter` clamps to a full red bar labelled "never" and `Today`'s Going
+ * quiet list treats as late. That is right for a client added a year ago and
+ * forgotten, and plainly wrong for one added five minutes ago — and the
+ * second is what an operator sees, because every company starts there. A
+ * brand-new record greeting them in red said the software could not tell the
+ * difference between neglect and newness.
+ *
+ * So an untouched company's wait is measured from `created_at` — the point
+ * the workspace first knew about it, and the only honest floor there is for
+ * "how long have you gone without contact". A company added today is `ok`; an
+ * untouched one added two hundred days ago against a ninety-day cadence is
+ * still `late`, which is the case the old behaviour actually existed to
+ * catch. `since` is deliberately *not* used: it is a backdated fact about the
+ * relationship, often years old, and reading it here would put every
+ * carefully-recorded history straight back into the red.
+ *
+ * `touched` carries the distinction the label no longer does, so a surface
+ * that wants to say "nothing logged yet" still can — `description` is that
+ * sentence, and every meter renders it as a tooltip.
+ */
 export function decayForCompany(company: DecayInput, settings: SettingsSnapshot, now: Date): Decay {
   const cadenceDays = effectiveCadenceDays(company, settings)
-
-  // ADR-001 rule 5: a company nobody has ever touched is maximally stale, not
-  // excluded and not blank. P2-04 states the rendered consequence — "a
-  // company never touched shows a determinate state, not NaN" — which is why
-  // this returns `Infinity` (which `DecayMeter` clamps to a full late bar)
-  // rather than a fraction over a cadence there is no touch to measure.
-  if (company.lastTouchAt == null) {
-    return { days: null, pct: Number.POSITIVE_INFINITY, band: 'late', cadenceDays, label: 'never' }
-  }
-
-  const days = wholeDaysSince(company.lastTouchAt, now)
+  const touched = company.lastTouchAt != null
+  const days = wholeDaysSince(company.lastTouchAt ?? company.createdAt, now)
   const pct = cadenceDays > 0 ? days / cadenceDays : Number.POSITIVE_INFINITY
+  const band = bandFor(pct)
 
   return {
     days,
     pct,
-    band: bandFor(pct),
+    band,
     cadenceDays,
     // A touch later today (or, from a clock skew, a moment in the future)
-    // reads "today" rather than "0d" or a negative day count.
-    label: days <= 0 ? 'today' : `${days}d`
+    // reads "today" rather than "0d" or a negative day count. An untouched
+    // company added today reads "new": there is no touch for "today" to
+    // refer to.
+    label: days <= 0 ? (touched ? 'today' : 'new') : `${days}d`,
+    touched,
+    description: describe(days, cadenceDays, touched, band)
   }
+}
+
+function describe(days: number, cadenceDays: number, touched: boolean, band: DecayBand): string {
+  const elapsed = days <= 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`
+  const opening = touched ? `Last touch ${elapsed}` : days <= 0 ? 'Added today, nothing logged yet' : `Added ${elapsed}, nothing logged yet`
+  if (cadenceDays <= 0) return `${opening}. No cadence set, so this reads as overdue.`
+  return `${opening}. Cadence every ${cadenceDays} days — ${band === 'late' ? 'overdue' : band === 'warn' ? 'due soon' : 'on track'}.`
 }

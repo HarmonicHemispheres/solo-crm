@@ -412,7 +412,11 @@ describe('CompanyDetail', () => {
     renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'EZDeploy' })
 
-    const billedCard = screen.getByText('Billed here').closest('.card') as HTMLElement
+    // "Engagements", not "Billed here": nothing bills to EZDeploy from
+    // elsewhere, so there is no second card for this one to be distinguished
+    // from. The distinction is still made — see the W+K test below — it just
+    // no longer costs a column to say it does not apply.
+    const billedCard = screen.getByText('Engagements').closest('.card') as HTMLElement
     expect(within(billedCard).getByText('Samay — AI timesheet agent')).toBeTruthy()
     expect(within(billedCard).getByText('for W+K')).toBeTruthy()
     expect(within(billedCard).getByText('Programetrix agents audit')).toBeTruthy()
@@ -427,9 +431,8 @@ describe('CompanyDetail', () => {
     expect(within(endClientsCard).getByText('W+K')).toBeTruthy()
     expect(within(endClientsCard).getByText('Programetrix')).toBeTruthy()
 
-    // Nothing bills to EZDeploy from elsewhere.
-    const deliveredCard = screen.getByText('Delivered here, billed elsewhere').closest('.card') as HTMLElement
-    expect(within(deliveredCard).getByText('Nothing here yet.')).toBeTruthy()
+    // Nothing bills to EZDeploy from elsewhere, so no card claims otherwise.
+    expect(screen.queryByText('Delivered here, billed elsewhere')).toBeNull()
   })
 
   it('labels an engagement card with what it was sold as, and leaves an unsold one unlabelled', async () => {
@@ -445,7 +448,7 @@ describe('CompanyDetail', () => {
     renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, [sold, platform]))
     await screen.findByRole('heading', { name: 'EZDeploy' })
 
-    const billedCard = screen.getByText('Billed here').closest('.card') as HTMLElement
+    const billedCard = screen.getByText('Engagements').closest('.card') as HTMLElement
     const soldRow = within(billedCard).getByText('Samay — AI timesheet agent').closest('.eng') as HTMLElement
     expect(soldRow.querySelector('.sold-as')?.textContent).toContain('sold as Delivery build')
     // No rate on the card, in either direction: not the agreed snapshot, not
@@ -474,20 +477,24 @@ describe('CompanyDetail', () => {
     renderCompanyDetail('co-rinvii', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'Rinvii' })
 
-    const billedCard = screen.getByText('Billed here').closest('.card') as HTMLElement
+    const billedCard = screen.getByText('Engagements').closest('.card') as HTMLElement
     expect(within(billedCard).getByText('Advisory + development retainer')).toBeTruthy()
     expect(within(billedCard).queryByText(/^for /)).toBeNull()
     expect(screen.queryByText('End clients')).toBeNull()
   })
 
-  it('shows an empty state per section, not an end-clients panel, for a company with no engagements on either side', async () => {
+  it('shows one empty engagements card, not two and not an end-clients panel, for a company with no engagements on either side', async () => {
     renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'Lonely Co' })
 
-    expect(screen.getByText('Billed here')).toBeTruthy()
-    expect(screen.getByText('Delivered here, billed elsewhere')).toBeTruthy()
+    // One card, saying the one true thing. Two empty cards headed "Billed
+    // here" and "Delivered here, billed elsewhere" spent two thirds of the
+    // page explaining a distinction this company has no instance of.
+    expect(screen.getByText('Engagements')).toBeTruthy()
+    expect(screen.queryByText('Billed here')).toBeNull()
+    expect(screen.queryByText('Delivered here, billed elsewhere')).toBeNull()
     expect(screen.queryByText('End clients')).toBeNull()
-    expect(screen.getAllByText('Nothing here yet.')).toHaveLength(2)
+    expect(screen.getAllByText('Nothing here yet.')).toHaveLength(1)
   })
 
   it('renders a null endsOn as "rolling", never blank or a date', async () => {
@@ -531,7 +538,11 @@ describe('CompanyDetail', () => {
     const detailsCard = screen.getByText('Details').closest('.card') as HTMLElement
     expect(within(detailsCard).getByText('Client')).toBeTruthy()
     expect(within(detailsCard).getByText('ezdeploy.io')).toBeTruthy()
-    expect(within(detailsCard).getByText('10 days')).toBeTruthy()
+    // Cadence, since, last touch and billed-via are the header's fact line
+    // now, not rows here — they are what identifies a relationship, and they
+    // were at the bottom of the page.
+    expect(within(detailsCard).queryByText('10 days')).toBeNull()
+    expect(screen.getByText('10 days')).toBeTruthy()
 
     // The guard, and the reason this test exists: clicking everything the card
     // still offers must not turn a value into an input and must not reach
@@ -584,7 +595,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
       expect(within(todosCard).getByText('next step')).toBeTruthy()
       // The next-step task's title appears once, inside its own block — not
       // a second time in the ordinary list below it.
@@ -600,7 +611,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Set "Follow up on renewal" as next step' }))
 
       await waitFor(() => expect(crm['tasks:setNextStep']).toHaveBeenCalledWith({ id: 'task-followup' }))
-      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
       // "Follow up on renewal" is now the next step...
       await waitFor(() => expect(within(todosCard).getByText('next step').nextElementSibling?.textContent).toBe('Follow up on renewal'))
       // ...and "Send invoice" fell back into the ordinary list, its own
@@ -614,14 +625,19 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', crm)
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
-      expect(within(todosCard).getByText('2')).toBeTruthy()
+      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      // Two open todos and three activity rows — the card counts what it
+      // draws, so wait for the last of the three activity reads to land
+      // before reading it. (`samayNote` arrives through the engagement-scoped
+      // call, which settles after the company one.)
+      await within(todosCard).findByText('Samay kickoff notes')
+      expect(todosCard.querySelector('.card-h .c')?.textContent).toBe('5')
 
       fireEvent.click(screen.getByRole('button', { name: 'Mark "Follow up on renewal" done' }))
 
       await waitFor(() => expect(crm['tasks:update']).toHaveBeenCalledWith({ id: 'task-followup', patch: { status: 'done' } }))
       await waitFor(() => expect(within(todosCard).queryByText('Follow up on renewal')).toBeNull())
-      expect(within(todosCard).getByText('1')).toBeTruthy()
+      expect(todosCard.querySelector('.card-h .c')?.textContent).toBe('4')
     })
 
     it('inline quick-add creates a task for this company and it appears without leaving the page', async () => {
@@ -629,6 +645,9 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', crm)
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
+      // The composer opens on Touch — the commoner of the two. Choosing
+      // Todo is what points the same field at `tasks:create`.
+      fireEvent.click(screen.getByRole('button', { name: 'Todo' }))
       const input = screen.getByPlaceholderText('Add a todo for EZDeploy')
       fireEvent.change(input, { target: { value: 'Call about renewal terms' } })
       fireEvent.keyDown(input, { key: 'Enter' })
@@ -636,9 +655,9 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       await waitFor(() =>
         expect(crm['tasks:create']).toHaveBeenCalledWith({ title: 'Call about renewal terms', companyId: 'co-ezdeploy' })
       )
-      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
       await waitFor(() => expect(within(todosCard).getByText('Call about renewal terms')).toBeTruthy())
-      expect(within(todosCard).getByText('3')).toBeTruthy()
+      expect(todosCard.querySelector('.card-h .c')?.textContent).toBe('6')
     })
 
     // Review fix (item 2): the next-step block used to render only the
@@ -649,7 +668,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', crm)
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
       // "Send invoice" is the seeded next step (sendInvoice.isNextStep).
       fireEvent.click(within(todosCard).getByRole('button', { name: 'Mark "Send invoice" done' }))
 
@@ -663,7 +682,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
       const promote = within(todosCard).getByRole('button', { name: 'Set "Send invoice" as next step' })
       // A real `<button>`, not a div with a click handler — reachable by Tab
       // and activated with Enter/Space with no extra keyboard wiring.
@@ -708,7 +727,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
           buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { tasks: [overdue, dueToday, dueTomorrow, dueSoonEdge, dueLater, waiting] })
         )
         await screen.findByRole('heading', { name: 'EZDeploy' })
-        const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+        const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
 
         const overdueDue = within(todosCard).getByText('8d overdue')
         expect(overdueDue.className).toBe('due over')
@@ -755,7 +774,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
         renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { tasks: [dueTonight] }))
         await screen.findByRole('heading', { name: 'EZDeploy' })
 
-        const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
+        const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
         expect(within(todosCard).getByText('today')).toBeTruthy()
         expect(within(todosCard).queryByText('1d overdue')).toBeNull()
       } finally {
@@ -778,19 +797,28 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       // the engagement-scoped activity:list call.
       expect(within(activityCard).getByText('Samay kickoff notes')).toBeTruthy()
 
-      const titles = within(activityCard)
-        .getAllByText(/Emailed Dana|Quarterly check-in|Samay kickoff/)
-        .map((node) => node.textContent)
+      // Newest first, among themselves — the card now interleaves todos with
+      // these, so this reads the `.tli` rows in DOM order rather than
+      // assuming activity is all there is.
+      const titles = Array.from(activityCard.querySelectorAll('.tli .t'))
+        .map((node) => node.textContent ?? '')
+        .map((text) => text.replace(/^(Call|Email|Note|Meeting|Doc)/, ''))
       expect(titles).toEqual(['Emailed Dana re: renewal', 'Quarterly check-in call', 'Samay kickoff notes'])
     })
 
-    it('renders no edit and no delete control — no button at all, only the quick-log input (G8)', async () => {
+    it('renders no edit and no delete control on any logged row (G8)', async () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
       const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
       await within(activityCard).findByText('Quarterly check-in call')
-      expect(within(activityCard).queryAllByRole('button')).toHaveLength(0)
+      // The card holds buttons now — the Touch/Todo switch, the composer, and
+      // a checkbox on each todo. None of them may sit on an *activity* row:
+      // activity is append-only, and the assertion belongs on the rows rather
+      // than on the card that also holds a todo list.
+      const activityRows = Array.from(activityCard.querySelectorAll('.tli'))
+      expect(activityRows.length).toBeGreaterThan(0)
+      for (const row of activityRows) expect(row.querySelector('button')).toBeNull()
     })
 
     it('logging a touch from the card appends it without leaving the page', async () => {
@@ -899,10 +927,10 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       }
 
       // Label text — a mutated ACTIVITY_KIND_LABEL entry fails these.
-      expect(within(rowFor('Quarterly check-in call')).getByText(/^Call ·/)).toBeTruthy()
-      expect(within(rowFor('Emailed Dana re: renewal')).getByText(/^Email ·/)).toBeTruthy()
-      expect(within(rowFor('Samay kickoff notes')).getByText(/^Note ·/)).toBeTruthy()
-      expect(within(rowFor('Kickoff meeting')).getByText(/^Meeting ·/)).toBeTruthy()
+      expect(within(rowFor('Quarterly check-in call')).getByText('Call')).toBeTruthy()
+      expect(within(rowFor('Emailed Dana re: renewal')).getByText('Email')).toBeTruthy()
+      expect(within(rowFor('Samay kickoff notes')).getByText('Note')).toBeTruthy()
+      expect(within(rowFor('Kickoff meeting')).getByText('Meeting')).toBeTruthy()
 
       // Icon glyph — a mutated ACTIVITY_KIND_PATHS entry fails these: each
       // kind draws a different child element/path, not the same shape
@@ -966,13 +994,12 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'Lonely Co' })
 
-    const todosCard = screen.getByText('Todos').closest('.card') as HTMLElement
-    expect(within(todosCard).getByText('Nothing open.')).toBeTruthy()
-    expect(within(todosCard).getByPlaceholderText('Add a todo for Lonely Co')).toBeTruthy()
-
-    const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
-    expect(within(activityCard).getByText('Nothing logged.')).toBeTruthy()
-    expect(within(activityCard).getByPlaceholderText('Log a touch for Lonely Co')).toBeTruthy()
+    const feedCard = screen.getByText('Activity').closest('.card') as HTMLElement
+    // One card, so one empty state — and it says both halves are empty.
+    expect(within(feedCard).getByText('Nothing logged, nothing open.')).toBeTruthy()
+    expect(within(feedCard).getByPlaceholderText('Log a touch for Lonely Co')).toBeTruthy()
+    fireEvent.click(within(feedCard).getByRole('button', { name: 'Todo' }))
+    expect(within(feedCard).getByPlaceholderText('Add a todo for Lonely Co')).toBeTruthy()
 
     const contactsCard = screen.getByText('Contacts').closest('.card') as HTMLElement
     expect(within(contactsCard).getByText('No contacts yet.')).toBeTruthy()
@@ -986,26 +1013,53 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
   // did not own this file.
   // -------------------------------------------------------------------
 
-  it('a company nobody has ever contacted reads as late, never as ok (ADR-001)', async () => {
-    // Lonely Co has `lastTouchAt: null`. Asserting the *label* alone is what
-    // let this hole survive: a null branch returning `{ pct: 0 }` with the
-    // same words on screen keeps everything readable and turns the bar
-    // green. The meter's own class is the only thing that distinguishes the
-    // two, and it is the assertion that matters here.
-    //
-    // The label is "never" rather than "no contact logged" since
-    // T-260901-27: this page reads `lib/decay.ts` like Today and the
-    // companies grid do, and `decayForCompany` has one word for this state.
-    // That the three `className` assertions below still pass, unchanged, is
-    // the evidence ADR-001's guard survived that move.
-    renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
-    await screen.findByRole('heading', { name: 'Lonely Co' })
+  /**
+   * The two halves of the "never" defect, on the one surface that used to
+   * get it wrong the same way for both.
+   *
+   * Asserting the *word* alone is what let the original hole survive: "Last
+   * touch never" is the right words for both companies below, and it was the
+   * band beside it that was wrong. So each of these reads the band's class,
+   * which is the only thing that distinguishes them.
+   */
+  function lastTouchBand(): HTMLElement {
+    return document.querySelector('.dfacts b[class*="dfact-"]') as HTMLElement
+  }
 
-    const meter = document.querySelector('.decay') as HTMLElement
-    expect(meter.className).toContain('late')
-    expect(meter.className).not.toContain('ok')
-    expect(meter.className).not.toContain('warn')
-    expect(meter.textContent).toContain('never')
+  it('a company added long ago and never contacted reads as late, never as ok', async () => {
+    const stale = makeCompany({
+      id: 'co-stale',
+      name: 'Stale Co',
+      kind: 'prospect',
+      cadenceDays: 14,
+      createdAt: '2020-01-01T00:00:00.000Z'
+    })
+    renderCompanyDetail('co-stale', buildCrm([...ALL_COMPANIES, stale], ALL_ENGAGEMENTS))
+    await screen.findByRole('heading', { name: 'Stale Co' })
+
+    expect(lastTouchBand().textContent).toBe('never')
+    expect(lastTouchBand().className).toContain('dfact-late')
+    expect(lastTouchBand().className).not.toContain('dfact-ok')
+    expect(lastTouchBand().className).not.toContain('dfact-warn')
+  })
+
+  it('a company added today and not yet contacted reads as on track, not overdue', async () => {
+    // The reported defect. Every company begins with no touch, so this was
+    // every company's first minute in the app: a red band saying it was
+    // already behind on a relationship that had not started.
+    const fresh = makeCompany({
+      id: 'co-fresh',
+      name: 'Fresh Co',
+      kind: 'prospect',
+      cadenceDays: 14,
+      createdAt: new Date().toISOString()
+    })
+    renderCompanyDetail('co-fresh', buildCrm([...ALL_COMPANIES, fresh], ALL_ENGAGEMENTS))
+    await screen.findByRole('heading', { name: 'Fresh Co' })
+
+    expect(lastTouchBand().textContent).toBe('never')
+    expect(lastTouchBand().className).toContain('dfact-ok')
+    expect(lastTouchBand().className).not.toContain('dfact-late')
   })
 
   it('does not render the body against a half-loaded companies list', async () => {
@@ -1047,7 +1101,9 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
 
     gate.release?.()
     await screen.findByRole('heading', { name: 'W+K' })
-    expect(screen.getByText('billed through EZDeploy')).toBeTruthy()
+    // The billing party is a fact in the header's line now, not a tag.
+    expect(screen.getByRole('link', { name: 'EZDeploy' })).toBeTruthy()
+    expect((document.querySelector('.dfacts') as HTMLElement).textContent).toContain('Billed via')
   })
 
   it('renders the links section for the company (T-260828-50)', async () => {
@@ -1074,10 +1130,22 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
 // ---------------------------------------------------------------------------
 
 describe('CompanyDetail — header images (T-260901-14)', () => {
+  /**
+   * The two image controls moved behind the header's "…" menu: four buttons
+   * of chrome sat across a header nobody opens a company to look at. They are
+   * the same controls, one click further in, so every test here opens the
+   * menu before reaching for them.
+   */
+  function openOverflow() {
+    const trigger = screen.getByRole('button', { name: /^More actions for / })
+    if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger)
+  }
   function logoGroup() {
+    openOverflow()
     return screen.getByRole('group', { name: 'Logo' })
   }
   function bannerGroup() {
+    openOverflow()
     return screen.getByRole('group', { name: 'Banner' })
   }
 
@@ -1222,9 +1290,14 @@ describe('CompanyDetail — header images (T-260901-14)', () => {
     expect(container.querySelector('.dhead .cmark')).not.toBeNull()
     const actions = container.querySelector('.dhead-actions') as HTMLElement
     expect(within(actions).getByRole('button', { name: `Edit ${longName}` })).toBeTruthy()
-    // Edit, Delete, Logo's Upload…, Banner's Replace… and Banner's Remove.
-    // Delete joined the cluster in T-260902-09 — it opens the confirmation,
-    // it does not delete.
-    expect(within(actions).getAllByRole('button')).toHaveLength(5)
+    // Log touch, Edit, and "…". Delete and the two image slots live inside
+    // the menu: a header is for the two things someone came to do, and the
+    // cluster had grown to five controls, none of them either of those.
+    expect(within(actions).getAllByRole('button')).toHaveLength(3)
+    expect(within(actions).getByRole('button', { name: `Log a touch for ${longName}` })).toBeTruthy()
+    fireEvent.click(within(actions).getByRole('button', { name: `More actions for ${longName}` }))
+    // A `menuitem`, not a `button`: it sits inside the panel's `role="menu"`,
+    // which is also why the count above is three and not five.
+    expect(within(actions).getByRole('menuitem', { name: `Delete ${longName}` })).toBeTruthy()
   })
 })

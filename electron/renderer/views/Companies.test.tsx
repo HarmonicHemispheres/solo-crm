@@ -382,18 +382,52 @@ describe('Companies', () => {
   })
 
   it('renders a determinate cadence state, never NaN, for a company with no last_touch_at (fresh install)', async () => {
+    // Rinvii's `createdAt` is the fixture's stub timestamp, well past its
+    // 7-day cadence, so it is late for the reason it should be: the wait,
+    // not the absence of a touch. A never-touched company is no longer
+    // *automatically* maximally stale — see the pair of tests below and
+    // `lib/decay.ts`.
     renderCompanies({ mode: 'card' })
     await waitFor(() => expect(screen.getByText('Rinvii')).toBeTruthy())
 
     const rinviiCard = screen.getByRole('button', { name: /^Rinvii/ })
-    expect(rinviiCard.textContent).toContain('never')
     expect(rinviiCard.textContent).not.toMatch(/NaN/)
 
-    // And it reads as maximally stale, not as healthy (ADR-001 rule 5). The
-    // label alone does not say this: a `decayPct` that returned 0 for a
-    // never-contacted company would still render the word "never" — over a
-    // green, full-health bar (T-260828-53 item 7).
     const meter = rinviiCard.querySelector('.decay')
+    expect(meter?.className).toContain('late')
+    expect(meter?.className).not.toContain('ok')
+  })
+
+  /**
+   * The reported defect, on the grid: "there's a red bar with a NEVER label
+   * and it makes no sense". It made no sense because it was every company's
+   * first minute in the app — a record created seconds ago, drawn at full
+   * red, labelled with a word that reads as an accusation.
+   *
+   * Both halves matter, so both are here: a company added today is on track,
+   * and one added long ago and still untouched is late. The old behaviour
+   * passes the second and fails the first.
+   */
+  it('draws a company added today with nothing logged as on track, labelled "new"', async () => {
+    const fresh = makeCompany({ id: 'fresh', name: 'Fresh Co', cadenceDays: 7, lastTouchAt: null, createdAt: new Date().toISOString() })
+    renderCompanies({ mode: 'card', companies: [EZDEPLOY, fresh] })
+    await waitFor(() => expect(screen.getByText('Fresh Co')).toBeTruthy())
+
+    const card = screen.getByRole('button', { name: /^Fresh Co/ })
+    const meter = card.querySelector('.decay')
+    expect(meter?.className).toContain('ok')
+    expect(meter?.className).not.toContain('late')
+    expect(meter?.textContent).toContain('new')
+    // The bar is no longer the only account of itself.
+    expect(meter?.getAttribute('title')).toContain('nothing logged yet')
+  })
+
+  it('still draws a long-untouched company as late', async () => {
+    const stale = makeCompany({ id: 'stale', name: 'Stale Co', cadenceDays: 7, lastTouchAt: null, createdAt: '2020-01-01T00:00:00.000Z' })
+    renderCompanies({ mode: 'card', companies: [EZDEPLOY, stale] })
+    await waitFor(() => expect(screen.getByText('Stale Co')).toBeTruthy())
+
+    const meter = screen.getByRole('button', { name: /^Stale Co/ }).querySelector('.decay')
     expect(meter?.className).toContain('late')
     expect(meter?.className).not.toContain('ok')
   })

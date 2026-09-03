@@ -51,9 +51,78 @@ export type RevenueRollup = (typeof REVENUE_ROLLUPS)[number]
 export const REVENUE_SERIES_KINDS = ['retainer', 'milestone', 'tm'] as const
 export type RevenueSeriesKind = (typeof REVENUE_SERIES_KINDS)[number]
 
+/**
+ * How wide a bar is. `month` is one bar per calendar month; `year` is one
+ * per calendar year, and the bucketing happens **in main**, in the same
+ * `GROUP BY` that produced the months (ADR-003: attributing money to a
+ * period is an aggregation, and summing twelve monthly figures into a year
+ * in the renderer would be exactly the arithmetic that decision moves into
+ * SQL). A bucketed point's `periodMonth` is the first month of its bucket —
+ * `YYYY-01-01` for a year — so one field carries both shapes and the chart
+ * only has to know how to label it.
+ */
+export const REVENUE_BUCKETS = ['month', 'year'] as const
+export type RevenueBucket = (typeof REVENUE_BUCKETS)[number]
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
+
+/**
+ * **Marking a line invoiced or paid.**
+ *
+ * `status` was written by exactly one thing in the plan — the Stripe adapter
+ * (§7, P4-02) — and until that exists every row in the table is `projected`.
+ * The consequence on screen was the whole chart drawn dashed, months into
+ * the past included, with nowhere to say otherwise: the operator had
+ * invoiced the work and the software had no way to be told.
+ *
+ * So the operator is the second writer, and the vocabulary is the one that
+ * was already there (`REVENUE_LINE_STATUSES`) rather than a parallel
+ * "confirmed" flag Stripe would later have to be reconciled against.
+ *
+ * This is *not* a way to write a revenue figure by hand. `amount_cents`,
+ * `period_month`, `kind` and `engagement_id` are the generator's, read from
+ * the engagement's terms (ADR-003); this channel changes one column, on a
+ * row that already exists, to say what has happened to money already
+ * recognised. A generated row marked `invoiced` or `paid` also stops being
+ * regenerated (the generator owns `projected` rows only), which is what
+ * makes the mark survive the next edit to the engagement.
+ */
+export const setRevenueLineStatusInputSchema = z
+  .object({
+    id: z.string().min(1, 'id is required'),
+    status: z.enum(REVENUE_LINE_STATUSES)
+  })
+  .strict()
+export type SetRevenueLineStatusInput = z.infer<typeof setRevenueLineStatusInputSchema>
+
+/** Every line in a window, so the operator can see what they are marking. Inclusive at both ends, like every other month range here. */
+export const listRevenueLinesInputSchema = z
+  .object({
+    from: periodMonthSchema,
+    to: periodMonthSchema
+  })
+  .strict()
+export type ListRevenueLinesInput = z.infer<typeof listRevenueLinesInputSchema>
+
+/**
+ * One row of the lines list: the stored line, plus the names needed to say
+ * which engagement it belongs to. The names are joined in main and carried
+ * here so the view does not hold a second copy of the engagements list to
+ * resolve them against.
+ */
+export const revenueLineSchema = z.object({
+  id: z.string(),
+  engagementId: z.string().nullable(),
+  engagementName: z.string().nullable(),
+  billingCompanyName: z.string().nullable(),
+  periodMonth: periodMonthSchema,
+  kind: z.enum(REVENUE_LINE_KINDS).nullable(),
+  status: z.enum(REVENUE_LINE_STATUSES),
+  amountCents: centsSchema
+})
+export type RevenueLine = z.infer<typeof revenueLineSchema>
 
 /** `writeTmActual`'s input: one T&M month's actual, replacing that month's estimate. */
 export const writeTmActualInputSchema = z
@@ -80,7 +149,20 @@ export type WriteTmActualInput = z.infer<typeof writeTmActualInputSchema>
  */
 export const revenueSummaryRequestSchema = z
   .object({
-    now: timestampSchema.optional()
+    now: timestampSchema.optional(),
+    /**
+     * The reported window, inclusive, and what the chart draws. Omitted, it
+     * is the twelve months around `now` that this channel has always
+     * answered with — so every existing caller keeps its answer.
+     *
+     * It is a *window*, not a filter on the four metrics: "recurring per
+     * month" and "T&M run rate" are statements about now, and moving the
+     * chart back a year must not silently restate them about last year.
+     * What the window does carry is `windowTotalCents` in the response —
+     * the one figure that is *of* the range.
+     */
+    window: z.object({ from: periodMonthSchema, to: periodMonthSchema }).strict().optional(),
+    bucket: z.enum(REVENUE_BUCKETS).optional()
   })
   .strict()
 export type RevenueSummaryRequest = z.infer<typeof revenueSummaryRequestSchema>
@@ -163,8 +245,12 @@ export const revenueSummarySchema = z.object({
   /** Rows in `revenue_lines`, all kinds and statuses. `0` is the view's empty state: nothing has been generated yet, and the four metrics would be zeros that mean nothing. */
   lineCount: z.number().int().nonnegative(),
   metrics: revenueMetricsSchema,
-  /** The chart's window, inclusive — twelve months around `currentMonth`. Months with no lines have no point; the chart fills them. */
+  /** The chart's window, inclusive — the request's, or twelve months around `currentMonth`. Buckets with no lines have no point; the chart fills them. */
   window: z.object({ from: periodMonthSchema, to: periodMonthSchema }),
+  /** How `series` and `months` are bucketed — the request's, defaulting to `month`. */
+  bucket: z.enum(REVENUE_BUCKETS),
+  /** Every line in the window, summed. The one figure that is *of* the range rather than of now — what "Total revenue" reads. */
+  windowTotalCents: centsSchema,
   /** Gross of expense lines — see `REVENUE_SERIES_KINDS`. */
   series: z.array(revenueSeriesPointSchema).readonly(),
   /** Each month of the window's gross total — `GROUP BY period_month` over the same lines as `series` — for the chart's scale and its tooltips, so no total is summed in the renderer. */

@@ -2,7 +2,7 @@ import { eachMonth } from '../../../shared/format'
 import { formatMoney } from '../../views/offerings-display'
 import { compactMoney, niceCeiling } from './scale'
 import type { PeriodMonth } from '../../../shared/types'
-import type { RevenueSeriesKind, RevenueSeriesPoint } from '../../../shared/revenue'
+import type { RevenueBucket, RevenueSeriesKind, RevenueSeriesPoint } from '../../../shared/revenue'
 import './RevenueChart.css'
 
 /**
@@ -56,8 +56,32 @@ export interface RevenueChartProps {
   /** The summary's per-month gross totals — the scale and the tooltips. */
   months: ReadonlyArray<{ readonly periodMonth: PeriodMonth; readonly cents: number }>
   currentMonth: PeriodMonth
+  /**
+   * Whether a column is a month or a year. The summary states it, because
+   * the summary did the bucketing — folding twelve months into one bar is an
+   * attribution of money to a period, which ADR-003 keeps in SQL. All this
+   * component does with it is decide how wide a step is and what to write
+   * under the column.
+   */
+  bucket?: RevenueBucket
   /** Pixel height of the drawing; the mockup uses 190 on Revenue and 150 on Today. */
   height?: number
+}
+
+/**
+ * The buckets a window holds, in order — every month of it, or the first
+ * month of every year it touches. The window's own ends are months either
+ * way, so a year bucket starts from January of `from`'s year: a window that
+ * opens in March 2026 has one bar for 2026, and it is keyed `2026-01-01`,
+ * which is exactly what main grouped by.
+ */
+function bucketsIn(window: { from: PeriodMonth; to: PeriodMonth }, bucket: RevenueBucket): PeriodMonth[] {
+  if (bucket === 'month') return eachMonth(window.from, window.to)
+  const firstYear = Number(window.from.slice(0, 4))
+  const lastYear = Number(window.to.slice(0, 4))
+  const years: PeriodMonth[] = []
+  for (let year = firstYear; year <= lastYear; year += 1) years.push(`${year}-01-01` as PeriodMonth)
+  return years
 }
 
 interface Segment {
@@ -79,9 +103,14 @@ function monthLabel(month: PeriodMonth): string {
   return MONTH_LABEL[Number(month.slice(5, 7)) - 1]
 }
 
-export function RevenueChart({ window, series, months: monthTotals, currentMonth, height = 190 }: RevenueChartProps) {
-  const months = eachMonth(window.from, window.to)
+export function RevenueChart({ window, series, months: monthTotals, currentMonth, bucket = 'month', height = 190 }: RevenueChartProps) {
+  const months = bucketsIn(window, bucket)
   const count = months.length
+  // The column "now" falls in — the current month itself, or the year
+  // holding it. It is what the divider is drawn after and what the axis
+  // marks, so it has to be resolved in the same vocabulary as the columns.
+  const currentBucket: PeriodMonth = bucket === 'year' ? (`${currentMonth.slice(0, 4)}-01-01` as PeriodMonth) : currentMonth
+  const label = (month: PeriodMonth) => (bucket === 'year' ? month.slice(0, 4) : monthLabel(month))
 
   // cents by month|kind|status — the series is already grouped, so this is
   // a lookup, not a sum.
@@ -105,7 +134,7 @@ export function RevenueChart({ window, series, months: monthTotals, currentMonth
         segments.push({ kind: stack.kind, color: stack.color, status, y, height: segmentHeight })
       }
     }
-    return { month, label: monthLabel(month), total: totalOf.get(month) ?? 0, segments }
+    return { month, label: label(month), total: totalOf.get(month) ?? 0, segments }
   })
 
   const gridlines = Array.from({ length: GRIDLINES }, (_, index) => {
@@ -114,8 +143,8 @@ export function RevenueChart({ window, series, months: monthTotals, currentMonth
   })
 
   const columnWidth = VIEW_W / count
-  const currentIndex = months.indexOf(currentMonth)
-  const label = `Recognised revenue by month, ${monthLabel(window.from)} ${window.from.slice(0, 4)} to ${monthLabel(window.to)} ${window.to.slice(0, 4)}, up to ${formatMoney(top)}`
+  const currentIndex = months.indexOf(currentBucket)
+  const title = `Revenue by ${bucket}, ${monthLabel(window.from)} ${window.from.slice(0, 4)} to ${monthLabel(window.to)} ${window.to.slice(0, 4)}, up to ${formatMoney(top)}`
 
   return (
     <div className="revchart">
@@ -132,14 +161,14 @@ export function RevenueChart({ window, series, months: monthTotals, currentMonth
           preserveAspectRatio="none"
           style={{ height }}
           role="img"
-          aria-label={label}
+          aria-label={title}
         >
           {gridlines.map((line) => (
             <line key={line.cents} className="revchart-grid" x1="0" y1={line.y} x2={VIEW_W} y2={line.y} vectorEffect="non-scaling-stroke" />
           ))}
           {columns.map((column, index) => (
             <g key={column.month} data-month={column.month}>
-              <title>{`${column.label} ${column.month.slice(0, 4)}: ${formatMoney(column.total)}`}</title>
+              <title>{`${bucket === 'year' ? column.label : `${column.label} ${column.month.slice(0, 4)}`}: ${formatMoney(column.total)}`}</title>
               {column.segments.map((segment) => (
                 <rect
                   key={`${segment.kind}-${segment.status}`}
@@ -175,7 +204,7 @@ export function RevenueChart({ window, series, months: monthTotals, currentMonth
       </div>
       <div className="revchart-axis" aria-hidden="true">
         {columns.map((column) => (
-          <span key={column.month} className={`meta${column.month === currentMonth ? ' now' : ''}${column.month > currentMonth ? ' ahead' : ''}`}>
+          <span key={column.month} className={`meta${column.month === currentBucket ? ' now' : ''}${column.month > currentBucket ? ' ahead' : ''}`}>
             {column.label}
           </span>
         ))}

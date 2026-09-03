@@ -6,6 +6,7 @@ import { Today } from './Today'
 import { LayerManager } from '../components/shell/LayerManager'
 import { createQueryClient } from '../lib/query-client'
 import { queryKeys } from '../lib/query-keys'
+import { defaultPeriod, periodScope } from '../components/revenue/period'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { Company } from '../../shared/companies'
 import type { EngagementWithOffering } from '../../shared/engagements'
@@ -219,7 +220,7 @@ function renderToday({
 }
 
 /** The `.card` a card's `<h2>` heading sits in — headings, not text, because "Revenue" is also the rail's nav label and a legend word. */
-function card(name: string): HTMLElement {
+function card(name: string | RegExp): HTMLElement {
   const heading = screen.getByRole('heading', { name })
   const found = heading.closest('.card')
   if (!found) throw new Error(`"${name}" card not found`)
@@ -245,10 +246,10 @@ describe('Today', () => {
     // The whole page has one loading state and one error state (Today.tsx),
     // so waiting on any card is waiting on all nine queries.
     await screen.findByRole('heading', { name: 'Going quiet' })
-    for (const label of ['Recurring / month', 'Fixed backlog', 'Open todos', 'Cadence health']) {
+    for (const label of ['Total revenue', 'Recurring / month', 'Fixed backlog', 'Open todos', 'Cadence health']) {
       expect(screen.getByText(label)).toBeTruthy()
     }
-    for (const heading of ['Revenue', 'Going quiet', 'Next up', 'Recent']) {
+    for (const heading of [/^Revenue/, 'Going quiet', 'Next up', 'Recent']) {
       expect(screen.getByRole('heading', { name: heading })).toBeTruthy()
     }
 
@@ -261,7 +262,7 @@ describe('Today', () => {
     // the page derives nothing from engagement columns (ADR-003).
     expect(document.body.textContent).not.toContain('$')
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
-    expect(within(card('Revenue')).getByText(/nothing recognised yet/i)).toBeTruthy()
+    expect(within(card(/^Revenue/)).getByText(/nothing recognised yet/i)).toBeTruthy()
   })
 
   it('the two money stats and the chart read revenue:summary as it came — no arithmetic over engagement columns', async () => {
@@ -278,6 +279,8 @@ describe('Today', () => {
           data: {
             currentMonth: '2026-09-01',
             yearStart: '2026-01-01',
+            bucket: 'month' as const,
+            windowTotalCents: 0,
             lineCount: 3,
             metrics: {
               recurringMonthCents: 830_000,
@@ -309,7 +312,9 @@ describe('Today', () => {
     const recurring = screen.getByText('Recurring / month').closest('.stat') as HTMLElement
     expect(within(recurring).getByText('$8,300')).toBeTruthy()
     expect(recurring.textContent).toContain('2 retainers · $99,600 next 12 mo')
-    expect(recurring.classList.contains('hero')).toBe(true)
+    // The hero is Total revenue — the one tile that reads the period the
+    // header selects. "Recurring per month" is a statement about now.
+    expect((screen.getByText('Total revenue').closest('.stat') as HTMLElement).classList.contains('hero')).toBe(true)
 
     const backlog = screen.getByText('Fixed backlog').closest('.stat') as HTMLElement
     expect(within(backlog).getByText('$7,200')).toBeTruthy()
@@ -320,7 +325,7 @@ describe('Today', () => {
     expect(document.body.textContent).not.toContain('7,777.77')
 
     // The chart drew the three points: one actual (solid), two projected (dashed).
-    const chart = within(card('Revenue')).getByRole('img', { name: /Recognised revenue by month/ })
+    const chart = within(card(/^Revenue/)).getByRole('img', { name: /Revenue by month/ })
     expect(chart.querySelectorAll('rect.revchart-seg.actual')).toHaveLength(1)
     expect(chart.querySelectorAll('rect.revchart-seg.projected')).toHaveLength(2)
   })
@@ -335,7 +340,7 @@ describe('Today', () => {
     await screen.findByRole('heading', { name: 'Going quiet' })
     expect(screen.getByText('Still here')).toBeTruthy()
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
-    expect(within(card('Revenue')).getByText(/bad period_month/)).toBeTruthy()
+    expect(within(card(/^Revenue/)).getByText(/bad period_month/)).toBeTruthy()
   })
 
   it('Going quiet sorts by ratio, not raw days', async () => {
@@ -377,11 +382,14 @@ describe('Today', () => {
     const rows = rowTexts(quiet)
     expect(rows[0]).toContain('Untouched Co')
 
-    // ADR-001 rule 5 / P2-04: maximally stale, drawn as a full late bar with
-    // a real label — never a blank, never a NaN.
+    // Determinate and drawn as a full late bar — never a blank, never a NaN.
+    // The label is the wait in days now, measured from when the company was
+    // added (lib/decay.ts): "never" as a *bar length* could not tell a
+    // company added this morning from one forgotten for a year, and drew
+    // both in red.
     const meter = quiet.querySelector('button.row .decay')
     expect(meter?.className).toContain('late')
-    expect(meter?.textContent).toContain('never')
+    expect(meter?.getAttribute('title')).toContain('nothing logged yet')
     expect(quiet.querySelector('button.row .decay .fill')?.getAttribute('style')).toContain('100%')
     expect(document.body.textContent).not.toContain('NaN')
   })
@@ -727,6 +735,8 @@ describe('Today at 10x data volume', () => {
       const revenue: RevenueSummary = {
         currentMonth: months[3],
         yearStart: '2026-01-01',
+        bucket: 'month',
+        windowTotalCents: 0,
         lineCount: 5_000,
         metrics: {
           recurringMonthCents: 8_300_000,
@@ -777,7 +787,7 @@ describe('Today at 10x data volume', () => {
       client.setQueryData(queryKeys.people.list(), people)
       client.setQueryData(queryKeys.activity.list(), activity)
       client.setQueryData(queryKeys.settings.list(), settings)
-      client.setQueryData(queryKeys.revenue.summary(), revenue)
+      client.setQueryData(queryKeys.revenue.summary(periodScope(defaultPeriod(new Date()))), revenue)
 
       function renderOnce() {
         return render(

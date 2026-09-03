@@ -474,3 +474,245 @@
 .contacts-historical .row {
   opacity: 0.6;
 }
+
+/* ── the hero's title row, fact line and overflow menu ──
+ *
+ * The header used to be a heading with a row of tags under it, one of them a
+ * `DecayMeter`. The name and its tags now share a line (they are one
+ * statement — "Sitefacts, a client, active"), and the line beneath carries
+ * the four facts that used to be rows in Details: since, cadence, last
+ * touch, who invoices. See `HeaderFacts` in the view for why those four. */
+.dtitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.dtitle h1 {
+  margin: 0;
+}
+
+.dfacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.dfacts b {
+  font-weight: 500;
+  color: var(--mute);
+}
+
+.dfacts a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-bright);
+}
+
+.dfacts a:hover b,
+.dfacts a:focus-visible b {
+  color: var(--papyrus);
+}
+
+/* The band still carries the colour, on the one word it belongs to. `ok` is
+   deliberately not green: on track is the ordinary case, and colouring the
+   ordinary case leaves nothing for the exception to say. */
+.dfact-warn {
+  color: var(--orange);
+}
+
+.dfact-late {
+  color: var(--red);
+}
+
+.hero-menu {
+  position: relative;
+}
+
+.hero-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  min-width: 210px;
+  background: var(--surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-11);
+  padding: 6px;
+  z-index: 50;
+  box-shadow: var(--shadow-popover);
+  display: grid;
+  gap: 4px;
+}
+
+.hero-menu-panel .dhead-img {
+  padding: 4px 6px;
+}
+
+.hero-menu-danger {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-7);
+  background: none;
+  border: 0;
+  text-align: left;
+  font-size: 13px;
+  color: var(--red);
+}
+
+.hero-menu-danger:hover,
+.hero-menu-danger:focus-visible {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+/* ── card header furniture ──
+ *
+ * `.card-sub` is the clause after a card's name ("todos and touches, newest
+ * first") — a caption, not a second heading, so it is set at the meta size
+ * inside the same `<h2>` rather than added as a sibling that screen readers
+ * would announce separately from the thing it describes. */
+.card-sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+  text-transform: lowercase;
+  color: var(--faint);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.card-more,
+.card-edit {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--verdigris);
+  text-decoration: none;
+}
+
+.card-more:hover,
+.card-edit:hover,
+.card-more:focus-visible,
+.card-edit:focus-visible {
+  text-decoration: underline;
+}
+
+/* The one line an unset field gets, instead of a row each saying "—". */
+.field-add {
+  display: block;
+  width: 100%;
+  padding: 10px 15px;
+  background: none;
+  border: 0;
+  text-align: left;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.field-add:hover,
+.field-add:focus-visible {
+  color: var(--verdigris);
+  background: var(--surface-2);
+}
+
+.notes-body {
+  margin: 0;
+  padding: 12px 15px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--mute);
+  white-space: pre-wrap;
+}
+
+/* ── the merged feed's composer ──
+ *
+ * The switch and the field are one control: the switch says which of two
+ * tables the field writes to, so they share a row and a border. Below
+ * ~380px the field drops under the switch rather than shrinking to a
+ * two-word input. */
+.feed-add {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.feed-composer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 190px;
+}
+
+.feed-composer input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-7);
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: var(--papyrus);
+}
+
+.feed-composer input::placeholder {
+  color: var(--faint);
+}
+
+.feed-composer input:focus-visible {
+  border-color: var(--border-bright);
+}
+
+/* ── one list, two kinds of row ──
+ *
+ * A todo and a touch now sit in the same column, so each says which it is:
+ * `.tli-k` is that word, and `.tli-when` is the date, right-aligned so the
+ * dates form a column of their own down the card. */
+.tli-k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-right: 7px;
+}
+
+.todo .tli-k {
+  display: inline;
+}
+
+.tli-when {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+
+/* A todo row joins the timeline's rhythm: the same vertical padding, and no
+   bottom rule, because the feed is one sequence rather than a table of
+   todos with rules between them. */
+.tl .todo {
+  border-bottom: 0;
+  padding: 10px 0;
+  border-radius: var(--radius-7);
+}
+
+.tl .todo:hover,
+.tl .todo:focus-within {
+  background: none;
+}
+
+.tl .todo .tx {
+  padding-top: 0;
+}

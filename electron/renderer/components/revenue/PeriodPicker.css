@@ -1,0 +1,88 @@
+/* .periodpick — the reporting-period control (mode, window, step).
+ *
+ * It sits in a ViewHeader's actions slot and in a Card header, so it wraps
+ * rather than assuming a width: the three parts are independent rows below
+ * roughly 560px, and one row above it. */
+.periodpick {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.periodpick-step {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-7);
+  padding: 2px;
+}
+
+.periodpick-step button {
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-5, 5px);
+  background: none;
+  color: var(--mute);
+  font-size: 15px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+.periodpick-step button:hover,
+.periodpick-step button:focus-visible {
+  background: var(--surface-3);
+  color: var(--papyrus);
+}
+
+/* A fixed minimum so stepping does not shuffle the arrows sideways as the
+   label's width changes ("2026" then "2022 – 2026"). */
+.periodpick-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--papyrus);
+  min-width: 92px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.periodpick-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.periodpick-month {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.periodpick-month > span {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.periodpick-month input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-7);
+  padding: 4px 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--papyrus);
+  color-scheme: dark;
+}
+
+.periodpick-month input:focus-visible {
+  border-color: var(--border-bright);
+}
