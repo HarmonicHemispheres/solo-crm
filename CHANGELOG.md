@@ -5,6 +5,28 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.4
+
+- ✨ **The Revenue page** — recurring revenue this month with the next twelve
+  months beneath it, fixed backlog, T&M run rate, and how concentrated you
+  are on your largest payer; a twelve-month chart stacked by how the money
+  is earned, paid months solid and projected months dashed; and a rollup
+  table you can flip between billing party, end client and billing model —
+  same money, different attribution, totals never move.
+- ✨ **Revenue is recognised from each engagement's terms the moment you save
+  it** — retainers month by month (rolling ones twelve months out), fixed
+  scopes at each milestone's month, T&M from the estimate at the agreed
+  rate, capped at not-to-exceed. Only signed work counts: a proposal is
+  never mistaken for recurring revenue.
+- ⚡ **Today leads with money again** — recurring / month and fixed backlog
+  are back in the hero row, with the chart beside Going quiet, the way the
+  design always drew it.
+- ⚡ **Year to date follows your fiscal year** — the fiscal-year-start
+  setting now drives every YTD figure.
+- ⚡ **Deleting an engagement no longer trips over its own forecast** — the
+  projected lines an engagement generated go with it; only invoiced, paid
+  or entered-by-hand lines still block a delete.
+
 ## 0.6.3
 
 - 🐛 **Forms stop vanishing while you edit them** — selecting the text in a
