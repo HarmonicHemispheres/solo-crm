@@ -5,7 +5,7 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
-## Unreleased
+## 0.6.9
 
 - ⚡ **The company page in two columns** — what is happening on the left
   (engagements, end clients, the activity feed) and what is true on the
