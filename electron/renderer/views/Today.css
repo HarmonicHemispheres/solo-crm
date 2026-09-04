@@ -35,14 +35,19 @@
   padding: 15px;
 }
 
-/* The mockup's own `grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
-   align-items:start` for the dashboard's card row — the mockup's four
-   cards, the revenue chart among them since T-260902-06. Collapses to one
-   column well before 700px, so the body never scrolls sideways
-   (ui-design.md). */
+/* The mockup's own rule was `repeat(auto-fit, minmax(330px, 1fr))`, which
+   at a wide window dealt these cards four abreast, each too narrow for its
+   rows. Two columns at most anywhere in the app (Section.css's `.cols-even`
+   states the rule and the breakpoint); the same 1100px collapse to one. */
 .today-cards {
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .today-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* The cadence ring sits in `Stat`'s `.spark` slot — the only slot the

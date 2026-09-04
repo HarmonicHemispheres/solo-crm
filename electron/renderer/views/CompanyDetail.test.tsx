@@ -416,7 +416,7 @@ describe('CompanyDetail', () => {
     // elsewhere, so there is no second card for this one to be distinguished
     // from. The distinction is still made — see the W+K test below — it just
     // no longer costs a column to say it does not apply.
-    const billedCard = screen.getByText('Engagements').closest('.card') as HTMLElement
+    const billedCard = screen.getByText('Engagements').closest('.section') as HTMLElement
     expect(within(billedCard).getByText('Samay — AI timesheet agent')).toBeTruthy()
     expect(within(billedCard).getByText('for W+K')).toBeTruthy()
     expect(within(billedCard).getByText('Programetrix agents audit')).toBeTruthy()
@@ -427,7 +427,7 @@ describe('CompanyDetail', () => {
     expect(within(billedCard).getByText('Platform advisory')).toBeTruthy()
     expect(within(billedCard).queryAllByText(/^for /)).toHaveLength(2)
 
-    const endClientsCard = screen.getByText('End clients').closest('.card') as HTMLElement
+    const endClientsCard = screen.getByText('End clients').closest('.section') as HTMLElement
     expect(within(endClientsCard).getByText('W+K')).toBeTruthy()
     expect(within(endClientsCard).getByText('Programetrix')).toBeTruthy()
 
@@ -448,7 +448,7 @@ describe('CompanyDetail', () => {
     renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, [sold, platform]))
     await screen.findByRole('heading', { name: 'EZDeploy' })
 
-    const billedCard = screen.getByText('Engagements').closest('.card') as HTMLElement
+    const billedCard = screen.getByText('Engagements').closest('.section') as HTMLElement
     const soldRow = within(billedCard).getByText('Samay — AI timesheet agent').closest('.eng') as HTMLElement
     expect(soldRow.querySelector('.sold-as')?.textContent).toContain('sold as Delivery build')
     // No rate on the card, in either direction: not the agreed snapshot, not
@@ -463,11 +463,11 @@ describe('CompanyDetail', () => {
     renderCompanyDetail('co-wk', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'W+K' })
 
-    const deliveredCard = screen.getByText('Delivered here, billed elsewhere').closest('.card') as HTMLElement
+    const deliveredCard = screen.getByText('Delivered here, billed elsewhere').closest('.section') as HTMLElement
     expect(within(deliveredCard).getByText('Samay — AI timesheet agent')).toBeTruthy()
     expect(within(deliveredCard).getByText('billed to EZDeploy')).toBeTruthy()
 
-    const billedCard = screen.getByText('Billed here').closest('.card') as HTMLElement
+    const billedCard = screen.getByText('Billed here').closest('.section') as HTMLElement
     expect(within(billedCard).getByText('Nothing here yet.')).toBeTruthy()
 
     expect(screen.queryByText('End clients')).toBeNull()
@@ -477,7 +477,7 @@ describe('CompanyDetail', () => {
     renderCompanyDetail('co-rinvii', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'Rinvii' })
 
-    const billedCard = screen.getByText('Engagements').closest('.card') as HTMLElement
+    const billedCard = screen.getByText('Engagements').closest('.section') as HTMLElement
     expect(within(billedCard).getByText('Advisory + development retainer')).toBeTruthy()
     expect(within(billedCard).queryByText(/^for /)).toBeNull()
     expect(screen.queryByText('End clients')).toBeNull()
@@ -535,7 +535,7 @@ describe('CompanyDetail', () => {
     renderCompanyDetail('co-ezdeploy', crm)
     await screen.findByRole('heading', { name: 'EZDeploy' })
 
-    const detailsCard = screen.getByText('Details').closest('.card') as HTMLElement
+    const detailsCard = screen.getByText('Details').closest('.section') as HTMLElement
     expect(within(detailsCard).getByText('Client')).toBeTruthy()
     expect(within(detailsCard).getByText('ezdeploy.io')).toBeTruthy()
     // Cadence, since, last touch and billed-via are the header's fact line
@@ -595,7 +595,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
       expect(within(todosCard).getByText('next step')).toBeTruthy()
       // The next-step task's title appears once, inside its own block — not
       // a second time in the ordinary list below it.
@@ -611,7 +611,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Set "Follow up on renewal" as next step' }))
 
       await waitFor(() => expect(crm['tasks:setNextStep']).toHaveBeenCalledWith({ id: 'task-followup' }))
-      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
       // "Follow up on renewal" is now the next step...
       await waitFor(() => expect(within(todosCard).getByText('next step').nextElementSibling?.textContent).toBe('Follow up on renewal'))
       // ...and "Send invoice" fell back into the ordinary list, its own
@@ -625,19 +625,19 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', crm)
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
       // Two open todos and three activity rows — the card counts what it
       // draws, so wait for the last of the three activity reads to land
       // before reading it. (`samayNote` arrives through the engagement-scoped
       // call, which settles after the company one.)
       await within(todosCard).findByText('Samay kickoff notes')
-      expect(todosCard.querySelector('.card-h .c')?.textContent).toBe('5')
+      expect(todosCard.querySelector('.sh .n')?.textContent).toBe('5')
 
       fireEvent.click(screen.getByRole('button', { name: 'Mark "Follow up on renewal" done' }))
 
       await waitFor(() => expect(crm['tasks:update']).toHaveBeenCalledWith({ id: 'task-followup', patch: { status: 'done' } }))
       await waitFor(() => expect(within(todosCard).queryByText('Follow up on renewal')).toBeNull())
-      expect(todosCard.querySelector('.card-h .c')?.textContent).toBe('4')
+      expect(todosCard.querySelector('.sh .n')?.textContent).toBe('4')
     })
 
     it('inline quick-add creates a task for this company and it appears without leaving the page', async () => {
@@ -655,9 +655,9 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       await waitFor(() =>
         expect(crm['tasks:create']).toHaveBeenCalledWith({ title: 'Call about renewal terms', companyId: 'co-ezdeploy' })
       )
-      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
       await waitFor(() => expect(within(todosCard).getByText('Call about renewal terms')).toBeTruthy())
-      expect(todosCard.querySelector('.card-h .c')?.textContent).toBe('6')
+      expect(todosCard.querySelector('.sh .n')?.textContent).toBe('6')
     })
 
     // Review fix (item 2): the next-step block used to render only the
@@ -668,7 +668,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', crm)
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
       // "Send invoice" is the seeded next step (sendInvoice.isNextStep).
       fireEvent.click(within(todosCard).getByRole('button', { name: 'Mark "Send invoice" done' }))
 
@@ -682,7 +682,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
       const promote = within(todosCard).getByRole('button', { name: 'Set "Send invoice" as next step' })
       // A real `<button>`, not a div with a click handler — reachable by Tab
       // and activated with Enter/Space with no extra keyboard wiring.
@@ -727,7 +727,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
           buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { tasks: [overdue, dueToday, dueTomorrow, dueSoonEdge, dueLater, waiting] })
         )
         await screen.findByRole('heading', { name: 'EZDeploy' })
-        const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+        const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
 
         const overdueDue = within(todosCard).getByText('8d overdue')
         expect(overdueDue.className).toBe('due over')
@@ -774,7 +774,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
         renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { tasks: [dueTonight] }))
         await screen.findByRole('heading', { name: 'EZDeploy' })
 
-        const todosCard = screen.getByText('Activity').closest('.card') as HTMLElement
+        const todosCard = screen.getByText('Activity').closest('.section') as HTMLElement
         expect(within(todosCard).getByText('today')).toBeTruthy()
         expect(within(todosCard).queryByText('1d overdue')).toBeNull()
       } finally {
@@ -790,7 +790,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const activityCard = screen.getByText('Activity').closest('.section') as HTMLElement
       await within(activityCard).findByText('Emailed Dana re: renewal')
       expect(within(activityCard).getByText('Quarterly check-in call')).toBeTruthy()
       // From eng-samay, not carrying companyId at all — only reachable via
@@ -810,7 +810,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const activityCard = screen.getByText('Activity').closest('.section') as HTMLElement
       await within(activityCard).findByText('Quarterly check-in call')
       // The card holds buttons now — the Touch/Todo switch, the composer, and
       // a checkbox on each todo. None of them may sit on an *activity* row:
@@ -835,7 +835,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
           expect.objectContaining({ title: 'Left a voicemail', kind: 'note', source: 'manual', companyId: 'co-ezdeploy', body: null })
         )
       )
-      const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const activityCard = screen.getByText('Activity').closest('.section') as HTMLElement
       await waitFor(() => expect(within(activityCard).getByText('Left a voicemail')).toBeTruthy())
     })
 
@@ -879,7 +879,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
 
       renderCompanyDetail('co-ezdeploy', crm)
       await screen.findByRole('heading', { name: 'EZDeploy' })
-      const ezActivityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const ezActivityCard = screen.getByText('Activity').closest('.section') as HTMLElement
       await within(ezActivityCard).findByText('Quarterly check-in call')
       expect(within(ezActivityCard).queryByText('Kickoff call at W+K')).toBeNull()
     })
@@ -897,7 +897,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
         buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { activity: [postMove], people: ALL_PEOPLE, affiliations: AFFILIATIONS })
       )
       await screen.findByRole('heading', { name: 'W+K' })
-      const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const activityCard = screen.getByText('Activity').closest('.section') as HTMLElement
       await within(activityCard).findByText('Kickoff call at W+K')
     })
 
@@ -919,7 +919,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       })
       renderCompanyDetail('co-ezdeploy', crm)
       await screen.findByRole('heading', { name: 'EZDeploy' })
-      const activityCard = screen.getByText('Activity').closest('.card') as HTMLElement
+      const activityCard = screen.getByText('Activity').closest('.section') as HTMLElement
       await within(activityCard).findByText('Kickoff meeting')
 
       function rowFor(title: string): HTMLElement {
@@ -949,7 +949,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const contactsCard = screen.getByText('Contacts').closest('.card') as HTMLElement
+      const contactsCard = screen.getByText('Contacts').closest('.section') as HTMLElement
       expect(within(contactsCard).getByText('Dana Kwan')).toBeTruthy()
       expect(within(contactsCard).getByText('CTO')).toBeTruthy()
       expect(within(contactsCard).getByText('Primary')).toBeTruthy()
@@ -970,7 +970,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-wk', buildFullCrm())
       await screen.findByRole('heading', { name: 'W+K' })
 
-      const contactsCard = screen.getByText('Contacts').closest('.card') as HTMLElement
+      const contactsCard = screen.getByText('Contacts').closest('.section') as HTMLElement
       expect(within(contactsCard).getByText('Casey Ito')).toBeTruthy()
       expect(within(contactsCard).getByText('PM')).toBeTruthy()
       expect(within(contactsCard).queryByText(/former contact/)).toBeNull()
@@ -983,10 +983,10 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       renderCompanyDetail('co-ezdeploy', buildFullCrm())
       await screen.findByRole('heading', { name: 'EZDeploy' })
 
-      const contactsCard = screen.getByText('Contacts').closest('.card') as HTMLElement
+      const contactsCard = screen.getByText('Contacts').closest('.section') as HTMLElement
       // Dana (current) plus Casey (historical) — the header count must read
       // 1, the current-only count, not 2.
-      expect(contactsCard.querySelector('.card-h .c')?.textContent).toBe('1')
+      expect(contactsCard.querySelector('.sh .n')?.textContent).toBe('1')
     })
   })
 
@@ -994,14 +994,14 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'Lonely Co' })
 
-    const feedCard = screen.getByText('Activity').closest('.card') as HTMLElement
+    const feedCard = screen.getByText('Activity').closest('.section') as HTMLElement
     // One card, so one empty state — and it says both halves are empty.
     expect(within(feedCard).getByText('Nothing logged, nothing open.')).toBeTruthy()
     expect(within(feedCard).getByPlaceholderText('Log a touch for Lonely Co')).toBeTruthy()
     fireEvent.click(within(feedCard).getByRole('button', { name: 'Todo' }))
     expect(within(feedCard).getByPlaceholderText('Add a todo for Lonely Co')).toBeTruthy()
 
-    const contactsCard = screen.getByText('Contacts').closest('.card') as HTMLElement
+    const contactsCard = screen.getByText('Contacts').closest('.section') as HTMLElement
     expect(within(contactsCard).getByText('No contacts yet.')).toBeTruthy()
     expect(within(contactsCard).getByRole('link', { name: 'Add a contact' })).toBeTruthy()
   })
@@ -1110,7 +1110,7 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
     renderCompanyDetail('co-lonely', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
     await screen.findByRole('heading', { name: 'Lonely Co' })
 
-    const linksCard = screen.getByText('Links').closest('.card') as HTMLElement
+    const linksCard = screen.getByText('Links').closest('.section') as HTMLElement
     expect(within(linksCard).getByText('No links yet.')).toBeTruthy()
     expect(within(linksCard).getByPlaceholderText('Paste a Drive, Notion, PDF or any URL')).toBeTruthy()
   })

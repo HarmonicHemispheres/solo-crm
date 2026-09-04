@@ -25,20 +25,11 @@
   grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
 }
 
-.rev-stats {
-  margin-bottom: 14px;
-}
-
-/* The mockup's `minmax(420px,1fr)`. At the 700px floor the content column
-   is narrower than two of those, so this is one column there — the chart
-   above the table — and the body never scrolls sideways. */
+/* Rollup beside Lines: Section.css's `.cols-even` draws the two columns
+   and folds them to one below 1100px. The grid is not itself a section, so
+   it states the same 26px the sections above it keep between themselves. */
 .rev-cards {
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  align-items: start;
-}
-
-.rev-chart {
-  padding: 15px;
+  margin-top: 26px;
 }
 
 /* ── concentration bar (in the Stat's chart slot) ── */
@@ -172,12 +163,19 @@
 
 /* ── the reporting period's own row ──
  *
- * The chart is a full-width card of its own above `.rev-cards`, which is
- * the whole point of the change: it was sharing a two-column grid with the
- * rollup table, and at a typical window each got about 420px — roughly 35px
- * of column for a year of revenue. */
+ * The chart is a full-width section of its own above the rollup and the
+ * lines, which is the whole point of the change: it was sharing a
+ * two-column grid with the rollup table, and at a typical window each got
+ * about 420px — roughly 35px of column for a year of revenue. */
 .rev-chart {
-  padding: 15px 15px 6px;
+  padding: 16px 16px 8px;
+}
+
+/* The chart's legend sits in the section heading's trailing slot; the
+   three sections below the stats take Section.css's own 26px rhythm, which
+   is the room the rollup and lines never had under the chart. */
+.rev-stats {
+  margin-bottom: 26px;
 }
 
 /* ── lines, and the operator's one column on them ── */

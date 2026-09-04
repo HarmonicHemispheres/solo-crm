@@ -18,6 +18,7 @@ import { decayForCompany, type Decay } from '../lib/decay'
 import { identityColor as hue, initials } from '../lib/identity'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { Card } from '../components/primitives/Card'
+import { Section } from '../components/primitives/Section'
 import { Button } from '../components/primitives/Button'
 import { ModelTag, type BillingModel as ModelTagBillingModel } from '../components/primitives/ModelTag'
 import { Tag, type TagVariant } from '../components/primitives/Tag'
@@ -433,42 +434,43 @@ function DetailsCard({ company, companiesById }: { company: Company; companiesBy
   const missing = (Object.keys(OPTIONAL_FIELD_LABEL) as OptionalFieldKey[]).filter((key) => company[key] == null)
 
   return (
-    <Card>
-      <Card.Header title="Details" actions={<EditLink company={company} onEdit={editSheet} label={`Edit ${company.name}'s details`} />} />
-      <div className="field">
-        <span className="k">Kind</span>
-        <span className="v">{company.kind != null ? KIND_LABEL[company.kind] : 'Not set'}</span>
-      </div>
-      {company.website != null && (
+    <Section title="Details" actions={<EditLink company={company} onEdit={editSheet} label={`Edit ${company.name}'s details`} />}>
+      <Card>
         <div className="field">
-          <span className="k">Website</span>
-          <span className="v mono">{company.website}</span>
+          <span className="k">Kind</span>
+          <span className="v">{company.kind != null ? KIND_LABEL[company.kind] : 'Not set'}</span>
         </div>
-      )}
-      {company.budgetNote != null && (
-        <div className="field">
-          <span className="k">Budget</span>
-          <span className="v">{company.budgetNote}</span>
-        </div>
-      )}
-      {company.introducedByCompanyId != null && (
-        <div className="field">
-          <span className="k">Introduced by</span>
-          <span className="v">
-            <Link to={`/company/${company.introducedByCompanyId}`}>{introducedBy?.name ?? company.introducedByCompanyId}</Link>
-          </span>
-        </div>
-      )}
-      {missing.length > 0 && (
-        <button
-          type="button"
-          className="field-add"
-          onClick={(event) => editSheet('company', company.id, event.currentTarget)}
-        >
-          + Add {missing.map((key) => OPTIONAL_FIELD_LABEL[key]).join(', ')}…
-        </button>
-      )}
-    </Card>
+        {company.website != null && (
+          <div className="field">
+            <span className="k">Website</span>
+            <span className="v mono">{company.website}</span>
+          </div>
+        )}
+        {company.budgetNote != null && (
+          <div className="field">
+            <span className="k">Budget</span>
+            <span className="v">{company.budgetNote}</span>
+          </div>
+        )}
+        {company.introducedByCompanyId != null && (
+          <div className="field">
+            <span className="k">Introduced by</span>
+            <span className="v">
+              <Link to={`/company/${company.introducedByCompanyId}`}>{introducedBy?.name ?? company.introducedByCompanyId}</Link>
+            </span>
+          </div>
+        )}
+        {missing.length > 0 && (
+          <button
+            type="button"
+            className="field-add"
+            onClick={(event) => editSheet('company', company.id, event.currentTarget)}
+          >
+            + Add {missing.map((key) => OPTIONAL_FIELD_LABEL[key]).join(', ')}…
+          </button>
+        )}
+      </Card>
+    </Section>
   )
 }
 
@@ -485,16 +487,17 @@ function DetailsCard({ company, companiesById }: { company: Company; companiesBy
 function NotesCard({ company }: { company: Company }) {
   const { editSheet } = useLayerManager()
   return (
-    <Card>
-      <Card.Header title="Notes" actions={<EditLink company={company} onEdit={editSheet} label={`Edit ${company.name}'s notes`} />} />
-      {company.notes != null && company.notes.trim() !== '' ? (
-        <p className="notes-body">{company.notes}</p>
-      ) : (
-        <button type="button" className="field-add" onClick={(event) => editSheet('company', company.id, event.currentTarget)}>
-          + Add a note
-        </button>
-      )}
-    </Card>
+    <Section title="Notes" actions={<EditLink company={company} onEdit={editSheet} label={`Edit ${company.name}'s notes`} />}>
+      <Card>
+        {company.notes != null && company.notes.trim() !== '' ? (
+          <p className="notes-body">{company.notes}</p>
+        ) : (
+          <button type="button" className="field-add" onClick={(event) => editSheet('company', company.id, event.currentTarget)}>
+            + Add a note
+          </button>
+        )}
+      </Card>
+    </Section>
   )
 }
 
@@ -519,34 +522,51 @@ function EditLink({
 // Engagement cards — billed here / delivered here, billed elsewhere
 // ---------------------------------------------------------------------------
 
+/**
+ * One engagement, as the mockup's `.row`: the name, one line under it, the
+ * tags on the right. The line is the facts in reading order — model, what it
+ * was sold as, when — separated by dots rather than stacked as three rows
+ * each with its own glyph; a row that took four lines to say "retainer, sold
+ * as consulting, Sep 26 → Dec 26" was most of why the old grid ran out of
+ * room. The "sold as" clause keeps its name and its rule (T-260901-13): a
+ * name, never a rate. Who is billed sits with the status on the right, as
+ * the tag it is, with the redirect glyph that means "elsewhere".
+ */
 function EngagementRow({ engagement, viaLabel }: { engagement: EngagementWithOffering; viaLabel: string | null }) {
+  const facts: ReactNode[] = []
+  if (engagement.billingModel != null && engagement.billingModel !== 'none') facts.push(MODEL_LABEL[engagement.billingModel])
+  if (engagement.offeringName != null) {
+    facts.push(
+      <span className="sold-as" key="sold-as">
+        <SoldAsIcon />
+        sold as {engagement.offeringName}
+      </span>
+    )
+  }
+  facts.push(formatRange(engagement.startedOn, engagement.endsOn))
   return (
     <div className="eng">
-      <div className="eng-t">
-        <span className="nm trunc">{engagement.name}</span>
+      <div className="eng-body">
+        <div className="eng-t trunc">{engagement.name}</div>
+        <div className="eng-s">
+          {facts.map((fact, index) => (
+            <span key={index} className="eng-fact">
+              {fact}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="eng-r">
+        {viaLabel != null && (
+          <span className="tag via">
+            <ViaIcon />
+            {viaLabel}
+          </span>
+        )}
         {isTaggableModel(engagement.billingModel) && (
           <ModelTag model={engagement.billingModel}>{MODEL_LABEL[engagement.billingModel]}</ModelTag>
         )}
         {engagement.status != null && <Tag variant={STATUS_TAG_VARIANT[engagement.status]}>{STATUS_LABEL[engagement.status]}</Tag>}
-      </div>
-      {viaLabel != null && (
-        <div className="via">
-          <ViaIcon />
-          {viaLabel}
-        </div>
-      )}
-      {/* The same "sold as" label the Engagements view carries
-          (T-260901-13) — these are the same engagement cards, so the fact
-          appears in the same shape and with the same rule: a name, never a
-          rate. */}
-      {engagement.offeringName != null && (
-        <div className="sold-as">
-          <SoldAsIcon />
-          sold as {engagement.offeringName}
-        </div>
-      )}
-      <div className="meta" style={{ marginTop: 6 }}>
-        {formatRange(engagement.startedOn, engagement.endsOn)}
       </div>
     </div>
   )
@@ -565,27 +585,23 @@ function EngagementCard({
 }) {
   const { openSheet } = useLayerManager()
   return (
-    <Card>
-      <Card.Header
-        title={title}
-        count={count}
-        actions={
-          <button
-            type="button"
-            className="card-more"
-            aria-label={`New engagement`}
-            onClick={(event) => openSheet('engagement', event.currentTarget)}
-          >
-            + New engagement
-          </button>
-        }
-      />
-      {engagements.length === 0 ? (
-        <EmptyState>Nothing here yet.</EmptyState>
-      ) : (
-        engagements.map((engagement) => <EngagementRow key={engagement.id} engagement={engagement} viaLabel={viaLabelFor(engagement)} />)
-      )}
-    </Card>
+    <Section
+      title={title}
+      count={count}
+      actions={
+        <IconButton aria-label="New engagement" title="New engagement" onClick={(event) => openSheet('engagement', event.currentTarget)}>
+          <PlusIcon />
+        </IconButton>
+      }
+    >
+      <Card>
+        {engagements.length === 0 ? (
+          <EmptyState>Nothing here yet.</EmptyState>
+        ) : (
+          engagements.map((engagement) => <EngagementRow key={engagement.id} engagement={engagement} viaLabel={viaLabelFor(engagement)} />)
+        )}
+      </Card>
+    </Section>
   )
 }
 
@@ -595,26 +611,31 @@ function EngagementCard({
 
 function EndClientsCard({ companyName, endClients }: { companyName: string; endClients: readonly { company: Company; engagementCount: number }[] }) {
   return (
-    <Card>
-      <Card.Header title="End clients" count={endClients.length} />
-      {endClients.map(({ company, engagementCount }) => (
-        <Link key={company.id} to={`/company/${company.id}`} className="endrow">
-          <CompanyMark name={company.name} size={30} color={hue(company.name)} />
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span className="nm trunc" style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>
-              {company.name}
+    <Section
+      title="End clients"
+      count={endClients.length}
+      caption={
+        <>
+          <ViaIcon /> revenue rolls up to {companyName}
+        </>
+      }
+    >
+      <Card>
+        {endClients.map(({ company, engagementCount }) => (
+          <Link key={company.id} to={`/company/${company.id}`} className="endrow">
+            <CompanyMark name={company.name} size={30} color={hue(company.name)} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span className="nm trunc" style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>
+                {company.name}
+              </span>
+              <span className="meta">
+                {engagementCount} engagement{engagementCount === 1 ? '' : 's'}
+              </span>
             </span>
-            <span className="meta">
-              {engagementCount} engagement{engagementCount === 1 ? '' : 's'}
-            </span>
-          </span>
-        </Link>
-      ))}
-      <div className="via endclients-foot">
-        <ViaIcon />
-        revenue rolls up to {companyName}
-      </div>
-    </Card>
+          </Link>
+        ))}
+      </Card>
+    </Section>
   )
 }
 
@@ -827,58 +848,56 @@ function ActivityCard({
           : null
 
   return (
-    <Card>
-      <Card.Header
-        title={
-          <>
-            <span>Activity</span> <span className="card-sub">todos and touches, newest first</span>
-          </>
-        }
-        /* Rows in the card, which is what a count beside a list means
-           everywhere else in the app. Not "open todos": that number was the
-           Todos card's, and reading it off a card that also holds five
-           touches would be a count of something the reader cannot see. */
-        count={feed.length + (nextStep == null ? 0 : 1)}
-        actions={
-          <Link className="card-more" to="/activity">
-            View all
-          </Link>
-        }
-      />
-      <div className="feed-add">
-        <Toggle options={QUICK_ADD_MODES} value={mode} onChange={onModeChange} aria-label="What to add" />
-        <FeedComposer
-          key={mode}
-          inputRef={inputRef}
-          placeholder={mode === 'touch' ? `Log a touch for ${companyName}` : `Add a todo for ${companyName}`}
-          submitLabel={mode === 'touch' ? 'Log' : 'Add'}
-          onSubmit={(value) => (mode === 'touch' ? logActivity.mutate(value) : createTask.mutate(value))}
-        />
-      </div>
-      {nextStep != null && <NextStepBlock task={nextStep} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />}
-      <div className="tl">
-        {feed.length === 0 && nextStep == null ? (
-          <EmptyState>Nothing logged, nothing open.</EmptyState>
-        ) : (
-          feed.map((entry) =>
-            entry.kind === 'activity' ? (
-              <ActivityRow key={entry.id} activity={entry.activity} />
-            ) : (
-              <TodoRow key={entry.id} task={entry.task} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
+    <Section
+      title="Activity"
+      /* Rows in the card, which is what a count beside a list means
+         everywhere else in the app. Not "open todos": that number was the
+         Todos card's, and reading it off a card that also holds five
+         touches would be a count of something the reader cannot see. */
+      count={feed.length + (nextStep == null ? 0 : 1)}
+      caption="todos and touches, newest first"
+      actions={
+        <Link className="card-more" to="/activity">
+          View all
+        </Link>
+      }
+    >
+      <Card>
+        <div className="feed-add">
+          <Toggle options={QUICK_ADD_MODES} value={mode} onChange={onModeChange} aria-label="What to add" />
+          <FeedComposer
+            key={mode}
+            inputRef={inputRef}
+            placeholder={mode === 'touch' ? `Log a touch for ${companyName}` : `Add a todo for ${companyName}`}
+            submitLabel={mode === 'touch' ? 'Log' : 'Add'}
+            onSubmit={(value) => (mode === 'touch' ? logActivity.mutate(value) : createTask.mutate(value))}
+          />
+        </div>
+        {nextStep != null && <NextStepBlock task={nextStep} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />}
+        <div className="tl">
+          {feed.length === 0 && nextStep == null ? (
+            <EmptyState>Nothing logged, nothing open.</EmptyState>
+          ) : (
+            feed.map((entry) =>
+              entry.kind === 'activity' ? (
+                <ActivityRow key={entry.id} activity={entry.activity} />
+              ) : (
+                <TodoRow key={entry.id} task={entry.task} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
+              )
             )
-          )
-        )}
-      </div>
-      <Toast
-        message={activeError?.message ?? null}
-        onDismiss={() => {
-          completeTask.reset()
-          promoteTask.reset()
-          createTask.reset()
-          logActivity.reset()
-        }}
-      />
-    </Card>
+          )}
+        </div>
+        <Toast
+          message={activeError?.message ?? null}
+          onDismiss={() => {
+            completeTask.reset()
+            promoteTask.reset()
+            createTask.reset()
+            logActivity.reset()
+          }}
+        />
+      </Card>
+    </Section>
   )
 }
 
@@ -981,29 +1000,39 @@ function ContactsCard({
   historical: readonly ContactEntry[]
 }) {
   const navigate = useNavigate()
+  const { openSheet } = useLayerManager()
   const goToPerson = (personId: string) => () => navigate(`/person/${personId}`)
 
   return (
-    <Card>
-      <Card.Header title="Contacts" count={current.length} />
-      {current.length === 0 && historical.length === 0 ? (
-        <EmptyState action={<Link to="/people">Add a contact</Link>}>No contacts yet.</EmptyState>
-      ) : current.length === 0 ? (
-        <EmptyState>No current contacts.</EmptyState>
-      ) : (
-        current.map((entry) => <ContactRow key={entry.person.id} entry={entry} historical={false} onClick={goToPerson(entry.person.id)} />)
-      )}
-      {historical.length > 0 && (
-        <details className="contacts-historical">
-          <summary>
-            {historical.length} former contact{historical.length === 1 ? '' : 's'}
-          </summary>
-          {historical.map((entry) => (
-            <ContactRow key={entry.person.id} entry={entry} historical onClick={goToPerson(entry.person.id)} />
-          ))}
-        </details>
-      )}
-    </Card>
+    <Section
+      title="Contacts"
+      count={current.length}
+      actions={
+        <IconButton aria-label="New contact" title="New contact" onClick={(event) => openSheet('person', event.currentTarget)}>
+          <PlusIcon />
+        </IconButton>
+      }
+    >
+      <Card>
+        {current.length === 0 && historical.length === 0 ? (
+          <EmptyState action={<Link to="/people">Add a contact</Link>}>No contacts yet.</EmptyState>
+        ) : current.length === 0 ? (
+          <EmptyState>No current contacts.</EmptyState>
+        ) : (
+          current.map((entry) => <ContactRow key={entry.person.id} entry={entry} historical={false} onClick={goToPerson(entry.person.id)} />)
+        )}
+        {historical.length > 0 && (
+          <details className="contacts-historical">
+            <summary>
+              {historical.length} former contact{historical.length === 1 ? '' : 's'}
+            </summary>
+            {historical.map((entry) => (
+              <ContactRow key={entry.person.id} entry={entry} historical onClick={goToPerson(entry.person.id)} />
+            ))}
+          </details>
+        )}
+      </Card>
+    </Section>
   )
 }
 
@@ -1583,54 +1612,65 @@ export function CompanyDetail() {
         }}
       />
 
-      <div className="company-detail-grid">
-        {/* **The split-billing distinction stays, and stops taking a column
-            to say nothing.** These are still two independently server-filtered
-            reads, never one list sliced two ways (§5, and the bug whose page
-            still looks plausible) — but a company with no work delivered for
-            someone else drew an empty card headed "Delivered here, billed
-            elsewhere", which is a third of the page spent on a distinction
-            that does not apply to it. The second card appears when there is
-            something in it, and the first is called what it is: with nothing
-            billed elsewhere, "Billed here" is just this company's
-            engagements. The mockup does the same (`views.company`). */}
-        <EngagementCard
-          title={deliveredElsewhere.length > 0 ? 'Billed here' : 'Engagements'}
-          count={billedHere.length}
-          engagements={billedHere}
-          viaLabelFor={(engagement) =>
-            engagement.clientCompanyId != null && engagement.clientCompanyId !== company.id
-              ? `for ${companiesById.get(engagement.clientCompanyId)?.name ?? engagement.clientCompanyId}`
-              : null
-          }
-        />
-        {deliveredElsewhere.length > 0 && (
+      {/* Two columns, never more (planning/solo-crm-company-page-mockup.html):
+          what's *happening* on the left — engagements, end clients, the feed
+          — and what's *true* on the right — details, contacts, links, notes.
+          The old auto-fit grid dealt the same eight cards into however many
+          330px columns the window allowed, so at a wide window they sat four
+          abreast, each too narrow for its own rows, and their order changed
+          with the width. */}
+      <div className="cols">
+        <div className="col">
+          {/* **The split-billing distinction stays, and stops taking a column
+              to say nothing.** These are still two independently server-filtered
+              reads, never one list sliced two ways (§5, and the bug whose page
+              still looks plausible) — but a company with no work delivered for
+              someone else drew an empty card headed "Delivered here, billed
+              elsewhere", which is a third of the page spent on a distinction
+              that does not apply to it. The second card appears when there is
+              something in it, and the first is called what it is: with nothing
+              billed elsewhere, "Billed here" is just this company's
+              engagements. The mockup does the same (`views.company`). */}
           <EngagementCard
-            title="Delivered here, billed elsewhere"
-            count={deliveredElsewhere.length}
-            engagements={deliveredElsewhere}
+            title={deliveredElsewhere.length > 0 ? 'Billed here' : 'Engagements'}
+            count={billedHere.length}
+            engagements={billedHere}
             viaLabelFor={(engagement) =>
-              engagement.billingCompanyId != null ? `billed to ${companiesById.get(engagement.billingCompanyId)?.name ?? engagement.billingCompanyId}` : null
+              engagement.clientCompanyId != null && engagement.clientCompanyId !== company.id
+                ? `for ${companiesById.get(engagement.clientCompanyId)?.name ?? engagement.clientCompanyId}`
+                : null
             }
           />
-        )}
-        {endClients.length > 0 && <EndClientsCard companyName={company.name} endClients={endClients} />}
-        <ActivityCard
-          companyId={company.id}
-          companyName={company.name}
-          tasks={tasksQuery.data ?? []}
-          items={activityItems}
-          now={now}
-          mode={feedMode}
-          onModeChange={setFeedMode}
-          inputRef={composerRef}
-        />
-        <ContactsCard current={currentContacts} historical={historicalContacts} />
-        <DetailsCard company={company} companiesById={companiesById} />
-        <NotesCard company={company} />
-        {/* §6.10's links, in the mockup's own position — the card immediately
-            after Details in the right-hand column (mockup line ~1596). */}
-        <LinksCard entityType="company" entityId={company.id} />
+          {deliveredElsewhere.length > 0 && (
+            <EngagementCard
+              title="Delivered here, billed elsewhere"
+              count={deliveredElsewhere.length}
+              engagements={deliveredElsewhere}
+              viaLabelFor={(engagement) =>
+                engagement.billingCompanyId != null ? `billed to ${companiesById.get(engagement.billingCompanyId)?.name ?? engagement.billingCompanyId}` : null
+              }
+            />
+          )}
+          {endClients.length > 0 && <EndClientsCard companyName={company.name} endClients={endClients} />}
+          <ActivityCard
+            companyId={company.id}
+            companyName={company.name}
+            tasks={tasksQuery.data ?? []}
+            items={activityItems}
+            now={now}
+            mode={feedMode}
+            onModeChange={setFeedMode}
+            inputRef={composerRef}
+          />
+        </div>
+        <div className="col">
+          <DetailsCard company={company} companiesById={companiesById} />
+          <ContactsCard current={currentContacts} historical={historicalContacts} />
+          {/* §6.10's links, in the mockup's own position — after Contacts in
+              the right-hand column. */}
+          <LinksCard entityType="company" entityId={company.id} />
+          <NotesCard company={company} />
+        </div>
       </div>
     </div>
   )

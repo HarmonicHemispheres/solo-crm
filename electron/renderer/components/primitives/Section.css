@@ -1,0 +1,89 @@
+/* section / .sh — planning/solo-crm-company-page-mockup.html */
+.section {
+  min-width: 0;
+}
+
+.section + .section {
+  margin-top: 26px;
+}
+
+/* Two sections side by side in a column grid are not one under the other:
+   the stacking rhythm above must not push the second column down. */
+.cols > .section,
+.cols-even > .section {
+  margin-top: 0;
+}
+
+.sh {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-height: 26px;
+}
+
+.sh h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -.1px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.sh .n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: .4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The trailing slot: a link (`.card-more`, `.card-edit`), a Toggle, a legend
+   or an IconButton. `align-self: center` because the controls have a height
+   the text does not, and baseline alignment would hang them. */
+.sh .act {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  align-self: center;
+  flex: none;
+}
+
+/* ── the page's column layouts ──
+ *
+ * At most two columns of cards anywhere, ever. `.cols` is the mockup's
+ * 7fr / 4fr split — what's happening on the left, what's true on the
+ * right — and `.cols-even` is the same two columns at equal width for a
+ * page whose sections have no such asymmetry (Today, Todos, Revenue's
+ * rollup and lines). Both fall to one column below 1100px of window: the
+ * rail is 230px and the view pads 26px a side, so that is ~820px of
+ * content, the narrowest a 4/11 column can be and still hold a labelled
+ * field. `minmax(0, …)` rather than bare `fr` so a long name or a wide
+ * table scrolls inside its card rather than widening the column. */
+.cols {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.cols-even {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.col {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .cols,
+  .cols-even {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

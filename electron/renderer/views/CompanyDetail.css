@@ -28,12 +28,10 @@
  * and banner (ADR-015) and the header's way in to editing.
  */
 
-.company-detail-grid {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-  align-items: start;
-}
+/* The body is `.cols` / `.col` from Section.css — the mockup's two
+   columns, what's happening beside what's true — since the layout pass
+   that retired `.company-detail-grid`'s auto-fit. Nothing page-specific
+   about the columns is left to declare here. */
 
 /* ── detail header ─────────────────────
  *
@@ -136,12 +134,14 @@
 
 /* ── details card ────────────────────── */
 
+/* The mockup's `.kv`: a mono key in a fixed column, the value beside it,
+   at the row height and inset of every other row on the page. */
 .field {
   display: flex;
-  gap: 12px;
-  padding: 9px 15px;
+  gap: 14px;
+  padding: 11px 16px;
   border-bottom: 1px solid var(--border);
-  font-size: 12.5px;
+  font-size: 13px;
   align-items: center;
 }
 
@@ -155,8 +155,8 @@
   letter-spacing: 1.3px;
   text-transform: uppercase;
   color: var(--faint);
-  width: 88px;
-  flex: 0 0 88px;
+  width: 96px;
+  flex: 0 0 96px;
 }
 
 .field .v {
@@ -166,8 +166,15 @@
 
 /* ── engagement rows ─────────────────── */
 
+/* The mockup's `.row`: name and one line of facts on the left, tags on
+   the right. Below ~420px of card the tags drop under the text rather
+   than crushing the name. */
 .eng {
-  padding: 12px 15px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -175,34 +182,63 @@
   border-bottom: 0;
 }
 
+.eng-body {
+  flex: 1;
+  min-width: 200px;
+}
+
 .eng-t {
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.eng-s {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--slate);
+}
+
+/* Facts read left to right with a dot between — the mockup's
+   "Retainer · sold as consulting · Sep 26 → Dec 26". */
+.eng-fact + .eng-fact::before {
+  content: '·';
+  margin: 0 7px;
+  color: var(--faint);
+}
+
+.eng-fact .sold-as {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.eng-r {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.eng-t .nm {
-  font-weight: 600;
-  font-size: 13px;
-  flex: 1;
-  min-width: 120px;
+/* The billing redirect is a tag beside the status tag, in `--lapis` like
+   every other "elsewhere" marker (Engagements.css draws the same glyph the
+   same colour). Tag.css sets the geometry; only the colour is this rule's. */
+.tag.via {
+  color: var(--lapis);
+  border-color: color-mix(in srgb, var(--lapis) 32%, transparent);
+  text-transform: none;
+  letter-spacing: 0.3px;
+  font-size: 10.5px;
 }
 
-/* `.sold-as` shares `.via`'s treatment for the reason Engagements.css states
-   at its own copy of this rule: both are a glyph plus a few mono uppercase
-   words qualifying the row above. Separate names, one shape. */
-.via,
-.sold-as {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-top: 6px;
+/* End clients' caption carries the same glyph, in the `.sh .n` slot. */
+.sh .n svg {
+  vertical-align: -1px;
 }
 
 /* ── end clients ─────────────────────── */
@@ -210,8 +246,8 @@
 .endrow {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 11px 15px;
+  gap: 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   width: 100%;
   text-align: left;
@@ -237,12 +273,6 @@
   width: 2px;
   background: var(--lapis);
   opacity: 0.5;
-}
-
-.endclients-foot {
-  padding: 11px 15px;
-  border-top: 1px solid var(--border);
-  margin-top: 0;
 }
 
 /* ── todos (T-260828-30) ─────────────── */

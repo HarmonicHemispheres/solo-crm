@@ -57,6 +57,12 @@ in `.dev/`, never into the working tree.
   because Revenue is one report and the engagement timeline (P3-12) is the
   second. No ADR: a rearrangement of one nav item, the same weight as the
   brand block above.
+- [planning/solo-crm-company-page-mockup.html](planning/solo-crm-company-page-mockup.html)
+  — **the company page's own spec**, superseding `views.company` in the
+  mockup above: a one-line header, a 7/4 two-column body (what's happening
+  left, what's true right), section headings *above* their cards
+  (`components/primitives/Section.tsx`). Its layout rule is app-wide: never
+  more than two columns of cards at any width, folding to one below 1100px.
 - [planning/solo-crm-requirements.md](planning/solo-crm-requirements.md) — scope,
   data model, integrations, non-functional requirements.
 - [CONVENTIONS.md](CONVENTIONS.md) — date, timestamp and money representations.

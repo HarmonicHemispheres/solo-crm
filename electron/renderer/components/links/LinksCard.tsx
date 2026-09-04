@@ -5,6 +5,7 @@ import type { Link, LinkEntityType, LinkKind } from '../../../shared/links'
 import { IpcCallError, ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
 import { invalidate, queryKeys } from '../../lib/query-keys'
 import { Card } from '../primitives/Card'
+import { Section } from '../primitives/Section'
 import { EmptyState } from '../primitives/EmptyState'
 import { IconButton } from '../primitives/IconButton'
 import { hostOf, normaliseLinkInput } from './link-input'
@@ -339,22 +340,26 @@ export function LinksCard({ entityType, entityId }: LinksCardProps) {
     return true
   }
 
+  // A Section, not a Card.Header: this card only ever sits in a detail
+  // page's column, where every heading is lifted out above its card
+  // (Section.tsx).
   return (
-    <Card>
-      <Card.Header title="Links" count={links.length} />
-      {links.length === 0 ? (
-        <EmptyState>No links yet.</EmptyState>
-      ) : (
-        links.map((link) => (
-          <LinkRow key={link.id} link={link} onRename={(id, title) => renameLink.mutate({ id, title })} onRemove={(target) => removeLink.mutate(target.id)} />
-        ))
-      )}
-      <LinkPasteField placeholder="Paste a Drive, Notion, PDF or any URL" error={inputError} onSubmit={submitUrl} />
-      {mutationError != null && (
-        <p className="linkadd-error linkadd-error-row" role="alert">
-          {mutationError}
-        </p>
-      )}
-    </Card>
+    <Section title="Links" count={links.length}>
+      <Card>
+        {links.length === 0 ? (
+          <EmptyState>No links yet.</EmptyState>
+        ) : (
+          links.map((link) => (
+            <LinkRow key={link.id} link={link} onRename={(id, title) => renameLink.mutate({ id, title })} onRemove={(target) => removeLink.mutate(target.id)} />
+          ))
+        )}
+        <LinkPasteField placeholder="Paste a Drive, Notion, PDF or any URL" error={inputError} onSubmit={submitUrl} />
+        {mutationError != null && (
+          <p className="linkadd-error linkadd-error-row" role="alert">
+            {mutationError}
+          </p>
+        )}
+      </Card>
+    </Section>
   )
 }

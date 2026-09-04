@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { Card } from '../components/primitives/Card'
+import { Section } from '../components/primitives/Section'
 import { EmptyState } from '../components/primitives/EmptyState'
 import { Stat } from '../components/primitives/Stat'
 import { Toast } from '../components/primitives/Toast'
@@ -140,14 +141,15 @@ export function Revenue() {
     return (
       <>
         {header}
-        <Card>
-          <Card.Header title="Monthly revenue" />
-          <EmptyState>
-            Nothing to show yet. Revenue is recognised from each signed engagement's terms — retainers by the month, fixed
-            scopes by milestone, T&amp;M by estimated hours — and no active, pending or delivered engagement has a price
-            to recognise. Set one on an engagement and its months appear here.
-          </EmptyState>
-        </Card>
+        <Section title="Monthly revenue">
+          <Card>
+            <EmptyState>
+              Nothing to show yet. Revenue is recognised from each signed engagement's terms — retainers by the month, fixed
+              scopes by milestone, T&amp;M by estimated hours — and no active, pending or delivered engagement has a price
+              to recognise. Set one on an engagement and its months appear here.
+            </EmptyState>
+          </Card>
+        </Section>
       </>
     )
   }
@@ -190,50 +192,54 @@ export function Revenue() {
       {/* Full width, and its own row: the chart is the page's argument, and
           it was sharing a two-column grid with the rollup table — at a
           typical window each got about 420px, which is 35px a column for a
-          year. */}
-      <Card>
-        <Card.Header title="Monthly revenue" actions={<RevenueLegend />} />
-        <div className="rev-chart">
-          <RevenueChart
-            window={summary.window}
-            series={summary.series}
-            months={summary.months}
-            currentMonth={summary.currentMonth}
-            bucket={summary.bucket}
-            height={230}
-          />
-        </div>
-      </Card>
-
-      <div className="grid rev-cards">
+          year. Each of the three is a Section — heading above the card,
+          the page's own rhythm between them — rather than a card with the
+          heading inside and nothing between it and the next. */}
+      <Section title="Monthly revenue" actions={<RevenueLegend />}>
         <Card>
-          <Card.Header title="Rollup" count={rows.length} actions={<Toggle options={ROLLUP_OPTIONS} value={rollup} onChange={setRollup} aria-label="Roll revenue up by" />} />
-          <div className="rev-scroll">
-            <table className="rev-tbl">
-              <thead>
-                <tr>
-                  <th>{ROLLUP_COLUMN[rollup]}</th>
-                  <th className="num">Monthly</th>
-                  <th className="num">Backlog</th>
-                  <th className="num">YTD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <RollupRow key={row.key} row={row} rollup={rollup} onNavigate={(id) => navigate(`/company/${id}`)} />
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td>Total</td>
-                  <td className="num">{formatMoney(summary.totals.monthlyCents)}</td>
-                  <td className="num">{formatMoney(summary.totals.backlogCents)}</td>
-                  <td className="num">{formatMoney(summary.totals.ytdCents)}</td>
-                </tr>
-              </tfoot>
-            </table>
+          <div className="rev-chart">
+            <RevenueChart
+              window={summary.window}
+              series={summary.series}
+              months={summary.months}
+              currentMonth={summary.currentMonth}
+              bucket={summary.bucket}
+              height={230}
+            />
           </div>
         </Card>
+      </Section>
+
+      <div className="cols-even rev-cards">
+        <Section title="Rollup" count={rows.length} actions={<Toggle options={ROLLUP_OPTIONS} value={rollup} onChange={setRollup} aria-label="Roll revenue up by" />}>
+          <Card>
+            <div className="rev-scroll">
+              <table className="rev-tbl">
+                <thead>
+                  <tr>
+                    <th>{ROLLUP_COLUMN[rollup]}</th>
+                    <th className="num">Monthly</th>
+                    <th className="num">Backlog</th>
+                    <th className="num">YTD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <RollupRow key={row.key} row={row} rollup={rollup} onNavigate={(id) => navigate(`/company/${id}`)} />
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td>Total</td>
+                    <td className="num">{formatMoney(summary.totals.monthlyCents)}</td>
+                    <td className="num">{formatMoney(summary.totals.backlogCents)}</td>
+                    <td className="num">{formatMoney(summary.totals.ytdCents)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </Card>
+        </Section>
 
         <LinesCard period={period} />
       </div>
@@ -267,45 +273,39 @@ function LinesCard({ period }: { period: Period }) {
   const lines: readonly RevenueLine[] = linesQuery.data ?? []
 
   return (
-    <Card>
-      <Card.Header
-        title={
-          <>
-            <span>Lines</span> <span className="card-sub">mark what has been invoiced</span>
-          </>
-        }
-        count={linesQuery.isPending ? undefined : lines.length}
-      />
-      {linesQuery.isPending ? (
-        <p className="meta rev-lines-note">Loading lines…</p>
-      ) : linesQuery.error ? (
-        <EmptyState>{linesQuery.error.message}</EmptyState>
-      ) : lines.length === 0 ? (
-        <EmptyState>No revenue lines fall in {periodLabel(period)}.</EmptyState>
-      ) : (
-        <div className="rev-lines">
-          {lines.map((line) => (
-            <div className="rev-line" key={line.id}>
-              <div className="rev-line-id">
-                <div className="nm trunc">{line.engagementName ?? 'No engagement'}</div>
-                <div className="meta">
-                  {formatPeriodMonth(line.periodMonth)} · {line.kind === null ? 'Unclassified' : (LINE_KIND_LABEL[line.kind] ?? line.kind)}
-                  {line.billingCompanyName !== null && ` · ${line.billingCompanyName}`}
+    <Section title="Lines" count={linesQuery.isPending ? undefined : lines.length} caption="mark what has been invoiced">
+      <Card>
+        {linesQuery.isPending ? (
+          <p className="meta rev-lines-note">Loading lines…</p>
+        ) : linesQuery.error ? (
+          <EmptyState>{linesQuery.error.message}</EmptyState>
+        ) : lines.length === 0 ? (
+          <EmptyState>No revenue lines fall in {periodLabel(period)}.</EmptyState>
+        ) : (
+          <div className="rev-lines">
+            {lines.map((line) => (
+              <div className="rev-line" key={line.id}>
+                <div className="rev-line-id">
+                  <div className="nm trunc">{line.engagementName ?? 'No engagement'}</div>
+                  <div className="meta">
+                    {formatPeriodMonth(line.periodMonth)} · {line.kind === null ? 'Unclassified' : (LINE_KIND_LABEL[line.kind] ?? line.kind)}
+                    {line.billingCompanyName !== null && ` · ${line.billingCompanyName}`}
+                  </div>
                 </div>
+                <div className="rev-line-amt num">{formatMoney(line.amountCents)}</div>
+                <Toggle
+                  options={LINE_STATUS_OPTIONS}
+                  value={line.status}
+                  onChange={(status) => setStatus.mutate({ id: line.id, status })}
+                  aria-label={`Status of ${line.engagementName ?? 'this line'}, ${formatPeriodMonth(line.periodMonth)}`}
+                />
               </div>
-              <div className="rev-line-amt num">{formatMoney(line.amountCents)}</div>
-              <Toggle
-                options={LINE_STATUS_OPTIONS}
-                value={line.status}
-                onChange={(status) => setStatus.mutate({ id: line.id, status })}
-                aria-label={`Status of ${line.engagementName ?? 'this line'}, ${formatPeriodMonth(line.periodMonth)}`}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-      <Toast message={setStatus.isError ? setStatus.error.message : null} onDismiss={() => setStatus.reset()} />
-    </Card>
+            ))}
+          </div>
+        )}
+        <Toast message={setStatus.isError ? setStatus.error.message : null} onDismiss={() => setStatus.reset()} />
+      </Card>
+    </Section>
   )
 }
 

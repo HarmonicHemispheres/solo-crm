@@ -7,6 +7,19 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ## Unreleased
 
+- ⚡ **The company page in two columns** — what is happening on the left
+  (engagements, end clients, the activity feed) and what is true on the
+  right (details, contacts, links, notes), each section with its heading
+  above its card and room between them. The old grid dealt the same cards
+  into as many narrow columns as the window allowed. An engagement is one
+  row again: its name, one line of facts, its tags on the right. Adding an
+  engagement or a contact is a plus in the section heading.
+- ⚡ **Room between Revenue's sections** — the chart, the rollup and the
+  lines each have their own heading and their own space; the rollup and
+  lines no longer sit against the chart's bottom edge.
+- ⚡ **Two columns at most** — Today, Todos and the person page cap their
+  card grids at two columns and fold to one below 1100px, instead of
+  spreading four narrow cards across a wide window.
 - ⚡ **Engagements, grouped by client** — one card per company you invoice,
   with its logo on it, and Status and Model groupings a click away. Filter
   by status and by billing model; each chip says how many engagements

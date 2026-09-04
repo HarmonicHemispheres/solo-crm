@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solo CRM — Sitefacts (mockup)</title>
+<style>
+  :root{
+    --bg:#0b1216; --bg-side:#0d151a; --panel:#111b21; --panel-2:#16222a;
+    --line:#1f2d35; --line-2:#2a3a44;
+    --text:#e6edf0; --muted:#8a9aa4; --dim:#5f6f79;
+    --teal:#7fd9c9; --teal-dim:#1c4a45; --green:#8ee08a; --green-dim:#1e3d25;
+    --amber:#f0c36c; --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font:14px/1.5 var(--sans);display:flex;min-height:100vh}
+  a{color:inherit;text-decoration:none}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  .mono{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+
+  /* sidebar (unchanged from current app) */
+  .side{width:224px;flex:none;background:var(--bg-side);border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;gap:22px}
+  .brand{font-size:20px;font-weight:600;padding-left:6px}.brand span{color:var(--teal)}
+  .ver{font-family:var(--mono);font-size:10px;color:var(--dim);padding-left:6px;margin-top:2px}
+  .nav h6{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim);margin:0 0 6px 6px}
+  .nav a{display:block;padding:7px 8px;border-radius:6px;color:var(--muted);font-size:14px}
+  .nav a.on{background:var(--panel-2);color:var(--text);border:1px solid var(--line-2)}
+  .side .db{margin-top:auto;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .side .db::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:6px}
+
+  main{flex:1;min-width:0}
+  .top{height:56px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 24px;gap:16px}
+  .top .search{margin-left:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;height:34px;width:380px;display:flex;align-items:center;padding:0 12px;color:var(--dim);font-size:13px}
+  .top .search kbd{margin-left:auto;font-family:var(--mono);font-size:10px;border:1px solid var(--line-2);border-radius:4px;padding:1px 5px}
+  .btn{height:32px;padding:0 12px;border-radius:7px;border:1px solid var(--line-2);background:var(--panel);font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--teal);color:#062421;border-color:var(--teal)}
+  .btn.icon{width:32px;padding:0;justify-content:center}
+
+  .page{padding:22px 24px 48px;max-width:1360px}
+  .crumb{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);margin-bottom:14px}
+
+  /* header — one line, one primary action, overflow for the rest */
+  .hdr{display:flex;align-items:center;gap:16px;padding-bottom:18px;border-bottom:1px solid var(--line);margin-bottom:22px;position:relative}
+  .logo{width:52px;height:52px;border-radius:10px;background:var(--panel);border:1px solid var(--line-2);display:grid;place-items:center;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--teal)}
+  .hdr h1{font-size:24px;font-weight:600;line-height:1.1}
+  .tags{display:flex;gap:6px;margin-left:10px}
+  .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;padding:3px 7px;border-radius:4px;border:1px solid var(--line-2);color:var(--muted)}
+  .tag.ok{color:var(--green);border-color:var(--green-dim);background:rgba(142,224,138,.06)}
+  .meta{color:var(--muted);font-size:13px;margin-top:5px;display:flex;gap:18px}
+  .meta b{color:var(--text);font-weight:500}
+  .meta .warn{color:var(--amber)}
+  .actions{margin-left:auto;display:flex;gap:8px;position:relative}
+  .menu{position:absolute;right:0;top:40px;background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;min-width:190px;padding:6px;display:none;z-index:5}
+  .menu.open{display:block}
+  .menu button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:5px;font-size:13px;color:var(--muted)}
+  .menu button:hover{background:var(--panel);color:var(--text)}
+  .menu hr{border:0;border-top:1px solid var(--line);margin:6px 0}
+  .menu .danger{color:#ef8a8a}
+
+  /* two-column body: what's happening (left) vs what's true (right) */
+  .cols{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,4fr);gap:24px}
+  section{margin-bottom:26px}
+  .sh{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+  .sh h2{font-size:15px;font-weight:600}
+  .sh .n{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .sh .act{margin-left:auto;font-size:13px;color:var(--teal)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .row{display:flex;align-items:center;gap:14px;padding:14px 16px;border-top:1px solid var(--line)}
+  .row:first-child{border-top:0}
+  .row .t{font-weight:500}
+  .row .s{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .row .r{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .empty{padding:14px 16px;color:var(--dim);font-size:13px;display:flex;justify-content:space-between;align-items:center}
+  .empty a{color:var(--teal)}
+
+  /* activity timeline with composer */
+  .compose{display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .compose input{flex:1;background:var(--bg);border:1px solid var(--line-2);border-radius:7px;height:34px;padding:0 12px;color:var(--text);font:inherit}
+  .compose input::placeholder{color:var(--dim)}
+  .seg{display:flex;border:1px solid var(--line-2);border-radius:7px;overflow:hidden}
+  .seg button{padding:0 10px;font-size:12px;color:var(--muted)}
+  .seg button.on{background:var(--panel-2);color:var(--text)}
+  .tl{padding:6px 0}
+  .tl .it{display:grid;grid-template-columns:18px 1fr auto;gap:12px;padding:10px 16px;align-items:start}
+  .tl .dot{width:8px;height:8px;border-radius:50%;margin:7px 0 0 5px;background:var(--line-2)}
+  .tl .dot.todo{background:transparent;border:1.5px solid var(--teal)}
+  .tl .dot.touch{background:var(--teal)}
+  .tl .when{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;margin-top:3px}
+  .tl .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--dim);margin-right:6px}
+  .tl .s{color:var(--muted);font-size:12.5px}
+
+  /* details: only filled fields */
+  .kv{display:grid;grid-template-columns:110px 1fr;gap:0 14px;padding:10px 16px;border-top:1px solid var(--line);font-size:13.5px}
+  .kv:first-child{border-top:0}
+  .kv .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);padding-top:3px}
+  .kv .v a{color:var(--teal)}
+  .addf{padding:10px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--dim)}
+  .addf a{color:var(--teal)}
+
+  .contact{display:flex;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
+  .contact:first-child{border-top:0}
+  .av{width:32px;height:32px;border-radius:50%;background:var(--teal-dim);color:var(--teal);display:grid;place-items:center;font-size:12px;font-weight:600}
+  .contact .s{color:var(--muted);font-size:12px}
+  .link{display:flex;gap:10px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);font-size:13.5px}
+  .link:first-child{border-top:0}
+  .link .k{font-family:var(--mono);font-size:10px;color:var(--dim);border:1px solid var(--line-2);border-radius:3px;padding:1px 5px}
+  .notes{padding:14px 16px;color:var(--muted);font-size:13.5px;line-height:1.6}
+
+  .note-banner{margin:0 0 18px;padding:10px 14px;border:1px dashed var(--line-2);border-radius:8px;color:var(--muted);font-size:12.5px}
+  .note-banner b{color:var(--amber);font-weight:500}
+
+  @media (max-width:980px){.cols{grid-template-columns:1fr}.side{display:none}.top .search{width:auto;flex:1}}
+</style>
+</head>
+<body>
+
+<aside class="side">
+  <div>
+    <div class="brand">Solo <span>CRM</span></div>
+    <div class="ver">v0.6.3 · local</div>
+  </div>
+  <div class="nav"><h6>WORK</h6><a>Today</a><a>Todos</a><a>Revenue</a><a>Activity</a></div>
+  <div class="nav"><h6>RECORDS</h6><a class="on">Companies</a><a>People</a><a>Offerings</a><a>Engagements</a></div>
+  <div class="nav"><h6>WORKSPACE</h6><a>Settings</a><a>Data</a></div>
+  <div class="db">solocrm.db</div>
+</aside>
+
+<main>
+  <div class="top">
+    <span class="mono">Companies /</span>
+    <div class="search">Search everything <kbd>⌘K</kbd></div>
+    <button class="btn primary">+ New</button>
+  </div>
+
+  <div class="page">
+    <div class="crumb">← COMPANIES</div>
+
+    <div class="note-banner"><b>Mockup</b> — proposed layout for the company page. Header collapses to one line; engagements, todos and activity merge into a single timeline on the left; reference data lives in the right rail and hides empty fields.</div>
+
+    <header class="hdr">
+      <div class="logo">SF</div>
+      <div>
+        <div style="display:flex;align-items:center">
+          <h1>Sitefacts</h1>
+          <div class="tags"><span class="tag">CLIENT</span><span class="tag ok">ACTIVE</span></div>
+        </div>
+        <div class="meta">
+          <span>Since <b>Mar 2026</b></span>
+          <span>Cadence <b>90 days</b></span>
+          <span>Last touch <b class="warn">never</b></span>
+          <span>Billed via <b>Sand &amp; Sage</b></span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary">+ Log touch</button>
+        <button class="btn">Edit</button>
+        <button class="btn icon" id="more" aria-label="More actions">⋯</button>
+        <div class="menu" id="menu">
+          <button>Replace logo</button>
+          <button>Replace banner</button>
+          <button>Remove banner</button>
+          <hr>
+          <button>Add engagement</button>
+          <button>Add contact</button>
+          <hr>
+          <button class="danger">Delete company</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="cols">
+      <!-- LEFT: what's happening -->
+      <div>
+        <section>
+          <div class="sh"><h2>Engagements</h2><span class="n">1</span><a class="act">+ New engagement</a></div>
+          <div class="card">
+            <div class="row">
+              <div>
+                <div class="t">Sitefacts Ongoing O&amp;M</div>
+                <div class="s">Retainer · sold as consulting · Sep 26 → Dec 26</div>
+              </div>
+              <div class="r"><span class="tag">BILLED HERE</span><span class="tag ok">ACTIVE</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="sh"><h2>Activity</h2><span class="n">todos and touches, newest first</span><a class="act">View all</a></div>
+          <div class="card">
+            <div class="compose">
+              <div class="seg"><button class="on">Touch</button><button>Todo</button></div>
+              <input placeholder="What happened with Sitefacts?">
+              <button class="btn">Log</button>
+            </div>
+            <div class="tl">
+              <div class="it"><span class="dot todo"></span><div><span class="k">TODO</span>Send Q4 O&amp;M scope to Don<div class="s">Due Fri</div></div><span class="when">today</span></div>
+              <div class="it"><span class="dot touch"></span><div><span class="k">CALL</span>Kickoff for parcel intelligence phase 2<div class="s">Agreed on 90-day cadence; Don to send data samples.</div></div><span class="when">Aug 28</span></div>
+              <div class="it"><span class="dot touch"></span><div><span class="k">EMAIL</span>Sent August summary + Stripe invoice</div><span class="when">Aug 3</span></div>
+              <div class="it"><span class="dot"></span><div><span class="k">SYSTEM</span>Engagement "Ongoing O&amp;M" created</div><span class="when">Jul 30</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- RIGHT: what's true -->
+      <div>
+        <section>
+          <div class="sh"><h2>Details</h2><a class="act">Edit</a></div>
+          <div class="card">
+            <div class="kv"><span class="k">Kind</span><span class="v">Client</span></div>
+            <div class="kv"><span class="k">Website</span><span class="v"><a>sitefacts.io</a></span></div>
+            <div class="kv"><span class="k">Introduced by</span><span class="v"><a>Don Healy</a></span></div>
+            <div class="addf">+ Add <a>budget</a>, <a>billed via</a>…</div>
+          </div>
+        </section>
+
+        <section>
+          <div class="sh"><h2>Contacts</h2><span class="n">1</span><a class="act">+ Add</a></div>
+          <div class="card">
+            <div class="contact"><div class="av">DH</div><div><div>Don Healy</div><div class="s">Owner · primary contact</div></div></div>
+          </div>
+        </section>
+
+        <section>
+          <div class="sh"><h2>Links</h2><span class="n">2</span><a class="act">+ Add</a></div>
+          <div class="card">
+            <div class="link"><span class="k">DRIVE</span>SiteFacts – project folder</div>
+            <div class="link"><span class="k">NOTION</span>Parcel intelligence spec</div>
+          </div>
+        </section>
+
+        <section>
+          <div class="sh"><h2>Notes</h2><a class="act">Edit</a></div>
+          <div class="card"><div class="notes">GIS parcel product for Sand &amp; Sage. Contracted through S&amp;S, so invoices go there, not to Sitefacts directly.</div></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const more=document.getElementById('more'),menu=document.getElementById('menu');
+  more.addEventListener('click',e=>{e.stopPropagation();menu.classList.toggle('open')});
+  document.addEventListener('click',()=>menu.classList.remove('open'));
+  document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('.seg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    document.querySelector('.compose input').placeholder=b.textContent==='Todo'?'Add a todo for Sitefacts':'What happened with Sitefacts?';
+  }));
+</script>
+</body>
+</html>
