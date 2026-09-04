@@ -284,6 +284,14 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
   // net the way the rollup's columns are net rather than gross the way the
   // chart is. One `SUM`, not a fold over `months`.
   const windowTotal = sum(db, 'period_month BETWEEN ? AND ?', [windowFrom, windowTo])
+  // What has happened of that forecast, and how many engagements it rests
+  // on: the same window, one status filter, one `COUNT(DISTINCT)`.
+  const windowActual = sum(db, "period_month BETWEEN ? AND ? AND status IN ('invoiced', 'paid')", [windowFrom, windowTo])
+  const windowEngagements = (
+    db
+      .prepare('SELECT COUNT(DISTINCT engagement_id) AS count FROM revenue_lines WHERE period_month BETWEEN ? AND ? AND engagement_id IS NOT NULL')
+      .get(windowFrom, windowTo) as { count: number }
+  ).count
 
   return {
     currentMonth,
@@ -305,6 +313,8 @@ export function revenueSummary(db: Database.Database, input: unknown): RevenueSu
     window: { from: windowFrom, to: windowTo },
     bucket,
     windowTotalCents: windowTotal.cents ?? 0,
+    windowActualCents: windowActual.cents ?? 0,
+    windowEngagements,
     series,
     months,
     rollups,

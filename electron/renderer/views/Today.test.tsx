@@ -246,7 +246,7 @@ describe('Today', () => {
     // The whole page has one loading state and one error state (Today.tsx),
     // so waiting on any card is waiting on all nine queries.
     await screen.findByRole('heading', { name: 'Going quiet' })
-    for (const label of ['Total revenue', 'Recurring / month', 'Fixed backlog', 'Open todos', 'Cadence health']) {
+    for (const label of ['Period forecast', 'Recurring / month', 'Fixed backlog', 'Open todos', 'Cadence health']) {
       expect(screen.getByText(label)).toBeTruthy()
     }
     for (const heading of [/^Revenue/, 'Going quiet', 'Next up', 'Recent']) {
@@ -281,6 +281,8 @@ describe('Today', () => {
             yearStart: '2026-01-01',
             bucket: 'month' as const,
             windowTotalCents: 0,
+            windowActualCents: 0,
+            windowEngagements: 0,
             lineCount: 3,
             metrics: {
               recurringMonthCents: 830_000,
@@ -312,9 +314,9 @@ describe('Today', () => {
     const recurring = screen.getByText('Recurring / month').closest('.stat') as HTMLElement
     expect(within(recurring).getByText('$8,300')).toBeTruthy()
     expect(recurring.textContent).toContain('2 retainers · $99,600 next 12 mo')
-    // The hero is Total revenue — the one tile that reads the period the
+    // The hero is Period forecast — the one tile that reads the period the
     // header selects. "Recurring per month" is a statement about now.
-    expect((screen.getByText('Total revenue').closest('.stat') as HTMLElement).classList.contains('hero')).toBe(true)
+    expect((screen.getByText('Period forecast').closest('.stat') as HTMLElement).classList.contains('hero')).toBe(true)
 
     const backlog = screen.getByText('Fixed backlog').closest('.stat') as HTMLElement
     expect(within(backlog).getByText('$7,200')).toBeTruthy()
@@ -737,6 +739,8 @@ describe('Today at 10x data volume', () => {
         yearStart: '2026-01-01',
         bucket: 'month',
         windowTotalCents: 0,
+        windowActualCents: 0,
+        windowEngagements: 0,
         lineCount: 5_000,
         metrics: {
           recurringMonthCents: 8_300_000,

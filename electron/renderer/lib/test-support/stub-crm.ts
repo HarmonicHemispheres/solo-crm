@@ -270,6 +270,8 @@ const STUB_REVENUE_SUMMARY = {
   window: { from: '2026-05-01', to: '2027-04-01' },
   bucket: 'month' as const,
   windowTotalCents: 0,
+  windowActualCents: 0,
+  windowEngagements: 0,
   series: [],
   months: [],
   rollups: { billing: [], client: [], model: [] },

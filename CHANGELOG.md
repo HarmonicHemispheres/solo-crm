@@ -7,6 +7,12 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ## 0.6.9
 
+- ✨ **Period forecast** — the hero tile on Today and Revenue now says what
+  the selected period is expected to bring in: every month of every active,
+  pending or delivered engagement that falls in it, with how many
+  engagements that rests on and how much of it is already invoiced or paid
+  beneath. It replaces "Total revenue", which was the same sum under a name
+  that read as money already earned.
 - ⚡ **The company page in two columns** — what is happening on the left
   (engagements, end clients, the activity feed) and what is true on the
   right (details, contacts, links, notes), each section with its heading

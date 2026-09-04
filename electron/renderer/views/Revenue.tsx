@@ -37,8 +37,9 @@ import './Revenue.css'
  * every other figure is. The four metrics are deliberately *not* scoped by
  * it — "recurring per month" and "T&M run rate" are statements about now,
  * and stepping the chart back a year must not quietly restate them about
- * 2025. The one figure that is of the range is Total revenue, and the
- * summary states it (`windowTotalCents`).
+ * 2025. The one figure that is of the range is the period forecast, and
+ * the summary states it (`windowTotalCents`, with `windowActualCents` for
+ * the part already invoiced or paid).
  *
  * **Marking a line invoiced or paid** is the page's one write. Until it
  * existed the whole chart was drawn dashed — `status` had a single writer
@@ -162,11 +163,14 @@ export function Revenue() {
     <>
       {header}
       <div className="grid stats rev-stats">
+        {/* The period forecast: every line of every signed engagement in
+            the window, and beneath it how much of that has already been
+            invoiced or paid. Both are the summary's own sums (ADR-003). */}
         <Stat
-          label="Total revenue"
+          label="Period forecast"
           value={formatMoney(summary.windowTotalCents)}
           tone="hero"
-          meta={periodLabel(period)}
+          meta={`${plural(summary.windowEngagements, 'engagement')} in ${periodLabel(period)} · ${formatMoney(summary.windowActualCents)} invoiced or paid`}
         />
         <Stat
           label="Recurring / month"

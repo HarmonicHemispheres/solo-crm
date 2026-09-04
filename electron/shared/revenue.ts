@@ -249,8 +249,20 @@ export const revenueSummarySchema = z.object({
   window: z.object({ from: periodMonthSchema, to: periodMonthSchema }),
   /** How `series` and `months` are bucketed — the request's, defaulting to `month`. */
   bucket: z.enum(REVENUE_BUCKETS),
-  /** Every line in the window, summed. The one figure that is *of* the range rather than of now — what "Total revenue" reads. */
+  /**
+   * **The period forecast.** Every line in the window, summed — invoiced,
+   * paid and still projected alike. The generator writes lines only for
+   * signed engagements (`SIGNED_STATUSES`: active, pending, delivered) and
+   * removes its projected rows the moment one stops being signed, so this
+   * is what those engagements are expected to bring in over the period,
+   * read off the lines rather than recomputed from their terms (ADR-003).
+   * The one figure that is *of* the range rather than of now.
+   */
   windowTotalCents: centsSchema,
+  /** The part of `windowTotalCents` already `invoiced` or `paid` — what has actually happened of the forecast. */
+  windowActualCents: centsSchema,
+  /** Distinct engagements with at least one line in the window — how many pieces of work the forecast rests on. */
+  windowEngagements: z.number().int().nonnegative(),
   /** Gross of expense lines — see `REVENUE_SERIES_KINDS`. */
   series: z.array(revenueSeriesPointSchema).readonly(),
   /** Each month of the window's gross total — `GROUP BY period_month` over the same lines as `series` — for the chart's scale and its tooltips, so no total is summed in the renderer. */

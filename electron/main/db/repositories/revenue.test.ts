@@ -499,3 +499,42 @@ describe('listRevenueLines and setRevenueLineStatus', () => {
     })
   })
 })
+
+describe('the period forecast', () => {
+  it('is every line in the window, and says how much of it has been invoiced or paid and how many engagements it rests on', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const window = { from: '2026-01-01', to: '2026-12-01' } as const
+      const before = revenueSummary(db, { now: NOW_ISO, window })
+
+      expect(before.windowEngagements).toBeGreaterThan(0)
+      expect(before.windowActualCents).toBeGreaterThanOrEqual(0)
+      expect(before.windowActualCents).toBeLessThanOrEqual(before.windowTotalCents)
+
+      // Marking one projected line invoiced moves its amount into the
+      // actual figure and leaves the forecast itself exactly where it was:
+      // the forecast is what is expected, whatever has happened to it yet.
+      const line = listRevenueLines(db, window).find((row) => row.status === 'projected')
+      expect(line).toBeDefined()
+      setRevenueLineStatus(db, { id: line!.id, status: 'invoiced' })
+      const after = revenueSummary(db, { now: NOW_ISO, window })
+
+      expect(after.windowTotalCents).toBe(before.windowTotalCents)
+      expect(after.windowActualCents).toBe(before.windowActualCents + line!.amountCents)
+      expect(after.windowEngagements).toBe(before.windowEngagements)
+    })
+  })
+
+  it('counts an engagement once however many months it has in the window, and nothing outside it', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const year = revenueSummary(db, { now: NOW_ISO, window: { from: '2026-01-01', to: '2026-12-01' } })
+      const month = revenueSummary(db, { now: NOW_ISO, window: { from: '2026-09-01', to: '2026-09-01' } })
+      const distinctInMonth = new Set(listRevenueLines(db, { from: '2026-09-01', to: '2026-09-01' }).map((row) => row.engagementId)).size
+
+      expect(month.windowEngagements).toBe(distinctInMonth)
+      expect(month.windowEngagements).toBeLessThanOrEqual(year.windowEngagements)
+      expect(month.windowTotalCents).toBeLessThanOrEqual(year.windowTotalCents)
+    })
+  })
+})

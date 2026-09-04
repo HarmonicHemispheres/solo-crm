@@ -36,6 +36,8 @@ function summaryFor(overrides: Partial<RevenueSummary> = {}): RevenueSummary {
     yearStart: '2026-01-01',
     bucket: 'month',
     windowTotalCents: 0,
+    windowActualCents: 0,
+    windowEngagements: 0,
     lineCount: 40,
     metrics: {
       recurringMonthCents: 830_000,
@@ -116,11 +118,11 @@ describe('Revenue', () => {
     expect(screen.getByRole('group', { name: 'Roll revenue up by' })).toBeTruthy()
 
     expect(within(statFor('Recurring / month')).getByText('$8,300')).toBeTruthy()
-    // The hero is Total revenue now — the one figure that is *of* the
+    // The hero is Period forecast now — the one figure that is *of* the
     // reporting period, and the reason the period control exists. "Recurring
     // per month" is still a statement about now, which is why the period
     // does not move it.
-    expect(statFor('Total revenue').classList.contains('hero')).toBe(true)
+    expect(statFor('Period forecast').classList.contains('hero')).toBe(true)
     expect(statFor('Recurring / month').textContent).toContain('2 retainers · $99,600 next 12 mo')
     expect(within(statFor('Fixed backlog')).getByText('$7,200')).toBeTruthy()
     expect(statFor('Fixed backlog').textContent).toContain('2 unbilled milestones')
@@ -306,11 +308,11 @@ describe('Revenue — the reporting period', () => {
     expect(Number(sent?.window?.to.slice(0, 4)) - Number(sent?.window?.from.slice(0, 4))).toBe(4)
   })
 
-  it('reads Total revenue off the payload’s window total and names the window under it', async () => {
+  it('reads Period forecast off the payload’s window total and names the window under it', async () => {
     renderRevenue(summaryFor({ windowTotalCents: 6_400_000 }))
     await screen.findByText('$8,300')
 
-    const total = statFor('Total revenue')
+    const total = statFor('Period forecast')
     expect(within(total).getByText('$64,000')).toBeTruthy()
     // The period's own name, so the figure says what it is a total of.
     expect(total.textContent).toContain(String(new Date().getFullYear()))

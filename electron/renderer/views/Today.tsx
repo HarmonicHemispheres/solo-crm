@@ -385,10 +385,14 @@ export function Today() {
       {header}
       <div className="grid stats today-stats">
         <Stat
-          label="Total revenue"
+          label="Period forecast"
           value={recognised ? formatMoney(revenue.windowTotalCents) : '—'}
           tone="hero"
-          meta={recognised ? periodLabel(period) : 'nothing recognised yet'}
+          meta={
+            recognised
+              ? `${plural(revenue.windowEngagements, 'engagement')} in ${periodLabel(period)} · ${formatMoney(revenue.windowActualCents)} invoiced or paid`
+              : 'nothing recognised yet'
+          }
         />
         <Stat
           label="Recurring / month"
