@@ -22,6 +22,7 @@ import {
   type BrandingSlotState
 } from '../../shared/branding'
 import { COMPANY_KINDS, type CompanyKind } from '../../shared/companies'
+import { TIMELINE_KIND_TONES, slugifyKindLabel, type TimelineKind, type TimelineKindTone } from '../../shared/timeline'
 import {
   CADENCE_SETTING_KEY,
   CURRENCY_CODES,
@@ -500,6 +501,169 @@ const KIND_VARIANT: Record<CompanyKind, TagVariant> = {
 
 const CADENCE_STEPS = [7, 14, 30, 90] as const
 
+// ---------------------------------------------------------------------------
+// Categories — the operator's own `timeline.kinds` list, the vocabulary every
+// event and todo files itself under (electron/shared/timeline.ts).
+//
+// No mockup source: the mockup's `kind` was a closed four-value enum with
+// nothing to configure. The rows are this file's own `.setrow` and the colour
+// picker its own `.steps`, so the section is built out of furniture the page
+// already has rather than out of new.
+// ---------------------------------------------------------------------------
+
+/** The name each tone is offered under. Colour is the operator's choice, so it
+ * carries no fixed meaning — the swatch needs a word, both for its accessible
+ * name and because a row of seven unlabelled squares is a puzzle
+ * (ui-design.md). */
+const TONE_LABEL: Record<TimelineKindTone, string> = {
+  default: 'Grey',
+  verd: 'Verdigris',
+  gold: 'Gold',
+  lapis: 'Lapis',
+  green: 'Green',
+  orange: 'Orange',
+  red: 'Red'
+}
+
+function CategoriesSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; setSetting: SetSetting }) {
+  const kinds = snapshot['timeline.kinds']
+  const [draft, setDraft] = useState('')
+  const [failure, setFailure] = useState<string | null>(null)
+
+  function write(next: readonly TimelineKind[]) {
+    setFailure(null)
+    setSetting('timeline.kinds', [...next])
+  }
+
+  function rename(id: string, label: string) {
+    const trimmed = label.trim()
+    // An empty name is a slip, not an instruction: the input keeps what was
+    // typed and the stored label is untouched, so nothing is lost and nothing
+    // is renamed to nothing.
+    if (trimmed === '' || trimmed === kinds.find((kind) => kind.id === id)?.label) return
+    // The id never changes with the label. That is the whole reason a category
+    // has an id: every entry already filed under it keeps its category through
+    // a rename, which a label-keyed list could not offer.
+    write(kinds.map((kind) => (kind.id === id ? { ...kind, label: trimmed } : kind)))
+  }
+
+  function recolour(id: string, tone: TimelineKindTone) {
+    write(kinds.map((kind) => (kind.id === id ? { ...kind, tone } : kind)))
+  }
+
+  function remove(id: string) {
+    // `timelineKindsSchema` refuses an empty list and so does the button,
+    // disabled below — checked here as well so the refusal does not depend on
+    // which control happens to be rendered.
+    if (kinds.length <= 1) return
+    write(kinds.filter((kind) => kind.id !== id))
+  }
+
+  function add() {
+    const label = draft.trim()
+    if (label === '') return
+    const id = slugifyKindLabel(label)
+    if (id == null) {
+      setFailure('That name has no letters or digits to build an id from — try something like "Follow up".')
+      return
+    }
+    if (kinds.some((kind) => kind.id === id)) {
+      setFailure(`"${label}" resolves to the id "${id}", which another category already uses.`)
+      return
+    }
+    write([...kinds, { id, label, tone: 'default' }])
+    setDraft('')
+  }
+
+  return (
+    <Card>
+      <Card.Header
+        title="Categories"
+        actions={
+          <>
+            <span className="meta">events and todos</span>
+            <InfoPopover aria-label="About Categories">
+              Every event and todo is filed under one of these. Renaming one keeps every entry already filed under it —
+              the name is a label, not the identity. Removing one stops new entries being filed there but does not
+              change entries that already are: an event is a matter of record and cannot be edited, so it keeps the
+              category it was written with and goes on showing it.
+            </InfoPopover>
+          </>
+        }
+      />
+      {failure && (
+        <div className="setrow" role="alert">
+          <span className="field-error">{failure}</span>
+        </div>
+      )}
+      {kinds.map((kind) => (
+        <div className="setrow" key={kind.id}>
+          <div className="cat-name">
+            {/* Uncontrolled, keyed by id, committed on blur and on Enter. A
+                controlled input would need its own state kept in step with the
+                snapshot on every unrelated write in this section — a recolour
+                rewrites the whole array — which is a synchronisation problem
+                this field does not have to have. */}
+            <input
+              className="inp"
+              defaultValue={kind.label}
+              aria-label={`${kind.label} name`}
+              maxLength={32}
+              onBlur={(event) => rename(kind.id, event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur()
+              }}
+            />
+            <span className="cat-id">{kind.id}</span>
+          </div>
+          <div className="steps" role="group" aria-label={`${kind.label} colour`}>
+            {TIMELINE_KIND_TONES.map((tone) => (
+              <button
+                key={tone}
+                type="button"
+                className={tone === kind.tone ? `toneb tone-${tone} on` : `toneb tone-${tone}`}
+                aria-pressed={tone === kind.tone}
+                aria-label={TONE_LABEL[tone]}
+                title={TONE_LABEL[tone]}
+                onClick={() => recolour(kind.id, tone)}
+              />
+            ))}
+          </div>
+          <Button
+            variant="ghost"
+            disabled={kinds.length <= 1}
+            title={kinds.length <= 1 ? 'Keep at least one category' : undefined}
+            onClick={() => remove(kind.id)}
+          >
+            Remove
+          </Button>
+        </div>
+      ))}
+      <div className="setrow">
+        <div className="cat-name">
+          <input
+            className="inp"
+            value={draft}
+            placeholder="Follow up"
+            aria-label="New category name"
+            maxLength={32}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                add()
+              }
+            }}
+          />
+        </div>
+        <Button variant="ghost" onClick={add} disabled={draft.trim() === ''}>
+          Add category
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 // `CADENCE_SETTING_KEY` — the one declared place these keys are composed —
 // moved to `electron/shared/settings.ts` in T-260829-13, where ADR-002 rule
 // 3's "keys are declared in one module" already points and where
@@ -809,7 +973,7 @@ function HelpSection() {
 // so keyboard operation is identical at every width.
 // ---------------------------------------------------------------------------
 
-const SETTINGS_SECTIONS = ['identity', 'cadence', 'integrations', 'backup', 'appearance', 'help'] as const
+const SETTINGS_SECTIONS = ['identity', 'cadence', 'categories', 'integrations', 'backup', 'appearance', 'help'] as const
 
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
@@ -818,6 +982,7 @@ type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 const SECTION_LABEL: Record<SettingsSection, string> = {
   identity: 'Identity',
   cadence: 'Default cadence',
+  categories: 'Categories',
   integrations: 'Integrations',
   backup: 'Backup',
   appearance: 'Appearance',
@@ -901,6 +1066,7 @@ export function WorkspaceSettings() {
         <section className="settings-body" aria-label={SECTION_LABEL[section]}>
           {section === 'identity' && <IdentitySection snapshot={snapshot} setSetting={setSetting} />}
           {section === 'cadence' && <CadenceSection snapshot={snapshot} setSetting={setSetting} />}
+          {section === 'categories' && <CategoriesSection snapshot={snapshot} setSetting={setSetting} />}
           {section === 'integrations' && <IntegrationsSection snapshot={snapshot} setSetting={setSetting} />}
           {section === 'backup' && <BackupSection snapshot={snapshot} setSetting={setSetting} />}
           {section === 'appearance' && <AppearanceSection snapshot={snapshot} setSetting={setSetting} />}

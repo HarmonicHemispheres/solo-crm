@@ -11,7 +11,10 @@ import {
 } from '../../shared/company-images'
 import type { BillingModel, EngagementStatus, EngagementWithOffering } from '../../shared/engagements'
 import type { Task } from '../../shared/tasks'
-import type { Activity, ActivityKind } from '../../shared/activity'
+import type { Activity } from '../../shared/activity'
+import { resolveTimelineKind, type TimelineKind } from '../../shared/timeline'
+import { useTimelineKinds } from '../lib/timeline'
+import { TimelineKindIcon } from '../components/timeline/TimelineKindTag'
 import type { Person, PersonAffiliation, PersonWithAffiliations } from '../../shared/people'
 import { ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { decayForCompany, type Decay } from '../lib/decay'
@@ -146,42 +149,13 @@ function NextStepIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-/** `ICONS` (planning/solo-crm-mockup.html line ~935) — same four glyphs,
- * keyed by `ActivityKind`'s lowercase wire values rather than the mockup's
- * capitalised display strings. Presentation attributes live once on the
- * wrapping `<svg>` in `ActivityKindIcon` below (CSS's `.tli .bul svg` rule),
- * not repeated per path/rect/circle — SVG `fill`/`stroke` inherit down. */
-const ACTIVITY_KIND_PATHS: Record<ActivityKind, ReactNode> = {
-  call: <path d="M5 4h3l2 5-2 1a10 10 0 005 5l1-2 5 2v3a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" />,
-  email: (
-    <>
-      <rect x="3" y="6" width="18" height="13" rx="2" />
-      <path d="M3.5 7.5L12 13l8.5-5.5" />
-    </>
-  ),
-  meeting: (
-    <>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 8v4l3 2" />
-    </>
-  ),
-  note: <path d="M4 19l1-4 10-10 3 3L8 18z" />
-}
-
-function ActivityKindIcon({ kind }: { kind: ActivityKind }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {ACTIVITY_KIND_PATHS[kind]}
-    </svg>
-  )
-}
-
-const ACTIVITY_KIND_LABEL: Record<ActivityKind, string> = {
-  call: 'Call',
-  email: 'Email',
-  meeting: 'Meeting',
-  note: 'Note'
-}
+// The glyphs and the label this card used to declare here — as
+// `Record<ActivityKind, …>` maps over what was then a closed four-value enum
+// — moved to `components/timeline/TimelineKindTag.tsx` when the category
+// became the operator's own editable list. A total map over a set the user
+// can add to renders *nothing at all* for a category they invented, silently;
+// `TimelineKindIcon`/`TimelineKindTag` fall back instead. PersonDetail.tsx
+// held a byte-identical copy of the same glyphs and now imports the same one.
 
 const KIND_LABEL: Record<CompanyKind, string> = {
   client: 'Client',
@@ -812,6 +786,10 @@ function ActivityCard({
   inputRef: RefObject<HTMLInputElement | null>
 }) {
   const queryClient = useQueryClient()
+  // Once for the whole feed, handed down to each row. Per-row it would be a
+  // `QueryObserver` apiece for one cached value — see Activity.tsx's note
+  // where the same wrapper was removed for the same reason.
+  const kinds = useTimelineKinds()
 
   const completeTask = useMutation({
     mutationFn: (id: string) => ipcMutationFn('tasks:update')({ id, patch: { status: 'done' } }).then(unwrapMutationResult),
@@ -899,7 +877,7 @@ function ActivityCard({
           ) : (
             feed.map((entry) =>
               entry.kind === 'activity' ? (
-                <ActivityRow key={entry.id} activity={entry.activity} />
+                <ActivityRow key={entry.id} activity={entry.activity} kinds={kinds} />
               ) : (
                 <TodoRow key={entry.id} task={entry.task} now={now} onComplete={completeTask.mutate} onPromote={promoteTask.mutate} />
               )
@@ -964,15 +942,15 @@ function FeedComposer({
   )
 }
 
-function ActivityRow({ activity }: { activity: Activity }) {
+function ActivityRow({ activity, kinds }: { activity: Activity; kinds: readonly TimelineKind[] }) {
   return (
     <div className="tli">
       <span className="bul">
-        <ActivityKindIcon kind={activity.kind} />
+        <TimelineKindIcon kind={activity.kind} />
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span className="t">
-          <span className="tli-k">{ACTIVITY_KIND_LABEL[activity.kind]}</span>
+          <span className="tli-k">{resolveTimelineKind(activity.kind, kinds).label}</span>
           {activity.title}
         </span>
         {activity.body != null && <div className="note">{activity.body}</div>}

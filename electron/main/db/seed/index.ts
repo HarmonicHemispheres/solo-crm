@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { ChainCycleError, ChainDepthExceededError, MAX_CHAIN_DEPTH, walkChain } from '../chain-walk'
 import { addMonths, formatDateOnly, formatTimestamp, monthsBetween, nowTimestamp, parseDateOnly, periodMonthOf } from '../../../shared/format'
+import { DEFAULT_TODO_KIND_ID } from '../../../shared/timeline'
 import { dateOnlySchema } from '../../../shared/types'
 import type { DateOnly, Timestamp } from '../../../shared/types'
 import { regenerateAllRevenueLines } from '../repositories/revenue-generator'
@@ -529,14 +530,22 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
     }
 
     // ---- tasks ----
+    // `kind` is filled from `DEFAULT_TODO_KIND_ID` rather than left NULL, so a
+    // seeded workspace looks like one an operator has been using — migration
+    // 0010 backfills exactly the same value onto every pre-existing row and
+    // `createTask` defaults a new one to it. `body` and `occurred_at` stay out of
+    // this insert: the fixtures carry neither, and a fabricated full
+    // description on every seeded todo would be noise in the one place a
+    // reader goes to see what the app looks like with real data.
     const insertTask = db.prepare(
-      `INSERT INTO tasks (id, title, status, is_next_step, due_on, waiting_since, done_at, company_id, engagement_id, person_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO tasks (id, title, kind, status, is_next_step, due_on, waiting_since, done_at, company_id, engagement_id, person_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     for (const task of tasksFixture) {
       insertTask.run(
         randomUUID(),
         task.title,
+        DEFAULT_TODO_KIND_ID,
         task.status,
         task.isNextStep ? 1 : 0,
         shiftDateOnlyOrNull(task.dueOn, offsetDays),

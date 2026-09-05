@@ -7,22 +7,13 @@ import { ChipField } from '../sheets/Field'
 import { useCompaniesList, useEngagementsList, usePeopleList } from '../sheets/queries'
 import { callCrm, unwrapMutationResult } from '../../lib/ipc'
 import { invalidate } from '../../lib/query-keys'
-import { ACTIVITY_KINDS, type ActivityKind, type LogActivityInput } from '../../../shared/activity'
+import type { LogActivityInput } from '../../../shared/activity'
+import { DEFAULT_TOUCH_KIND_ID } from '../../../shared/timeline'
+import { useTimelineKinds } from '../../lib/timeline'
 import { nowTimestamp } from '../../../shared/format'
 import '../sheets/fields.css'
 import './QuickLog.css'
 import { localToday } from '../../views/todo-urgency'
-
-const KIND_LABELS: Record<ActivityKind, string> = {
-  call: 'Call',
-  email: 'Email',
-  meeting: 'Meeting',
-  note: 'Note'
-}
-const KIND_OPTIONS = ACTIVITY_KINDS.map((kind) => ({ value: kind, label: KIND_LABELS[kind] }))
-
-/** The mockup's own `let logKind='Call'` — a logged touch is a call until said otherwise, so the five-second path never has to visit this field. */
-const DEFAULT_KIND: ActivityKind = 'call'
 
 /** One row of the "who" result list. `kind` is what makes a company and a person tellable apart in it (acceptance), and what decides which of the two id columns the write fills. */
 interface WhoOption {
@@ -88,12 +79,17 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
   const companies = useCompaniesList()
   const people = usePeopleList()
   const engagements = useEngagementsList()
+  // The operator's own categories (`timeline.kinds`), not the four-value
+  // enum this field used to be. One vocabulary across quick log, the full
+  // timeline form and every list that renders a category — see
+  // `electron/shared/timeline.ts`.
+  const kinds = useTimelineKinds()
 
   const [whoQuery, setWhoQuery] = useState('')
   const [selected, setSelected] = useState<WhoOption | null>(null)
   const [listOpen, setListOpen] = useState(false)
   const [highlight, setHighlight] = useState(0)
-  const [kind, setKind] = useState<ActivityKind>(DEFAULT_KIND)
+  const [kind, setKind] = useState<string>(DEFAULT_TOUCH_KIND_ID)
   const [note, setNote] = useState('')
   /** `null` means "follow whatever the chosen company defaults to" — see `engagementId` below. */
   const [engagementChoice, setEngagementChoice] = useState<string | null>(null)
@@ -102,6 +98,13 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
   const whoRef = useRef<HTMLInputElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+
+  const kindOptions = kinds.map((entry) => ({ value: entry.id, label: entry.label }))
+  // `call` is a category the operator may have removed. Falling back to the
+  // first declared one keeps a selection visible in the chip row and keeps
+  // the write filing under something that exists, rather than silently
+  // logging every touch under a category the list no longer offers.
+  const selectedKind = kinds.some((entry) => entry.id === kind) ? kind : (kinds[0]?.id ?? kind)
 
   // Opens focused on the who field (scope). `Sheet` focuses its own panel on
   // open; a child's effect runs before its parent's, so this one lands last
@@ -276,7 +279,7 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
       subject: selected.name,
       input: {
         occurredAt: nowTimestamp(),
-        kind,
+        kind: selectedKind,
         title: line,
         body: null,
         companyId: selected.kind === 'company' ? selected.id : null,
@@ -376,7 +379,7 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
           )}
         </div>
 
-        <ChipField label="Kind" value={kind} onChange={setKind} options={KIND_OPTIONS} />
+        <ChipField label="Category" value={selectedKind} onChange={setKind} options={kindOptions} />
 
         <div>
           <label className="f-lab" htmlFor={`${formId}-note`}>
@@ -385,7 +388,7 @@ function QuickLogForm({ onClose, onSaved }: { onClose: () => void; onSaved: (mes
           <textarea
             id={`${formId}-note`}
             ref={noteRef}
-            className="inp qlog-note"
+            className="inp"
             placeholder="One line."
             value={note}
             onChange={(event) => setNote(event.target.value)}

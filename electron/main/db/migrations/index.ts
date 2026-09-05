@@ -7,6 +7,7 @@ import migration0006Sql from './0006_offerings_rename.sql?raw'
 import migration0007Sql from './0007_company_images.sql?raw'
 import migration0008Sql from './0008_retainer_basis.sql?raw'
 import migration0009Sql from './0009_introduced_by_person.sql?raw'
+import migration0010Sql from './0010_timeline_kinds.sql?raw'
 
 /**
  * The ordered, explicit manifest of every migration `migrate.ts` knows how
@@ -84,5 +85,13 @@ export const MIGRATIONS: readonly MigrationDefinition[] = [
   // `companies.introduced_by_person_id` and its index: an introduction is
   // made by a person, and the old company-valued column is retired in place
   // rather than dropped. See the migration's own header.
-  { version: 9, name: '0009_introduced_by_person', sql: migration0009Sql }
+  { version: 9, name: '0009_introduced_by_person', sql: migration0009Sql },
+  // `tasks.body` / `.occurred_at` / `.kind` and `activity.due_on`, so a note
+  // and a todo carry the same six facts, plus the one backfill that files
+  // every existing todo under the `task` category. Hand-written rather than
+  // drizzle-kit output only because of that `UPDATE`; the four `ADD`s are
+  // declared in `schema.ts`, so `schema.test.ts`'s regeneration check sees
+  // them in the delta and asserts they match this file. See the migration's
+  // own header for why the two tables stayed two tables.
+  { version: 10, name: '0010_timeline_kinds', sql: migration0010Sql }
 ]

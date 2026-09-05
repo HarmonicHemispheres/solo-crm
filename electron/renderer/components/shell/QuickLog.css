@@ -11,19 +11,12 @@
  *    neither task has to edit the other's file. The mockup's quick log used a
  *    plain `<select>` of companies; this list exists because the field has to
  *    match people too, typed rather than scrolled.
- * 2. The mockup's bare `textarea{resize:vertical;min-height:72px;
- *    line-height:1.5}` rule (its line ~251), which sits alongside the
- *    `.inp,select,textarea` block `fields.css` ported as `.inp`. This is the
- *    first textarea in the app to wear `.inp`, so the remainder of that rule
- *    lands here rather than being pushed into the shared sheet stylesheet
- *    for a single consumer.
+ * The mockup's bare `textarea` rule used to be the second thing here, on the
+ * grounds that quick log was the only textarea in the app wearing `.inp`. It
+ * moved into `sheets/fields.css` as `textarea.inp` when
+ * `TimelineEntrySheet` became the second consumer, exactly as the note it
+ * carried said it should.
  */
-
-.qlog-note {
-  resize: vertical;
-  min-height: 72px;
-  line-height: 1.5;
-}
 
 /* In flow under the input rather than an absolutely-positioned dropdown:
    `.sheet-b` already scrolls (`overflow:auto`, Sheet.css) and `.sheet` clips

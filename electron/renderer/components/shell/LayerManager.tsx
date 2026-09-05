@@ -5,6 +5,7 @@ import { CompanySheet } from '../sheets/CompanySheet'
 import { PersonSheet } from '../sheets/PersonSheet'
 import { EngagementSheet } from '../sheets/EngagementSheet'
 import { TodoSheet } from '../sheets/TodoSheet'
+import { TimelineEntrySheet } from '../sheets/TimelineEntrySheet'
 import { OfferingSheet } from '../sheets/OfferingSheet'
 import { QuickLog } from './QuickLog'
 import './LayerManager.css'
@@ -260,6 +261,11 @@ export function LayerManager({ children }: { children: ReactNode }) {
               return <EngagementSheet onClose={sheetOnClose} target={sheetTarget} />
             case 'todo':
               return <TodoSheet onClose={sheetOnClose} />
+            // The same component `TodoSheet` renders, opened on the event
+            // half instead — see `SheetKind`'s note on why that is a second
+            // member of the union and not a prop on the first.
+            case 'entry':
+              return <TimelineEntrySheet onClose={sheetOnClose} initialType="event" />
             case 'offering':
               return <OfferingSheet onClose={sheetOnClose} target={sheetTarget} />
           }

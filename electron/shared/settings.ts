@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { CompanyKind } from './companies'
+import { DEFAULT_TIMELINE_KINDS, timelineKindsSchema } from './timeline'
 import { timestampSchema } from './types'
 
 /**
@@ -154,6 +155,22 @@ export const SETTINGS_REGISTRY = {
   // per view." 'date' is the default — "what's owed now" (Overdue/Today)
   // is the more common way to open the list than "who do I owe".
   'view.todos.groupBy': spec(z.enum(TODO_GROUP_BY_MODES), 'date'),
+
+  // The operator's own timeline categories — the list every event and todo
+  // files itself under, and the one place `activity.kind` / `tasks.kind`'s
+  // vocabulary is declared now that neither is a closed enum
+  // (`electron/shared/timeline.ts`). A setting rather than a table because
+  // it is one fact about the workspace, not a set of records: nothing holds
+  // a foreign key to a category, and a row carrying an id the list no longer
+  // has still renders (`resolveTimelineKind`) rather than erroring.
+  //
+  // The default is `DEFAULT_TIMELINE_KINDS` rather than a literal repeated
+  // here — migration 0010 backfills `tasks.kind` from that same module's
+  // `DEFAULT_TODO_KIND_ID`, and two hand-kept copies of the starting list is
+  // exactly the drift ADR-002 rule 3 is about. Spread into a mutable array
+  // because `SettingSpec`'s `default` is the schema's own output type and
+  // `timelineKindsSchema` parses to `TimelineKind[]`, not a readonly one.
+  'timeline.kinds': spec(timelineKindsSchema, [...DEFAULT_TIMELINE_KINDS]),
 
   // T-260828-40 / X-03: the Data view's saved query snippets. A saved
   // snippet has to survive a restart (that task's Acceptance), and ADR-002's

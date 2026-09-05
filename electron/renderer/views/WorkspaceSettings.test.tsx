@@ -13,6 +13,7 @@ import { Tour } from '../components/shell/Tour'
 import { SETTINGS_KEYS, type SettingKey, type SettingsSnapshot } from '../../shared/settings'
 import type { CrmApi, SettingEntry } from '../../shared/ipc-types'
 import type { BrandingSlot, BrandingSlotState } from '../../shared/branding'
+import { DEFAULT_TIMELINE_KINDS } from '../../shared/timeline'
 
 afterEach(() => {
   // @ts-expect-error - test-only teardown of the jsdom global window.crm assign.
@@ -42,6 +43,7 @@ const DEFAULT_SNAPSHOT: SettingsSnapshot = {
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
   'view.data.snippets': [],
+  'timeline.kinds': [...DEFAULT_TIMELINE_KINDS],
   'nav.reportsExpanded': true,
   // `true` — this harness is an established workspace, not a first run. The
   // flag's three states are Tour.test.tsx's subject; here it only has to
@@ -104,7 +106,7 @@ function renderSettings(overrides: Partial<SettingsSnapshot> = {}, crm: Paramete
 /** ADR-014 §2's six sections, in the order the decision fixes them in. Hand-typed
  * rather than imported from the view: the order *is* the decision, and a list
  * imported from the thing under test would agree with it however it changed. */
-const SECTION_ORDER = ['Identity', 'Default cadence', 'Integrations', 'Backup', 'Appearance', 'Help'] as const
+const SECTION_ORDER = ['Identity', 'Default cadence', 'Categories', 'Integrations', 'Backup', 'Appearance', 'Help'] as const
 
 function sectionRail(): HTMLElement {
   return screen.getByRole('navigation', { name: 'Settings sections' })
@@ -122,13 +124,13 @@ describe('WorkspaceSettings', () => {
   // The rail itself — ADR-014 §1 and §2.
   // -------------------------------------------------------------------------
 
-  it('lists ADR-014’s six sections in the decided order, and nothing else', async () => {
+  it('lists ADR-014’s sections in the decided order, and nothing else', async () => {
     renderSettings()
     const rail = await screen.findByRole('navigation', { name: 'Settings sections' })
     expect(within(rail).getAllByRole('button').map((el) => el.textContent)).toEqual([...SECTION_ORDER])
   })
 
-  it('opens on the first section every visit, and mounts nothing from the other five', async () => {
+  it('opens on the first section every visit, and mounts nothing from the others', async () => {
     renderSettings()
     // Identity's own fields are present…
     await waitFor(() => expect(screen.getByLabelText('Workspace')).toBeTruthy())
@@ -370,8 +372,12 @@ describe('WorkspaceSettings', () => {
 
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
     // Main chose the destination through its own dialog; the renderer sent
-    // nothing but the request.
-    expect(run.mock.calls[0][0]).toBeUndefined()
+    // nothing but the request. Asserted as "the call had no arguments"
+    // rather than "argument 0 was undefined": `run` is declared as a
+    // zero-parameter `vi.fn`, so `calls[0]` is the empty tuple and
+    // indexing it is a TS2493 the typecheck gate reports (it did, before
+    // this line changed). Same fact, expressible in the type system.
+    expect(run.mock.calls[0].filter((argument) => argument !== undefined)).toEqual([])
     // Within the section: the shell's toast is a `status` of its own.
     const status = await within(region).findByRole('status')
     expect(status.textContent).toContain('D:\\Backups\\solocrm-backup-2026-09-04-1432.db')
@@ -442,6 +448,10 @@ describe('WorkspaceSettings', () => {
       'backup.lastRunAt',
       'appearance.motion',
       'appearance.density',
+      // The operator's own timeline categories, controlled by the Categories
+      // section: renamed, recoloured, added and removed there, and read by
+      // every list and form that shows a category.
+      'timeline.kinds',
       // The `view.*` keys are per-view presentation state (§6.13), set from
       // each view's own header rather than from this page. They are listed
       // here because this assertion's job is that no registry key is
@@ -601,13 +611,16 @@ describe('WorkspaceSettings', () => {
       })
     }
 
-    // Three popovers, on the three groups ADR-014 §4 assigns prose to — and
+    // Four popovers, on the four groups ADR-014 §4 assigns prose to — and
     // none on Integrations, Backup or Appearance, whose prose stays visible.
     // A popover with nothing to say is an icon button that lies about having
     // content.
     expect(found).toEqual({
       Identity: ['About Branding'],
       'Default cadence': ['About Default cadence'],
+      // What renaming and removing a category do to entries already filed
+      // under it — behaviour the controls imply and cannot show.
+      Categories: ['About Categories'],
       Integrations: [],
       Backup: [],
       Appearance: [],

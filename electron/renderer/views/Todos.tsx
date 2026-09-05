@@ -3,10 +3,15 @@ import { useNavigate } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ViewHeader } from '../components/primitives/ViewHeader'
 import { Toggle } from '../components/primitives/Toggle'
+import { Button } from '../components/primitives/Button'
 import { Card } from '../components/primitives/Card'
 import { Stat } from '../components/primitives/Stat'
 import { QuickAdd } from '../components/primitives/QuickAdd'
 import { EmptyState } from '../components/primitives/EmptyState'
+import { PlusIcon } from '../components/icons'
+import { TimelineKindTag } from '../components/timeline/TimelineKindTag'
+import { useLayerManager } from '../components/shell/layer-manager-context'
+import { useTimelineKinds } from '../lib/timeline'
 import { callCrm, ipcQueryFn, optimisticUpdate, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 // The date arithmetic, the buckets and the urgency ordering live in their
@@ -28,6 +33,7 @@ import type { Engagement } from '../../shared/engagements'
 import type { Person } from '../../shared/people'
 import type { SettingEntry } from '../../shared/ipc-types'
 import type { TodoGroupByMode } from '../../shared/settings'
+import type { TimelineKind } from '../../shared/timeline'
 import './Todos.css'
 
 /**
@@ -118,6 +124,8 @@ const EMPTY_PEOPLE: readonly Person[] = []
 export function Todos() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { openSheet } = useLayerManager()
+  const kinds = useTimelineKinds()
   const today = useMemo(() => localToday(), [])
 
   const openTasksQuery = useQuery({
@@ -255,7 +263,19 @@ export function Todos() {
       title="Todos"
       description="Waiting items don't count toward what's owed — they're the other side's move, not yours, tracked so nothing goes quiet for weeks without anyone noticing."
       actions={
-        <Toggle aria-label="Group todos" options={GROUP_BY_OPTIONS} value={groupBy} onChange={handleGroupByChange} />
+        <>
+          <Toggle aria-label="Group todos" options={GROUP_BY_OPTIONS} value={groupBy} onChange={handleGroupByChange} />
+          {/* The full form, not the inline quick-add each group already
+              carries. A quick-add writes a title and the group's own
+              due date; this is where the other five fields — the full
+              description, the category, the date it happened — are filled
+              in. Opens on the todo half; the operator can switch it to an
+              event without leaving the sheet. */}
+          <Button variant="ghost" onClick={(event) => openSheet('todo', event.currentTarget)}>
+            <PlusIcon />
+            New todo
+          </Button>
+        </>
       }
     />
   )
@@ -309,6 +329,7 @@ export function Todos() {
               key={group.key}
               group={group}
               today={today}
+              kinds={kinds}
               companies={companies}
               engagements={engagements}
               people={people}
@@ -349,6 +370,7 @@ function CheckIcon() {
 function TodoGroupCard({
   group,
   today,
+  kinds,
   companies,
   engagements,
   people,
@@ -359,6 +381,7 @@ function TodoGroupCard({
 }: {
   group: TaskGroup
   today: string
+  kinds: readonly TimelineKind[]
   companies: readonly Company[]
   engagements: readonly Engagement[]
   people: readonly Person[]
@@ -375,6 +398,7 @@ function TodoGroupCard({
           key={task.id}
           task={task}
           today={today}
+          kinds={kinds}
           companies={companies}
           engagements={engagements}
           people={people}
@@ -410,6 +434,7 @@ function TodoGroupCard({
 export function TodoRow({
   task,
   today,
+  kinds,
   companies,
   engagements,
   people,
@@ -419,6 +444,11 @@ export function TodoRow({
 }: {
   task: Task
   today: string
+  /** The operator's category list. Passed in rather than read here so one
+   * `settings:get` subscription serves a whole page of rows, and so the
+   * Today view's "Next up" card can hand down the same list it already
+   * holds. */
+  kinds: readonly TimelineKind[]
   companies: readonly Company[]
   engagements: readonly Engagement[]
   people: readonly Person[]
@@ -451,6 +481,7 @@ export function TodoRow({
         {task.title}
         <span className="sub">
           <span className={`due ${meta.cls}`}>{meta.label}</span>
+          <TimelineKindTag kind={task.kind} kinds={kinds} />
           {company && (
             <button type="button" className="metalink" onClick={() => onNavigateCompany(company.id)}>
               {company.name}

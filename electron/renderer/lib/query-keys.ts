@@ -141,7 +141,23 @@ export const queryKeys = {
   },
   tasks: {
     all: () => ['tasks'] as const,
-    list: () => ['tasks', 'list'] as const,
+    /**
+     * `tasks:list(filter)` — the unfiltered read, or one narrowed by a
+     * filter the caller assembled (the Activity timeline's entity filter).
+     * Filter-aware for the same reason `activity.list` below is: a call
+     * with a filter and one without ask main different questions and must
+     * not populate each other's cache entry. An empty/absent filter collapses
+     * to the bare key rather than `['tasks','list',{}]`, so the unfiltered
+     * read keeps exactly the key it had before this became a parameter.
+     *
+     * The three *named* scopes below (`openList`, `waitingList`,
+     * `byCompany`) stay named rather than folding into this: each is a
+     * question with a meaning (`OPEN_STATUS_SQL`'s definition of open, one
+     * literal status, one company's card) that a reader should find by name,
+     * not reconstruct from a filter object in a key.
+     */
+    list: (filter?: object) =>
+      filter && Object.keys(filter).length > 0 ? (['tasks', 'list', filter] as const) : (['tasks', 'list'] as const),
     detail: (id: string) => ['tasks', 'detail', id] as const,
     /**
      * `tasks:list({ open: true })` — the Todos view's (T-260828-33) working

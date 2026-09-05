@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { timelineKindIdSchema } from './timeline'
 import { dateOnlySchema, timestampSchema } from './types'
 
 /**
@@ -41,8 +42,37 @@ export type TaskStatus = (typeof TASK_STATUSES)[number]
  */
 const taskWritableFieldsSchema = z
   .object({
+    /** The short description — one line, the thing the row is called. */
     title: z.string().min(1, 'title is required'),
+    /**
+     * The full description. A todo carries the same body an `activity` row
+     * always could, so the two halves of the timeline hold the same shape
+     * (`electron/shared/timeline.ts`) and one form can write either.
+     *
+     * Not indexed by `search_fts`: that index projects `tasks.title` and
+     * `activity.body` — one column per table, fixed by 0002's triggers and
+     * 0003's content relation — and widening either projection means
+     * rebuilding the index, which ADR-008 is emphatic about not doing
+     * casually. So a todo is findable by its title, not yet by its body.
+     */
+    body: z.string().nullable(),
+    /**
+     * The operator's category for this row, from the `timeline.kinds`
+     * setting — the same column and the same vocabulary `activity.kind`
+     * carries. Shape-validated only; see `electron/shared/timeline.ts`.
+     */
+    kind: timelineKindIdSchema.nullable(),
     status: z.enum(TASK_STATUSES).nullable(),
+    /**
+     * When this happened, as against `dueOn`'s when it should. A todo
+     * created from the timeline form can be backdated the way an event can;
+     * left `null` it simply has no date of its own and sorts by `dueOn`.
+     *
+     * A timestamp, not a date, so it is the same type as
+     * `activity.occurredAt` and the merged timeline sorts one list rather
+     * than reconciling two clocks (LESSONS.md 12).
+     */
+    occurredAt: timestampSchema.nullable(),
     dueOn: dateOnlySchema.nullable(),
     companyId: z.string().min(1).nullable(),
     engagementId: z.string().min(1).nullable(),
@@ -51,7 +81,10 @@ const taskWritableFieldsSchema = z
   .strict()
 
 export const createTaskInputSchema = taskWritableFieldsSchema.partial({
+  body: true,
+  kind: true,
   status: true,
+  occurredAt: true,
   dueOn: true,
   companyId: true,
   engagementId: true,
@@ -82,6 +115,11 @@ export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>
 export const taskFilterSchema = z
   .object({
     status: z.enum(TASK_STATUSES).optional(),
+    /** Exact category match. Unlike the renderer's own category chips — which
+     * narrow an already-fetched list client-side, the way `Activity.tsx`
+     * always has — this narrows the SQL `WHERE`, for a caller that wants
+     * only one category off the wire. */
+    kind: timelineKindIdSchema.optional(),
     companyId: z.string().min(1).optional(),
     engagementId: z.string().min(1).optional(),
     personId: z.string().min(1).optional(),
@@ -103,8 +141,16 @@ export type TaskFilter = z.infer<typeof taskFilterSchema>
 export const taskSchema = z.object({
   id: z.string(),
   title: z.string(),
+  body: z.string().nullable(),
+  /** Nullable rather than defaulted on read: a row written before migration
+   * 0010 and never updated since holds whatever 0010 backfilled, but a row
+   * whose category the operator later removed holds an id no longer in the
+   * list — both resolve through `resolveTimelineKind`, neither is repaired
+   * on the way out. */
+  kind: timelineKindIdSchema.nullable(),
   status: z.enum(TASK_STATUSES).nullable(),
   isNextStep: z.boolean(),
+  occurredAt: timestampSchema.nullable(),
   dueOn: dateOnlySchema.nullable(),
   waitingSince: timestampSchema.nullable(),
   doneAt: timestampSchema.nullable(),

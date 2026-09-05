@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type { CrmApi } from '../../../shared/ipc-types'
+import { DEFAULT_TIMELINE_KINDS } from '../../../shared/timeline'
 
 /**
  * A minimal but fully-typed `CrmApi` stub for `lib/*.test.ts(x)` — every
@@ -410,8 +411,11 @@ const STUB_OFFERING = {
 const STUB_TASK = {
   id: 'stub-task-id',
   title: 'Stub Task',
+  body: null,
+  kind: 'task',
   status: null,
   isNextStep: false,
+  occurredAt: null,
   dueOn: null,
   waitingSince: null,
   doneAt: null,
@@ -437,9 +441,10 @@ const STUB_LINK = {
 const STUB_ACTIVITY = {
   id: 'stub-activity-id',
   occurredAt: STUB_TIMESTAMP,
-  kind: 'note' as const,
+  kind: 'note',
   title: 'Stub Activity',
   body: null,
+  dueOn: null,
   companyId: null,
   personId: null,
   engagementId: null,
@@ -470,6 +475,10 @@ const STUB_SETTINGS_SNAPSHOT = {
   'view.companies.mode': 'card' as const,
   'view.people.mode': 'card' as const,
   'view.todos.groupBy': 'date' as const,
+  // The registry default, spread into a mutable array: `SettingsSnapshot`
+  // types this key as `TimelineKind[]`, and a stub that narrowed it to the
+  // readonly constant would not satisfy it.
+  'timeline.kinds': [...DEFAULT_TIMELINE_KINDS],
   'view.data.snippets': [],
   'nav.reportsExpanded': true,
   // The one value here that deliberately does NOT match its registry default

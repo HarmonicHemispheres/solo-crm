@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { timestampSchema } from './types'
+import { timelineKindIdSchema } from './timeline'
+import { dateOnlySchema, timestampSchema } from './types'
 
 /**
  * `activity`'s wire contract (ADR-007), following `electron/shared/companies.ts`'s
@@ -25,9 +26,22 @@ import { timestampSchema } from './types'
  * than accepting a value with no writer.
  */
 
-/** `schema.ts`'s comment on `activity.kind`: "call | email | meeting | note". */
-export const ACTIVITY_KINDS = ['call', 'email', 'meeting', 'note'] as const
-export type ActivityKind = (typeof ACTIVITY_KINDS)[number]
+/**
+ * `kind` is no longer a closed enum. It used to be `['call', 'email',
+ * 'meeting', 'note']` — declared here as `ACTIVITY_KINDS` and imported by
+ * five call sites as a `Record<ActivityKind, …>` key — and it is now the
+ * operator's own editable category list, stored in `settings` under
+ * `timeline.kinds` and validated on the wire for shape alone
+ * (`electron/shared/timeline.ts`, whose header explains why the category
+ * merged into this column rather than arriving beside it).
+ *
+ * The four old values are seeded into that list by
+ * `DEFAULT_TIMELINE_KINDS`, so every row written before migration 0010
+ * keeps the label it had. A row whose category the operator later removes
+ * still renders, through `resolveTimelineKind`'s fallback — which it has to,
+ * because an `activity` row cannot be edited to repair it (G8).
+ */
+export type ActivityKind = string
 
 /**
  * Writable sources only — `schema.ts`'s comment on `activity.source`: "manual
@@ -42,9 +56,21 @@ export type ActivitySource = (typeof ACTIVITY_SOURCES)[number]
 export const activitySchema = z.object({
   id: z.string(),
   occurredAt: timestampSchema,
-  kind: z.enum(ACTIVITY_KINDS),
+  kind: timelineKindIdSchema,
   title: z.string(),
   body: z.string().nullable(),
+  /**
+   * When the thing this row records is *due* — the other half of the pair
+   * the operator asked both notes and todos to carry, alongside
+   * `occurredAt`'s "when it happened". Date-only, matching `tasks.due_on`
+   * exactly, so the merged timeline compares the two tables' due dates
+   * without converting between a date and an instant.
+   *
+   * Almost always `null`: a logged touch is a thing that has happened, and
+   * a due date on it is the exception (a note that carries its own
+   * follow-up deadline without being a todo in its own right).
+   */
+  dueOn: dateOnlySchema.nullable(),
   companyId: z.string().nullable(),
   personId: z.string().nullable(),
   engagementId: z.string().nullable(),
@@ -68,9 +94,11 @@ export type Activity = z.infer<typeof activitySchema>
 export const logActivityInputSchema = z
   .object({
     occurredAt: timestampSchema,
-    kind: z.enum(ACTIVITY_KINDS),
+    kind: timelineKindIdSchema,
     title: z.string().min(1, 'title is required'),
     body: z.string().nullable(),
+    /** Optional on the way in — see `activitySchema`'s note. An omitted key and an explicit `null` both store `NULL`. */
+    dueOn: dateOnlySchema.nullable().optional(),
     companyId: z.string().min(1).nullable().optional(),
     personId: z.string().min(1).nullable().optional(),
     engagementId: z.string().min(1).nullable().optional(),

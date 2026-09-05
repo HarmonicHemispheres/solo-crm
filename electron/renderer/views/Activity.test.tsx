@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Activity } from './Activity'
@@ -7,6 +7,7 @@ import { LayerManager } from '../components/shell/LayerManager'
 import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { Activity as ActivityRow, ActivityFilters } from '../../shared/activity'
+import type { Task, TaskFilter } from '../../shared/tasks'
 import type { Company } from '../../shared/companies'
 import type { Person } from '../../shared/people'
 import type { EngagementWithOffering } from '../../shared/engagements'
@@ -22,10 +23,30 @@ function makeActivity(overrides: Partial<ActivityRow> & { id: string }): Activit
     kind: 'call',
     title: 'Touch',
     body: null,
+    dueOn: null,
     companyId: null,
     personId: null,
     engagementId: null,
     source: 'manual',
+    createdAt: '2026-08-20T09:00:00.000Z',
+    updatedAt: '2026-08-20T09:00:00.000Z',
+    ...overrides
+  }
+}
+
+function makeTask(overrides: Partial<Task> & { id: string; title: string }): Task {
+  return {
+    body: null,
+    kind: 'task',
+    status: 'todo',
+    isNextStep: false,
+    occurredAt: null,
+    dueOn: null,
+    waitingSince: null,
+    doneAt: null,
+    companyId: null,
+    engagementId: null,
+    personId: null,
     createdAt: '2026-08-20T09:00:00.000Z',
     updatedAt: '2026-08-20T09:00:00.000Z',
     ...overrides
@@ -111,6 +132,21 @@ function filterActivity(rows: readonly ActivityRow[], filters: ActivityFilters |
   })
 }
 
+/** As `filterActivity`, for the todo half. The date range is deliberately
+ * NOT applied here: the view does not send it to `tasks:list` (that channel's
+ * `dueFrom`/`dueTo` bound `due_on` alone, which is only half of where a todo
+ * sits on the timeline), so a stub that applied it would be testing something
+ * the app does not do. */
+function filterTasks(rows: readonly Task[], filter: TaskFilter | undefined): Task[] {
+  if (!filter) return [...rows]
+  return rows.filter((row) => {
+    if (filter.companyId !== undefined && row.companyId !== filter.companyId) return false
+    if (filter.personId !== undefined && row.personId !== filter.personId) return false
+    if (filter.engagementId !== undefined && row.engagementId !== filter.engagementId) return false
+    return true
+  })
+}
+
 /** Detail-route stand-ins — prove navigation actually happened, not just that a handler was called (same technique as Companies.test.tsx). */
 function CompanyDetailStub() {
   const { id } = useParams()
@@ -123,26 +159,36 @@ function PersonDetailStub() {
 
 function renderActivity({
   activity = [],
+  tasks = [],
   companies = [EZDEPLOY, RINVII],
   people = [JANE],
   engagements = [SAMAY],
-  initialEntries = ['/activity']
+  initialEntries = ['/activity'],
+  crmOverrides = {}
 }: {
   activity?: readonly ActivityRow[]
+  tasks?: readonly Task[]
   companies?: readonly Company[]
   people?: readonly Person[]
   engagements?: readonly EngagementWithOffering[]
   initialEntries?: string[]
+  crmOverrides?: Parameters<typeof stubCrm>[0]
 } = {}) {
   const activityList = vi.fn(async (filters?: ActivityFilters) => ({
     ok: true as const,
     data: filterActivity(activity, filters).sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
   }))
+  const tasksList = vi.fn(async (filter?: TaskFilter) => ({
+    ok: true as const,
+    data: filterTasks(tasks, filter)
+  }))
   window.crm = stubCrm({
     'activity:list': activityList,
+    'tasks:list': tasksList,
     'companies:list': vi.fn(async () => ({ ok: true as const, data: companies })),
     'people:list': vi.fn(async () => ({ ok: true as const, data: people })),
-    'engagements:list': vi.fn(async () => ({ ok: true as const, data: engagements }))
+    'engagements:list': vi.fn(async () => ({ ok: true as const, data: engagements })),
+    ...crmOverrides
   })
 
   const result = render(
@@ -158,7 +204,17 @@ function renderActivity({
       </MemoryRouter>
     </QueryClientProvider>
   )
-  return { ...result, activityList }
+  return { ...result, activityList, tasksList }
+}
+
+/** The Type and Category filters both offer an "All" chip, so every filter
+ * click in this file is scoped to its own group rather than found by name
+ * across the whole bar. */
+function typeFilter(): HTMLElement {
+  return screen.getByRole('group', { name: 'Type' })
+}
+function categoryFilter(): HTMLElement {
+  return screen.getByRole('group', { name: 'Category' })
 }
 
 describe('Activity', () => {
@@ -217,7 +273,7 @@ describe('Activity', () => {
     expect(titles).toEqual(['Recent note', 'Middle note', 'Backdated note'])
   })
 
-  it('filters by kind and clears cleanly back to the full set', async () => {
+  it('filters by category and clears cleanly back to the full set', async () => {
     renderActivity({
       activity: [
         makeActivity({ id: 'c1', kind: 'call', title: 'Call one' }),
@@ -228,11 +284,11 @@ describe('Activity', () => {
     await waitFor(() => expect(screen.getByText('Call one')).toBeTruthy())
     expect(screen.getByText('Email one')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Call' }))
+    fireEvent.click(within(categoryFilter()).getByRole('button', { name: 'Call' }))
     await waitFor(() => expect(screen.queryByText('Email one')).toBeNull())
     expect(screen.getByText('Call one')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'All' }))
+    fireEvent.click(within(categoryFilter()).getByRole('button', { name: 'All' }))
     await waitFor(() => expect(screen.getByText('Email one')).toBeTruthy())
     expect(screen.getByText('Call one')).toBeTruthy()
   })
@@ -352,14 +408,14 @@ describe('Activity', () => {
     await waitFor(() => expect(screen.getByTestId('company-detail').textContent).toBe('ezdeploy'))
   })
 
-  it('shows an empty state naming the quick-log shortcut when there is no activity at all', async () => {
-    renderActivity({ activity: [] })
+  it('shows an empty state naming the quick-log shortcut when the timeline is empty, and its action opens the form', async () => {
+    renderActivity({ activity: [], tasks: [] })
     await waitFor(() =>
-      expect(screen.getByText('No activity yet. Log a touch (⌘L) to start the record.')).toBeTruthy()
+      expect(screen.getByText('Nothing here yet. Add an event or a todo, or log a touch with ⌘L.')).toBeTruthy()
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Log the first touch' }))
-    expect(screen.getByRole('dialog', { name: 'Log a touch' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Add the first entry' }))
+    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy()
   })
 
   it('shows a distinct "no matches" empty state (not the quick-log one) when filters narrow an otherwise non-empty log to nothing', async () => {
@@ -368,9 +424,9 @@ describe('Activity', () => {
     })
     await waitFor(() => expect(screen.getByText('Call one')).toBeTruthy())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Email' }))
-    await waitFor(() => expect(screen.getByText(/No activity matches these filters/)).toBeTruthy())
-    expect(screen.queryByText(/No activity yet/)).toBeNull()
+    fireEvent.click(within(categoryFilter()).getByRole('button', { name: 'Email' }))
+    await waitFor(() => expect(screen.getByText(/Nothing on the timeline matches these filters/)).toBeTruthy())
+    expect(screen.queryByText(/Nothing here yet/)).toBeNull()
 
     // Two "Clear filters" buttons exist while the filtered set is empty —
     // the filter bar's own and the "no matches" empty state's action, same
@@ -434,5 +490,144 @@ describe('Activity', () => {
     // this view always builds one, even when empty), not a raw window.crm
     // invocation with something ad hoc.
     await waitFor(() => expect(window.crm['activity:list']).toHaveBeenCalledWith({}))
+  })
+})
+
+/**
+ * The half of this page that is new: events and todos in one stream, and the
+ * category as the operator's own list rather than a four-value enum.
+ */
+describe('Activity — one stream of events and todos', () => {
+  it('interleaves todos with events in one chronological list, newest first', async () => {
+    renderActivity({
+      activity: [
+        makeActivity({ id: 'e-old', title: 'Old event', occurredAt: '2026-08-10T09:00:00.000Z' }),
+        makeActivity({ id: 'e-new', title: 'New event', occurredAt: '2026-08-25T09:00:00.000Z' })
+      ],
+      tasks: [
+        // Between the two events by `occurred_at`; the second has none, so it
+        // sits at its due date instead — which is what `entryInstant` is for.
+        makeTask({ id: 't-mid', title: 'Middle todo', occurredAt: '2026-08-18T09:00:00.000Z' }),
+        makeTask({ id: 't-due', title: 'Due todo', dueOn: '2026-08-14' })
+      ]
+    })
+
+    await waitFor(() => expect(screen.getByText('New event')).toBeTruthy())
+    const titles = screen.getAllByText(/(event|todo)$/).map((el) => el.textContent)
+    expect(titles).toEqual(['New event', 'Middle todo', 'Due todo', 'Old event'])
+  })
+
+  it('an undated todo is in the stream, at the bottom', async () => {
+    renderActivity({
+      activity: [makeActivity({ id: 'e1', title: 'An event', occurredAt: '2026-08-25T09:00:00.000Z' })],
+      tasks: [makeTask({ id: 't1', title: 'Undated todo' })]
+    })
+
+    await waitFor(() => expect(screen.getByText('Undated todo')).toBeTruthy())
+    const titles = screen.getAllByText(/(event|todo)$/).map((el) => el.textContent)
+    expect(titles).toEqual(['An event', 'Undated todo'])
+  })
+
+  it('the Type filter narrows the stream to one half and back', async () => {
+    renderActivity({
+      activity: [makeActivity({ id: 'e1', title: 'An event' })],
+      tasks: [makeTask({ id: 't1', title: 'A todo' })]
+    })
+    await waitFor(() => expect(screen.getByText('A todo')).toBeTruthy())
+
+    fireEvent.click(within(typeFilter()).getByRole('button', { name: 'Todo' }))
+    await waitFor(() => expect(screen.queryByText('An event')).toBeNull())
+    expect(screen.getByText('A todo')).toBeTruthy()
+
+    fireEvent.click(within(typeFilter()).getByRole('button', { name: 'Event' }))
+    await waitFor(() => expect(screen.queryByText('A todo')).toBeNull())
+    expect(screen.getByText('An event')).toBeTruthy()
+
+    fireEvent.click(within(typeFilter()).getByRole('button', { name: 'All' }))
+    await waitFor(() => expect(screen.getByText('A todo')).toBeTruthy())
+    expect(screen.getByText('An event')).toBeTruthy()
+  })
+
+  it('completing a todo from the stream writes a status transition, and nothing offers to edit an event', async () => {
+    const update = vi.fn(async (payload: unknown) => {
+      void payload
+      return {
+        ok: true as const,
+        data: { ok: true as const, data: { ...makeTask({ id: 't1', title: 'A todo' }), status: 'done' as const } }
+      }
+    })
+    renderActivity({
+      activity: [makeActivity({ id: 'e1', title: 'An event' })],
+      tasks: [makeTask({ id: 't1', title: 'A todo' })],
+      crmOverrides: { 'tasks:update': update }
+    })
+    await waitFor(() => expect(screen.getByText('A todo')).toBeTruthy())
+
+    // Exactly one completion control on the page: the todo's. An event has no
+    // lifecycle to complete and no edit of any kind (G8).
+    const checks = screen.getAllByRole('button', { name: /^Mark ".+" done$/ })
+    expect(checks).toHaveLength(1)
+    fireEvent.click(checks[0])
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update.mock.calls[0][0]).toEqual({ id: 't1', patch: { status: 'done' } })
+  })
+
+  it('a done todo stays in the stream, marked done and with no completion control', async () => {
+    renderActivity({
+      tasks: [makeTask({ id: 't1', title: 'A finished todo', status: 'done', doneAt: '2026-08-20T10:00:00.000Z' })]
+    })
+
+    await waitFor(() => expect(screen.getByText('A finished todo')).toBeTruthy())
+    expect(screen.getByText('Done', { selector: '.tag' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Mark ".+" done$/ })).toBeNull()
+  })
+
+  it('labels each row with the operator’s own category, and falls back for one they removed', async () => {
+    renderActivity({
+      activity: [
+        makeActivity({ id: 'e1', kind: 'follow-up', title: 'Filed under a live category' }),
+        // An id nothing in the list declares — a category the operator
+        // removed. The row cannot be edited to repair it (G8), so it has to
+        // render.
+        makeActivity({ id: 'e2', kind: 'retired-kind', title: 'Filed under a removed one' })
+      ],
+      crmOverrides: {
+        'settings:get': vi.fn(async () => ({
+          ok: true as const,
+          data: { key: 'timeline.kinds' as const, value: [{ id: 'follow-up', label: 'Follow up', tone: 'gold' as const }] }
+        }))
+      }
+    })
+
+    await waitFor(() => expect(screen.getByText('Filed under a live category')).toBeTruthy())
+    expect(screen.getByText('Follow up', { selector: '.tag' })).toBeTruthy()
+    // Title-cased from the id rather than blank.
+    expect(screen.getByText('Retired kind', { selector: '.tag' })).toBeTruthy()
+    // And the filter bar offers the operator's list, not a hardcoded four.
+    expect(within(categoryFilter()).getByRole('button', { name: 'Follow up' })).toBeTruthy()
+    expect(within(categoryFilter()).queryByRole('button', { name: 'Meeting' })).toBeNull()
+  })
+
+  it('the date range keeps a todo whose occurred_at is inside it, and drops one whose is outside', async () => {
+    renderActivity({
+      tasks: [
+        makeTask({ id: 'in', title: 'Inside todo', occurredAt: '2026-08-20T12:00:00.000Z' }),
+        makeTask({ id: 'out', title: 'Outside todo', occurredAt: '2026-07-01T12:00:00.000Z' })
+      ]
+    })
+    await waitFor(() => expect(screen.getByText('Outside todo')).toBeTruthy())
+
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-08-01' } })
+    await waitFor(() => expect(screen.queryByText('Outside todo')).toBeNull())
+    expect(screen.getByText('Inside todo')).toBeTruthy()
+  })
+
+  it('the header’s plus button opens the shared form on its event half', async () => {
+    renderActivity()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'New entry' })).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'New entry' }))
+    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy()
   })
 })

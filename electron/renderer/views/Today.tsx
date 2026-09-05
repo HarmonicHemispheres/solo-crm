@@ -29,7 +29,8 @@ import { formatMoney, plural } from './offerings-display'
 // Imported, never restated — see this file's header and T-260829-14's Risks.
 import { localToday, dueMeta, sortByDue } from './todo-urgency'
 import { TodoRow } from './Todos'
-import { ActivityItem } from './Activity'
+import { TimelineRow } from './Activity'
+import { entryOfActivity, useTimelineKinds } from '../lib/timeline'
 import type { Company, CompanyKind } from '../../shared/companies'
 import type { Engagement } from '../../shared/engagements'
 import type { Person } from '../../shared/people'
@@ -187,6 +188,9 @@ export function Today() {
   // a new dependency value and recompute the whole page for nothing — and
   // would let the two disagree about what "now" is mid-render.
   const today = useMemo(() => localToday(), [])
+  // One `settings:get` for the whole page, handed down to the "Next up"
+  // rows — see `TodoRow`'s own `kinds` note in Todos.tsx.
+  const kinds = useTimelineKinds()
   const now = useMemo(() => new Date(), [])
 
   const companiesQuery = useQuery({ queryKey: queryKeys.companies.list(), queryFn: ipcQueryFn('companies:list') })
@@ -496,6 +500,7 @@ export function Today() {
                 key={task.id}
                 task={task}
                 today={today}
+                kinds={kinds}
                 companies={companies}
                 engagements={engagements}
                 people={people}
@@ -525,12 +530,16 @@ export function Today() {
           ) : (
             <div className="tl tl-log">
               {recent.map((activity) => (
-                <ActivityItem
+                <TimelineRow
                   key={activity.id}
-                  activity={activity}
+                  entry={entryOfActivity(activity)}
+                  kinds={kinds}
+                  today={today}
                   companiesById={companiesById}
                   peopleById={peopleById}
                   engagementsById={engagementsById}
+                  // No completion control: an event has nothing to complete,
+                  // and this card is a five-row summary, not a work surface.
                 />
               ))}
             </div>

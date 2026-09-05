@@ -103,6 +103,7 @@ const SAVED_ACTIVITY: Activity = {
   kind: 'call',
   title: 'saved',
   body: null,
+  dueOn: null,
   companyId: 'sandsage',
   personId: null,
   engagementId: null,

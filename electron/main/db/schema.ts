@@ -442,6 +442,16 @@ export const tasks = sqliteTable(
     dueOn: text('due_on'),
     waitingSince: text('waiting_since'),
     doneAt: text('done_at'),
+    // 0010. The three columns that make a todo and an activity row carry the
+    // same six facts (electron/shared/timeline.ts): the full description
+    // beneath the title, when the thing happened as against when it is due,
+    // and the operator's own category. `kind` is the same vocabulary
+    // `activity.kind` holds — a slug from the `timeline.kinds` setting, not
+    // a closed enum, and not constrained by a CHECK precisely because the
+    // operator can remove a category a row already carries.
+    body: text('body'),
+    occurredAt: text('occurred_at'),
+    kind: text('kind'),
     companyId: text('company_id').references(() => companies.id),
     engagementId: text('engagement_id').references(() => engagements.id),
     personId: text('person_id').references(() => people.id),
@@ -479,6 +489,12 @@ export const activity = sqliteTable(
     // adapter writes companies.last_touch_at / people.last_contact_at
     // directly and never inserts an activity row.
     source: text('source'),
+    // 0010. A note may carry its own deadline without becoming a todo. Same
+    // column name and same date-only type as `tasks.due_on`, so the merged
+    // timeline compares one thing rather than two. `kind` above is unchanged
+    // at the database level and now means the operator's category — see
+    // `tasks.kind`'s note and electron/shared/timeline.ts.
+    dueOn: text('due_on'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull()
   },

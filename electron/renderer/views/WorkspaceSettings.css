@@ -221,6 +221,81 @@
   background: color-mix(in srgb, var(--verdigris) 10%, transparent);
 }
 
+/* -- categories -----------------------------------------------------------
+   No mockup source: the mockup's activity kind was a closed enum with nothing
+   to configure. Built from this file's own `.setrow` and `.steps`, so the section
+   is the same furniture as Default cadence above it.
+
+   `.toneb` is a `.stepb` with no label — a square of the colour it applies. The
+   word is on `aria-label`/`title`, never in the square, because the swatch has to
+   stay small enough that seven fit on one row beside the name field. Colour is
+   not the only signal for what a tone is, either: the colour a category ends
+   up wearing is rendered as a real `Tag` in every list that shows it, with the
+   category's name inside it. -- */
+
+.cat-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.cat-name .inp {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The stored id, beside the editable name — read-only on purpose. Renaming
+   changes the label; the id is what every already-written row carries, and
+   showing it is what makes "renaming keeps your entries" a thing the operator
+   can see rather than a thing the popover only claims. */
+.cat-id {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.toneb {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--tone);
+}
+
+.toneb.on {
+  /* A ring rather than a colour change: the square's whole job is to show one
+     colour, so selection cannot be expressed by changing it. */
+  outline: 2px solid var(--papyrus);
+  outline-offset: 1px;
+}
+
+.toneb.tone-default {
+  --tone: var(--slate);
+}
+.toneb.tone-verd {
+  --tone: var(--verdigris);
+}
+.toneb.tone-gold {
+  --tone: var(--gold);
+}
+.toneb.tone-lapis {
+  --tone: var(--lapis);
+}
+.toneb.tone-green {
+  --tone: var(--green);
+}
+.toneb.tone-orange {
+  --tone: var(--orange);
+}
+.toneb.tone-red {
+  --tone: var(--red);
+}
+
 /* ── branding rows — T-260829-07 ──────────────────────────────────────────
    No mockup source: the mockup has no branding card. Built from the same
    `.field`/`.k`/`.v` row every other panel here uses, plus the layout the two

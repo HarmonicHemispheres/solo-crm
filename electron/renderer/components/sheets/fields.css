@@ -64,6 +64,20 @@
 }
 
 /*
+ * The mockup's bare `textarea{resize:vertical;min-height:72px;
+ * line-height:1.5}` rule (its line ~251), which sits alongside the
+ * `.inp,select,textarea` block this file ported as `.inp`. It lived in
+ * QuickLog.css while quick log was the only textarea in the app wearing
+ * `.inp`, with a comment saying it would move here on the second consumer.
+ * `TimelineEntrySheet`'s full-description field is the second consumer.
+ */
+textarea.inp {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+/*
  * Every sheet wraps its fields in a real <form> so pressing Enter in a text
  * input submits it (the footer's Create/Save button lives outside sheet-b,
  * in sheet-f, and reaches this form via the HTML `form="<id>"` attribute

@@ -317,17 +317,66 @@ describe('logActivity: input validation', () => {
     })
   })
 
-  it('rejects an unknown kind value', () => {
+  // `kind` used to be a closed enum (call | email | meeting | note) and this
+  // pair of tests used to be one, asserting that anything else was refused.
+  // It is the operator's own category list now (`timeline.kinds`), so what the
+  // repository can still check is the *shape* of the id and nothing about
+  // membership — see electron/shared/timeline.ts on why membership cannot be
+  // checked here: a category the operator removes must not make the rows
+  // already carrying it unreadable.
+  it('accepts a category id the operator invented, because the set is theirs to extend', () => {
     withDatabase((db) => {
-      expect(() =>
-        logActivity(db, {
-          occurredAt: '2026-08-28T10:00:00.000Z',
-          kind: 'text-message',
-          title: 'Bad kind',
-          body: null,
-          source: 'manual'
-        })
-      ).toThrow(ValidationError)
+      const logged = logActivity(db, {
+        occurredAt: '2026-08-28T10:00:00.000Z',
+        kind: 'text-message',
+        title: 'Texted about the invoice',
+        body: null,
+        source: 'manual'
+      })
+      expect(logged.kind).toBe('text-message')
+      expect(countActivityRows(db)).toBe(1)
+    })
+  })
+
+  it('rejects a malformed category id — the shape is still checked', () => {
+    withDatabase((db) => {
+      for (const kind of ['Text Message', '-leading-hyphen', '', 'x'.repeat(33)]) {
+        expect(() =>
+          logActivity(db, {
+            occurredAt: '2026-08-28T10:00:00.000Z',
+            kind,
+            title: 'Bad kind',
+            body: null,
+            source: 'manual'
+          })
+        ).toThrow(ValidationError)
+      }
+      expect(countActivityRows(db)).toBe(0)
+    })
+  })
+
+  it('stores a due date on an event, and defaults it to null', () => {
+    withDatabase((db) => {
+      const withDue = logActivity(db, {
+        occurredAt: '2026-08-28T10:00:00.000Z',
+        kind: 'note',
+        title: 'Note with its own deadline',
+        body: null,
+        dueOn: '2026-09-15',
+        source: 'manual'
+      })
+      expect(withDue.dueOn).toBe('2026-09-15')
+
+      // Omitted entirely, not passed as null — both have to reach the column
+      // as NULL, which is what `?? null` in the insert is for.
+      const withoutDue = logActivity(db, {
+        occurredAt: '2026-08-28T10:00:00.000Z',
+        kind: 'note',
+        title: 'Note with no deadline',
+        body: null,
+        source: 'manual'
+      })
+      expect(withoutDue.dueOn).toBeNull()
     })
   })
 

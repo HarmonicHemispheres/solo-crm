@@ -10,6 +10,7 @@ import { stubCrm } from '../../lib/test-support/stub-crm'
 import type { CrmApi } from '../../../shared/ipc-types'
 import type { SettingsSnapshot } from '../../../shared/settings'
 import type { BrandingSlot, BrandingSlotState } from '../../../shared/branding'
+import { DEFAULT_TIMELINE_KINDS } from '../../../shared/timeline'
 
 /** A whole snapshot, since `settings:getAll` answers with one — the rail reads
  * `workspace.name` off it for the brand block's accessible name (T-260829-07).
@@ -38,6 +39,7 @@ const SETTINGS_SNAPSHOT: SettingsSnapshot = {
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
   'view.data.snippets': [],
+  'timeline.kinds': [...DEFAULT_TIMELINE_KINDS],
   'nav.reportsExpanded': true,
   // `true` — this file is about the rail, not about first run. The tour's
   // three conditions are asserted in Tour.test.tsx.

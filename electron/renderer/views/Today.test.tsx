@@ -77,6 +77,9 @@ function makeCompany(overrides: Partial<Company> & { id: string; name: string })
 function makeTask(overrides: Partial<Task> & { id: string; title: string }): Task {
   return {
     status: 'todo',
+    body: null,
+    kind: 'task',
+    occurredAt: null,
     isNextStep: false,
     dueOn: null,
     waitingSince: null,
@@ -134,6 +137,7 @@ function makeActivity(overrides: Partial<Activity> & { id: string; title: string
     occurredAt: isoDaysAgo(1),
     kind: 'note',
     body: null,
+    dueOn: null,
     companyId: null,
     personId: null,
     engagementId: null,

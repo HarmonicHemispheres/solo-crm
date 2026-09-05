@@ -10,6 +10,7 @@ import { stubCrm } from '../../lib/test-support/stub-crm'
 import type { Company } from '../../../shared/companies'
 import type { SettingEntry } from '../../../shared/ipc-types'
 import type { SettingsSnapshot } from '../../../shared/settings'
+import { DEFAULT_TIMELINE_KINDS } from '../../../shared/timeline'
 
 /**
  * The first-run tour (T-260829-15). Everything here renders the real shell
@@ -113,6 +114,7 @@ const BASE_SNAPSHOT: SettingsSnapshot = {
   'view.people.mode': 'card',
   'view.todos.groupBy': 'date',
   'view.data.snippets': [],
+  'timeline.kinds': [...DEFAULT_TIMELINE_KINDS],
   'nav.reportsExpanded': true,
   'onboarding.tourSeen': false
 }

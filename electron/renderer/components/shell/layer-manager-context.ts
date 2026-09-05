@@ -42,8 +42,16 @@ export type LayerKind = 'palette' | 'sheet' | 'log' | 'menu' | 'popover' | 'tour
  * union is what keeps `LayerManager`'s switch exhaustive: adding a member
  * without adding its `case` is a compile error there, not a sheet that opens
  * onto nothing — which is the only reason the union is worth closing at all.
+ *
+ * `entry` is the sixth: the shared timeline form opened on its *event* half,
+ * where `todo` is the same form opened on its todo half. Two members for one
+ * component rather than a `SheetKind` carrying a payload, because which half
+ * a plus button opens on is the same class of fact as which form it opens —
+ * and because `todo` is a name the command palette and six call sites
+ * already use, which a payload argument would have made optional and
+ * therefore forgettable (T-260829-08's lesson, restated on `openSheet`).
  */
-export type SheetKind = 'company' | 'person' | 'engagement' | 'todo' | 'offering'
+export type SheetKind = 'company' | 'person' | 'engagement' | 'todo' | 'entry' | 'offering'
 
 /**
  * What a sheet is open *on* — the half of a `SheetTarget` a form actually

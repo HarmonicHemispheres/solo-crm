@@ -7,6 +7,7 @@ import { AppRoutes } from '../../routes'
 import { createQueryClient } from '../../lib/query-client'
 import { stubCrm } from '../../lib/test-support/stub-crm'
 import type { CrmApi } from '../../../shared/ipc-types'
+import { DEFAULT_TIMELINE_KINDS } from '../../../shared/timeline'
 
 // T-260828-28: the Companies route is a real, query-backed view now (the
 // first of the ten to be), so every render through AppRoutes needs a
@@ -101,6 +102,7 @@ describe('ShellLayout', () => {
           'view.people.mode': 'card' as const,
           'view.todos.groupBy': 'date' as const,
           'view.data.snippets': [],
+          'timeline.kinds': [...DEFAULT_TIMELINE_KINDS],
           'nav.reportsExpanded': true,
           // `true`: this test is about `data-motion` at boot, and a
           // first-run overlay on top of it would be testing two things.

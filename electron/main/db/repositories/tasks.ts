@@ -12,6 +12,7 @@ import {
   type UpdateTaskInput,
   updateTaskInputSchema
 } from '../../../shared/tasks'
+import { DEFAULT_TODO_KIND_ID } from '../../../shared/timeline'
 import { NotFoundError, RefusalError } from './errors'
 import { parseInput } from './input'
 import { type ConstraintHandler, NOT_NULL_HANDLER, PRIMARY_KEY_HANDLER, translateWriteError } from './sqlite-errors'
@@ -65,7 +66,10 @@ interface FieldSpec {
 
 const FIELD_SPECS: readonly FieldSpec[] = [
   { key: 'title', column: 'title' },
+  { key: 'body', column: 'body' },
+  { key: 'kind', column: 'kind' },
   { key: 'status', column: 'status' },
+  { key: 'occurredAt', column: 'occurred_at' },
   { key: 'dueOn', column: 'due_on' },
   { key: 'companyId', column: 'company_id' },
   { key: 'engagementId', column: 'engagement_id' },
@@ -74,7 +78,13 @@ const FIELD_SPECS: readonly FieldSpec[] = [
 
 /** Applied on create only, when the caller omits the field — mirrors companies.ts's CREATE_DEFAULTS. */
 const CREATE_DEFAULTS: Partial<Record<WritableKey, unknown>> = {
-  status: 'todo'
+  status: 'todo',
+  // Migration 0010 backfilled every pre-existing row to the same id, so a
+  // workspace that upgrades and a workspace that starts fresh agree on what
+  // an uncategorised todo is. A caller may still pass `kind: null`
+  // explicitly and get a row with no category — the default fills an
+  // *omitted* key, not a null one (`stripUndefinedValues`).
+  kind: DEFAULT_TODO_KIND_ID
 }
 
 // ---------------------------------------------------------------------------
@@ -174,8 +184,11 @@ const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
 interface TaskRow {
   readonly id: string
   readonly title: string
+  readonly body: string | null
+  readonly kind: string | null
   readonly status: string | null
   readonly is_next_step: number | null
+  readonly occurred_at: string | null
   readonly due_on: string | null
   readonly waiting_since: string | null
   readonly done_at: string | null
@@ -190,8 +203,11 @@ function mapRow(row: TaskRow): Task {
   return {
     id: row.id,
     title: row.title,
+    body: row.body,
+    kind: row.kind,
     status: row.status as TaskStatus | null,
     isNextStep: row.is_next_step === 1,
+    occurredAt: row.occurred_at,
     dueOn: row.due_on,
     waitingSince: row.waiting_since,
     doneAt: row.done_at,
@@ -218,6 +234,10 @@ function buildFilterClause(filter: TaskFilter | undefined): { readonly clause: s
   if (filter?.status !== undefined) {
     conditions.push('status = ?')
     values.push(filter.status)
+  }
+  if (filter?.kind !== undefined) {
+    conditions.push('kind = ?')
+    values.push(filter.kind)
   }
   if (filter?.companyId !== undefined) {
     conditions.push('company_id = ?')

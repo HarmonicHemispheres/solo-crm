@@ -314,7 +314,12 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
           '0008_retainer_basis.sql',
           // `companies.introduced_by_person_id` and its index — one ADD, one
           // CREATE INDEX, both pinned below like everything before them.
-          '0009_introduced_by_person.sql'
+          '0009_introduced_by_person.sql',
+          // `tasks.body`/`.occurred_at`/`.kind` and `activity.due_on` — four
+          // ADDs, no new table and no new index. The migration's `UPDATE`
+          // backfill is invisible to this comparison, which reads only
+          // CREATE/ALTER statements out of both sides.
+          '0010_timeline_kinds.sql'
         ].map((file) => readFileSync(join(migrationsDir, file), 'utf-8'))
 
         const checkedInIndexes = checkedIn.flatMap(createIndexStatements)

@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Todos } from './Todos'
+import { LayerManager } from '../components/shell/LayerManager'
+import { DEFAULT_TIMELINE_KINDS } from '../../shared/timeline'
 import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import type { CreateTaskInput, Task, TaskFilter } from '../../shared/tasks'
@@ -44,6 +46,9 @@ const TODAY = today()
 function makeTask(overrides: Partial<Task> & { id: string; title: string }): Task {
   return {
     status: 'todo',
+    body: null,
+    kind: 'task',
+    occurredAt: null,
     isNextStep: false,
     dueOn: null,
     waitingSince: null,
@@ -178,14 +183,19 @@ function renderTodos({
   })
 
   const queryClient = createQueryClient()
+  // Wrapped in `LayerManager` since the view gained its "New todo" button:
+  // `useLayerManager` throws outside the provider, so without this every test
+  // in this file fails on the render rather than on what it asserts.
   const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/todos']}>
-        <Routes>
-          <Route path="/todos" element={<Todos />} />
-          <Route path="/company/:id" element={<DetailStub testId="company-detail" />} />
-          <Route path="/person/:id" element={<DetailStub testId="person-detail" />} />
-        </Routes>
+        <LayerManager>
+          <Routes>
+            <Route path="/todos" element={<Todos />} />
+            <Route path="/company/:id" element={<DetailStub testId="company-detail" />} />
+            <Route path="/person/:id" element={<DetailStub testId="person-detail" />} />
+          </Routes>
+        </LayerManager>
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -370,10 +380,20 @@ describe('Todos', () => {
     // answers 'date' once and then never resolves, so the reconciling
     // refetch cannot paper over a missing `onError` — the only thing that
     // can put "By date" back on screen is the rollback itself.
-    let getCalls = 0
-    const settingsGet = vi.fn(async () => {
-      getCalls += 1
-      if (getCalls === 1) return { ok: true as const, data: { key: 'view.todos.groupBy' as const, value: 'date' as const } }
+    //
+    // Keyed on the requested setting, not on call order. The view reads two
+    // keys now — `view.todos.groupBy` and `timeline.kinds` — through the same
+    // channel, and a counter-based stub answered whichever of the two
+    // happened to arrive first: when that was the categories read, the
+    // grouping read got the never-resolving promise and the whole view sat
+    // on "Loading todos…" forever.
+    let groupByReads = 0
+    const settingsGet = vi.fn(async ({ key }: { key: string }) => {
+      if (key !== 'view.todos.groupBy') {
+        return { ok: true as const, data: { key: 'timeline.kinds' as const, value: [...DEFAULT_TIMELINE_KINDS] } }
+      }
+      groupByReads += 1
+      if (groupByReads === 1) return { ok: true as const, data: { key: 'view.todos.groupBy' as const, value: 'date' as const } }
       return new Promise<never>(() => {})
     })
     const settingsSet = vi.fn(async () => ({

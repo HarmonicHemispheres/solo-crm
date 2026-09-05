@@ -1,22 +1,22 @@
 /*
- * Activity view (T-260828-34). `.tl`/`.tli`/`.d`/`.note` are transcribed
- * from planning/solo-crm-mockup.html (lines ~174-182) — the timeline-item
- * classes the mockup itself uses for this exact view, ported once here
- * since no primitive owns them (Row.tsx's leading/title/subtitle/trailing
- * shape doesn't stretch to a body excerpt plus a variable number of
- * independent entity links — see Activity.tsx's header comment for why the
- * row isn't built on it). The mockup's `.bul` icon-bullet is dropped: this
- * view labels kind with `Tag` (also in this task's Touches) instead of a
- * bespoke per-kind glyph. `.chiprow` (line 252) is duplicated here rather
- * than imported from `CompanyDetail.css`, where it's ported once already —
- * the same "port what this view needs, once, here" choice that file's own
- * header explains, not a shared dependency to wire up. `.filterbar`,
- * `.entlinks`, `.entlink` and `.filter-input` have no mockup source — the
- * mockup's own Activity view has no filter UI at all, only this task's
- * Scope adds one — so they're styled to match the mockup's existing
- * `.inp`/`.f-lab` look (lines ~247-251) rather than lifted from a selector
- * that isn't there, the same choice CompanyDetail.css's header documents
- * for its own inline-edit inputs.
+ * Activity view. `.tl`/`.tli`/`.d`/`.note`/`.bul` are transcribed from
+ * planning/solo-crm-mockup.html (lines ~174-182) — the timeline-item classes
+ * the mockup itself uses for this exact view. `.chiprow` (line 252) is
+ * duplicated here rather than imported from `CompanyDetail.css`, where it is
+ * ported once already — the same "port what this view needs, once, here"
+ * choice that file's own header explains, not a shared dependency to wire up.
+ * `.filterbar`, `.entlinks`, `.entlink` and `.filter-input` have no mockup
+ * source (the mockup's Activity view has no filter UI at all) and are styled
+ * to match the mockup's existing `.inp`/`.f-lab` look.
+ *
+ * **The stream is not in a card.** It used to be: `.tl.tl-log` sat inside a
+ * `<Card>`, which gave the list a bounded panel with its own padding and a
+ * hairline under every row. The page is one continuous top-to-bottom timeline
+ * now — events and todos together — so the rows hang off a single spine that
+ * runs the height of the list, the way the detail views' own timelines do,
+ * and the card is gone. `.tl-stream` is the page-level modifier that removes
+ * the padding the card used to supply; `.tl-log` on its own is still what the
+ * Today view's Recent card wants, inside a card, and keeps working unchanged.
  */
 
 .chiprow {
@@ -66,18 +66,6 @@
   border-color: var(--verdigris);
 }
 
-.filter-daterange {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.filter-daterange span {
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
 .entity-banner {
   display: flex;
   align-items: center;
@@ -96,43 +84,121 @@
   font-weight: 600;
 }
 
-/* ── timeline ─────────────────────────── */
+/* ── the stream ───────────────────────── */
 
 /*
- * `.tl-log` scopes this file's timeline rules (T-260828-15's real-window
- * pass). `.tl`, `.tli`, `.tli .t/.d/.note` were transcribed from the mockup
- * into THREE stylesheets — here, CompanyDetail.css and PersonDetail.css —
- * with no scoping, so all three defined the same global selectors and
- * whichever the bundler emitted last styled all of them. The detail views
- * won, and they declare `.tli .d { display: block }` because their meta row
- * is plain text; this file's is a Tag, a timestamp and a variable number of
- * entity links laid out with `display: flex; gap: 5px`. The result was
- * "Aug 29, 2026, 9:32 AMRinvii" — every element in the row butted against
- * the next — on the Activity view and in Today's Recent card, which renders
- * this same `ActivityItem`.
- *
- * Scoping only this file is the whole fix for the *visible* collision:
- * CompanyDetail.css and PersonDetail.css declare byte-identical timeline
- * blocks, so they cannot disagree with each other. What is left is
- * duplication rather than a defect — two copies of one block that should be
- * one shared stylesheet, alongside the `.cmark`/`KIND_LABEL` copies
- * T-260829-14 named. That consolidation is a task, not a QA-pass edit: it
- * changes what three views look like and this pass's own scope rules out
- * restyling.
+ * `.tl-log` scopes every rule below (T-260828-15's real-window pass). `.tl`,
+ * `.tli` and `.tli .t/.d/.note` were transcribed from the mockup into THREE
+ * stylesheets — here, CompanyDetail.css and PersonDetail.css — with no
+ * scoping, so all three defined the same global selectors and whichever the
+ * bundler emitted last styled all of them. Scoping this file is the whole fix
+ * for the visible collision; the two detail stylesheets declare byte-identical
+ * blocks, so they cannot disagree with each other.
  */
 .tl.tl-log {
   padding: 5px 15px 12px;
 }
 
+/* The page-level stream: no card around it, so no card padding to sit inside
+   and no left inset to fake one. */
+.tl.tl-log.tl-stream {
+  padding: 2px 0 12px;
+}
+
 .tl-log .tli {
   display: flex;
   gap: 12px;
-  padding: 12px 0;
+  padding: 11px 0;
   position: relative;
 }
 
-.tl-log .tli:not(:last-child) {
-  border-bottom: 1px solid var(--border);
+/*
+ * One spine, drawn per row as the segment between this bullet and the next,
+ * rather than as a single absolutely-positioned line on the container: a
+ * container-height line would run past the last bullet into the "Load more"
+ * button, and would need to know the first bullet's offset to start in the
+ * right place. Every row but the last draws its own segment, so the line
+ * begins and ends exactly on a bullet at any list length.
+ */
+.tl-log .tli:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 33px;
+  bottom: -11px;
+  width: 1px;
+  background: var(--border);
+}
+
+.tl-log .tli .bul {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: var(--radius-7);
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 0;
+  /* Above the spine, so the line reads as running between the bullets rather
+     than through them. */
+  z-index: 1;
+}
+
+.tl-log .tli .bul svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--verdigris);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A todo's bullet is a real checkbox — a round-cornered square rather than
+   the event bullet's pill, so the two are tellable apart by shape and not
+   only by what is drawn inside them. The tick is faint until hover, matching
+   `.check` on the Todos page (Todos.css), where the same control lives. */
+.tl-log .tli .bul.check {
+  border-radius: 6px;
+  border-color: var(--border-bright);
+  background: none;
+}
+
+.tl-log .tli .bul.check svg {
+  stroke: var(--papyrus);
+  stroke-width: 2.4;
+  opacity: 0;
+  transition: opacity var(--motion-hover);
+}
+
+.tl-log .tli .bul.check:hover {
+  border-color: var(--verdigris);
+}
+
+.tl-log .tli .bul.check:hover svg,
+.tl-log .tli .bul.check:focus-visible svg {
+  opacity: 0.55;
+}
+
+/* Waiting is marked by a dashed border as well as a colour — never colour
+   alone (ui-design.md). The row also carries a "Waiting" tag in its meta. */
+.tl-log .tli .bul.check.wait {
+  border-color: var(--lapis);
+  border-style: dashed;
+}
+
+/* A completed todo stays in the stream — it is history now, and history is
+   what this page is — but reads as settled: its bullet's tick is solid and
+   its title is muted. The "Done" tag in the meta row is what states it in
+   words. */
+.tl-log .tli.done .bul svg {
+  stroke: var(--green);
+  opacity: 1;
+}
+
+.tl-log .tli.done .t {
+  color: var(--mute);
 }
 
 .tl-log .tli .body {
@@ -151,12 +217,22 @@
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--faint);
-  margin-top: 3px;
+  margin-top: 4px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
-  letter-spacing: .3px;
+  gap: 6px;
+  letter-spacing: 0.3px;
+}
+
+/* Event / Todo, as a word. The bullet's shape says the same thing at a
+   glance; this is what says it to a reader who cannot use the shape, and what
+   matches the Type filter's own two labels. */
+.tl-log .tli .tli-type {
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--faint);
 }
 
 .tl-log .tli .note {
@@ -164,6 +240,40 @@
   color: var(--mute);
   margin-top: 5px;
   line-height: 1.5;
+}
+
+/*
+ * The due-urgency colours. `.due` is declared in Todos.css too, identically,
+ * and this is a deliberate second copy rather than an import: Todos.css is
+ * that view's stylesheet, this page is not that view, and a page depending on
+ * another view's stylesheet happening to be in the bundle is the exact
+ * coupling `.tl-log`'s scoping comment above exists because of. Scoped under
+ * `.tl-log` so the two cannot collide even if both are loaded.
+ *
+ * Text, never colour alone: the label already reads "3d overdue" / "today" /
+ * "Sep 12" before any of these apply.
+ */
+.tl-log .tli .due {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+
+.tl-log .tli .due.over {
+  color: var(--red);
+}
+
+.tl-log .tli .due.soon {
+  color: var(--orange);
+}
+
+.tl-log .tli .due.later {
+  color: var(--faint);
+}
+
+.tl-log .tli .due.wait {
+  color: var(--lapis);
 }
 
 .entlinks {

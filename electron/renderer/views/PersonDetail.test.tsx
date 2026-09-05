@@ -70,6 +70,7 @@ function makeActivity(overrides: Partial<Activity> & { id: string }): Activity {
     kind: 'note',
     title: 'Activity',
     body: null,
+    dueOn: null,
     companyId: null,
     personId: null,
     engagementId: null,

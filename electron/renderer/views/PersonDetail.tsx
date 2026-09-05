@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { parseDateOnly } from '../../shared/format'
 import type { Company, CompanyKind } from '../../shared/companies'
 import type { Person, PersonAffiliation, UpdatePersonInput } from '../../shared/people'
-import type { Activity, ActivityKind } from '../../shared/activity'
+import type { Activity } from '../../shared/activity'
+import { TimelineKindIcon } from '../components/timeline/TimelineKindTag'
 import { callCrm, ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { Card } from '../components/primitives/Card'
@@ -448,22 +449,12 @@ function MoveCompanyForm({
 // `companyId` instead, which only works for a person who never moved).
 // ---------------------------------------------------------------------------
 
-const ACTIVITY_ICON_PATHS: Record<ActivityKind, ReactNode> = {
-  call: <path d="M5 4h3l2 5-2 1a10 10 0 005 5l1-2 5 2v3a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" />,
-  email: (
-    <>
-      <rect x="3" y="6" width="18" height="13" rx="2" />
-      <path d="M3.5 7.5L12 13l8.5-5.5" />
-    </>
-  ),
-  meeting: (
-    <>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 8v4l3 2" />
-    </>
-  ),
-  note: <path d="M4 19l1-4 10-10 3 3L8 18z" />
-}
+// The glyph map this card used to declare here was a byte-identical copy of
+// CompanyDetail.tsx's, and both were `Record<ActivityKind, …>` — total maps
+// over what was then a closed enum. The category is the operator's own list
+// now, so both import `TimelineKindIcon`
+// (`components/timeline/TimelineKindTag.tsx`), which falls back to a neutral
+// mark for a category it ships no glyph for instead of rendering nothing.
 
 function ActivityCard({ activity, companiesById }: { activity: readonly Activity[]; companiesById: Map<string, Company> }) {
   return (
@@ -490,9 +481,7 @@ function ActivityItem({ entry, company }: { entry: Activity; company: Company | 
   return (
     <div className="tli">
       <span className="bul">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          {ACTIVITY_ICON_PATHS[entry.kind]}
-        </svg>
+        <TimelineKindIcon kind={entry.kind} />
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span className="t">{entry.title}</span>

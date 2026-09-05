@@ -3,7 +3,6 @@ import type Database from 'better-sqlite3'
 import { nowTimestamp } from '../../../shared/format'
 import { timestampSchema } from '../../../shared/types'
 import {
-  ACTIVITY_KINDS,
   ACTIVITY_SOURCES,
   type Activity,
   activityFiltersSchema,
@@ -52,7 +51,7 @@ import { type ConstraintHandler, NOT_NULL_HANDLER, translateWriteError } from '.
  * `electron/shared/activity.ts` (ADR-007), not here — see that module's
  * header, and `companies.ts`'s header for the fuller rationale this repeats.
  */
-export { ACTIVITY_KINDS, ACTIVITY_SOURCES, activityFiltersSchema, logActivityInputSchema, recordContactEntitySchema }
+export { ACTIVITY_SOURCES, activityFiltersSchema, logActivityInputSchema, recordContactEntitySchema }
 export type { Activity, ActivityFilters, ActivityKind, ActivitySource, LogActivityInput, RecordContactEntity }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +85,7 @@ interface ActivityRow {
   readonly kind: string
   readonly title: string
   readonly body: string | null
+  readonly due_on: string | null
   readonly company_id: string | null
   readonly person_id: string | null
   readonly engagement_id: string | null
@@ -101,6 +101,7 @@ function mapRow(row: ActivityRow): Activity {
     kind: row.kind as ActivityKind,
     title: row.title,
     body: row.body,
+    dueOn: row.due_on,
     companyId: row.company_id,
     personId: row.person_id,
     engagementId: row.engagement_id,
@@ -230,14 +231,15 @@ export function logActivity(db: Database.Database, input: unknown): Activity {
   const run = db.transaction(() => {
     try {
       db.prepare(
-        `INSERT INTO activity (id, occurred_at, kind, title, body, company_id, person_id, engagement_id, source, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO activity (id, occurred_at, kind, title, body, due_on, company_id, person_id, engagement_id, source, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id,
         parsed.occurredAt,
         parsed.kind,
         parsed.title,
         parsed.body,
+        parsed.dueOn ?? null,
         parsed.companyId ?? null,
         parsed.personId ?? null,
         parsed.engagementId ?? null,
