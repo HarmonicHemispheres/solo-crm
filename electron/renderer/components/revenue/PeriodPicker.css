@@ -40,7 +40,7 @@
 }
 
 /* A fixed minimum so stepping does not shuffle the arrows sideways as the
-   label's width changes ("2026" then "2022 – 2026"). */
+   label's width changes ("2026" then "Mar 2026", or a custom range). */
 .periodpick-label {
   font-family: var(--mono);
   font-size: 11px;

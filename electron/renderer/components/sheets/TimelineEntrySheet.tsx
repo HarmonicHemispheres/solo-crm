@@ -18,6 +18,7 @@ import {
 } from '../../../shared/timeline'
 import { TASK_STATUSES, type CreateTaskInput, type TaskStatus } from '../../../shared/tasks'
 import type { LogActivityInput } from '../../../shared/activity'
+import type { SheetPrefill } from '../shell/layer-manager-context'
 
 /**
  * The one form that adds either half of the timeline — the plus button's
@@ -54,6 +55,14 @@ export interface TimelineEntrySheetProps {
   onClose: () => void
   /** Which half the form opens on. The operator can still switch — the point of one form is that they need not have decided before pressing plus. */
   initialType?: TimelineEntryType
+  /**
+   * Relations the form opens already pointed at, when it was opened from a
+   * record's own page — the company page's Activity card `+`. Only initial
+   * values: every one is a field the operator can still change, and a
+   * prefilled id that no longer resolves to a row just leaves its select on
+   * "none", the same as any other stale selection.
+   */
+  prefill?: SheetPrefill
 }
 
 /** See `CompanySheet`'s `FIELD_LABELS` for the rule this table follows: every payload key this form can be blamed for, under the name its field carries. */
@@ -86,7 +95,7 @@ const STATUS_OPTIONS = TASK_STATUSES.filter((status) => status !== 'done').map((
   label: STATUS_LABELS[status]
 }))
 
-export function TimelineEntrySheet({ onClose, initialType = 'event' }: TimelineEntrySheetProps) {
+export function TimelineEntrySheet({ onClose, initialType = 'event', prefill }: TimelineEntrySheetProps) {
   const formId = useId()
   const queryClient = useQueryClient()
   const kinds = useTimelineKinds()
@@ -103,9 +112,9 @@ export function TimelineEntrySheet({ onClose, initialType = 'event' }: TimelineE
   const [happenedOn, setHappenedOn] = useState(initialType === 'todo' ? '' : localToday())
   const [dueOn, setDueOn] = useState('')
   const [status, setStatus] = useState<TaskStatus>('todo')
-  const [companyId, setCompanyId] = useState('')
-  const [engagementId, setEngagementId] = useState('')
-  const [personId, setPersonId] = useState('')
+  const [companyId, setCompanyId] = useState(prefill?.companyId ?? '')
+  const [engagementId, setEngagementId] = useState(prefill?.engagementId ?? '')
+  const [personId, setPersonId] = useState(prefill?.personId ?? '')
   const [error, setError] = useState<SheetError | null>(null)
 
   const kindOptions = kinds.map((entry) => ({ value: entry.id, label: entry.label }))

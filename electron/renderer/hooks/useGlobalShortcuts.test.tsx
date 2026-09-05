@@ -102,6 +102,7 @@ describe('useGlobalShortcuts', () => {
       closeLayer: vi.fn(),
       retargetLayer: vi.fn(),
       openSheet: vi.fn(),
+      createSheet: vi.fn(),
       editSheet: vi.fn()
     }
     render(

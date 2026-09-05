@@ -357,7 +357,26 @@ interface RevenueLineRow {
  * blank a page.
  */
 export function listRevenueLines(db: Database.Database, input: unknown): readonly RevenueLine[] {
-  const { from, to } = parseInput(listRevenueLinesInputSchema, input)
+  const { from, to, engagementId } = parseInput(listRevenueLinesInputSchema, input)
+
+  // The schema guarantees at least one of these, and both ends of a window
+  // together, so `where` is never empty and never half a BETWEEN.
+  const where: string[] = []
+  const params: string[] = []
+  if (from !== undefined && to !== undefined) {
+    where.push('r.period_month BETWEEN ? AND ?')
+    params.push(from, to)
+  }
+  if (engagementId !== undefined) {
+    where.push('r.engagement_id = ?')
+    params.push(engagementId)
+  }
+
+  // A window is a report — newest first, the way the Revenue view's list has
+  // always read. One engagement's lines are a schedule, and a schedule reads
+  // forwards: the first month it bills is the first row.
+  const order = engagementId === undefined ? 'r.period_month DESC' : 'r.period_month ASC'
+
   const rows = db
     .prepare(
       `SELECT r.id, r.engagement_id, e.name AS engagement_name, c.name AS billing_company_name,
@@ -365,10 +384,10 @@ export function listRevenueLines(db: Database.Database, input: unknown): readonl
        FROM revenue_lines r
        LEFT JOIN engagements e ON e.id = r.engagement_id
        LEFT JOIN companies c ON c.id = e.billing_company_id
-       WHERE r.period_month BETWEEN ? AND ?
-       ORDER BY r.period_month DESC, e.name COLLATE NOCASE, r.kind`
+       WHERE ${where.join(' AND ')}
+       ORDER BY ${order}, e.name COLLATE NOCASE, r.kind`
     )
-    .all(from, to) as RevenueLineRow[]
+    .all(...params) as RevenueLineRow[]
 
   const lines: RevenueLine[] = []
   for (const row of rows) {

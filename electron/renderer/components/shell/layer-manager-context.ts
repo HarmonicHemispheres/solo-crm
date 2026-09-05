@@ -64,7 +64,29 @@ export type SheetKind = 'company' | 'person' | 'engagement' | 'todo' | 'entry' |
  * proved it is in edit mode, and "create" is a value that had to be written
  * rather than the absence of one.
  */
-export type SheetFormTarget = { readonly mode: 'create' } | { readonly mode: 'edit'; readonly id: string }
+export type SheetFormTarget = { readonly mode: 'create'; readonly prefill?: SheetPrefill } | { readonly mode: 'edit'; readonly id: string }
+
+/**
+ * The records a create form opens already pointed at, when the button that
+ * opened it was sitting on one of them — the company page's Activity card
+ * being the first (its own `+`, which must not make the operator re-pick the
+ * company they are looking at).
+ *
+ * This is optional where `SheetFormTarget`'s `mode` and `editSheet`'s `id`
+ * are deliberately not, and the difference is the point. Those two decide
+ * *what the sheet is*, so leaving one off silently opens the wrong thing —
+ * T-260829-08's lesson. A prefill decides only what a field starts as: left
+ * off, the form opens blank, which is a create form doing exactly its job.
+ * It can therefore be optional without reopening that hole.
+ *
+ * Every key is a relation a create form already offers as a field, so a
+ * prefill never lets a caller set something the operator could not.
+ */
+export interface SheetPrefill {
+  readonly companyId?: string
+  readonly personId?: string
+  readonly engagementId?: string
+}
 
 /** A `SheetFormTarget` plus the kind that decides which form `LayerManager` mounts. */
 export type SheetTarget = SheetFormTarget & { readonly kind: SheetKind }
@@ -116,6 +138,17 @@ export interface LayerManagerContextValue {
    * that already exists is `editSheet` below, not an optional tail on this
    * one (T-260901-10). */
   openSheet: (kind: SheetKind, trigger?: HTMLElement | null) => void
+  /**
+   * `openSheet`, with the create form's relation fields already pointed at
+   * the records the caller is sitting on — see `SheetPrefill` for why this
+   * payload may be optional where `editSheet`'s `id` may not.
+   *
+   * A separate method rather than a third argument on `openSheet` so that
+   * the plain "new, from nowhere in particular" call keeps its two-argument
+   * shape and cannot grow a silent third; a caller that wants a prefill has
+   * to name one. `TimelineEntrySheet` reads it today.
+   */
+  createSheet: (kind: SheetKind, prefill: SheetPrefill, trigger?: HTMLElement | null) => void
   /**
    * Opens the generic 'sheet' layer holding `kind`'s form, bound to an
    * existing record (T-260901-10). A second method rather than an optional

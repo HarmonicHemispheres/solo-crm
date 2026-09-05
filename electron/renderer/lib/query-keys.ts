@@ -108,7 +108,9 @@ export const queryKeys = {
     all: () => ['revenue'] as const,
     summary: (scope?: { from: string; to: string; bucket: string }) =>
       scope === undefined ? (['revenue', 'summary'] as const) : (['revenue', 'summary', scope.from, scope.to, scope.bucket] as const),
-    lines: (from: string, to: string) => ['revenue', 'lines', from, to] as const
+    lines: (from: string, to: string) => ['revenue', 'lines', from, to] as const,
+    /** One engagement's whole schedule, whatever months it runs — the engagement form's list. Under `revenue`, so `invalidate.revenue` clears it along with everything else a status write changes. */
+    engagementLines: (engagementId: string) => ['revenue', 'lines', 'engagement', engagementId] as const
   },
   /**
    * `offerings:*` (T-260901-07). The entity is the channel's own namespace, so

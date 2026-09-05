@@ -859,6 +859,22 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       for (const row of activityRows) expect(row.querySelector('button')).toBeNull()
     })
 
+    it('the card’s plus opens the full entry form already pointed at this company', async () => {
+      // The one-line composer beside it stays the fast path; this is the one
+      // that reaches a full description, a category and a due date. Landing
+      // on it having to re-pick the company whose page it was opened from
+      // would be the whole point of a per-company button thrown away.
+      renderCompanyDetail('co-ezdeploy', buildFullCrm())
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'New entry for EZDeploy' }))
+
+      const sheet = await screen.findByRole('dialog', { name: 'New event' })
+      await waitFor(() => expect((within(sheet).getByLabelText('Company') as HTMLSelectElement).value).toBe('co-ezdeploy'))
+      // The form opens on its event half and can still be switched.
+      expect(within(sheet).getByRole('button', { name: 'Todo' })).toBeTruthy()
+    })
+
     it('logging a touch from the card appends it without leaving the page', async () => {
       const crm = buildFullCrm()
       renderCompanyDetail('co-ezdeploy', crm)

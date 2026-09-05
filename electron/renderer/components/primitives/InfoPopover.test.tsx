@@ -111,6 +111,7 @@ describe('InfoPopover', () => {
         closeLayer,
         retargetLayer: vi.fn(),
         openSheet: vi.fn(),
+        createSheet: vi.fn(),
         editSheet: vi.fn()
       }
       render(
@@ -135,6 +136,7 @@ describe('InfoPopover', () => {
         closeLayer,
         retargetLayer: vi.fn(),
         openSheet: vi.fn(),
+        createSheet: vi.fn(),
         editSheet: vi.fn()
       }
       render(
@@ -160,6 +162,7 @@ describe('InfoPopover', () => {
         closeLayer: vi.fn(),
         retargetLayer: vi.fn(),
         openSheet: vi.fn(),
+        createSheet: vi.fn(),
         editSheet: vi.fn()
       }
       render(

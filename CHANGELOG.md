@@ -5,6 +5,48 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.12
+
+- ✨ **Notes and todos carry the same six things** — a short description, a
+  full description, the date it happened, a due date, whether it is an event
+  or a todo, and a category. A todo can now hold a full write-up and a date
+  it happened; an event can hold a due date.
+- ✨ **One form for both** — **+ New entry** on Activity and **+ New todo**
+  on Todos open the same sheet, with an Event / Todo switch at the top that
+  decides where it is filed. ⌘L still logs a touch in five seconds, and now
+  offers the same categories.
+- ✨ **Categories are yours** — a Categories section in Settings renames,
+  recolours, adds and removes them. It starts with Event, Meeting, Task and
+  Note, plus Call and Email so nothing already logged loses its label.
+  Renaming keeps every row that carries it; a category you remove still
+  reads correctly on the rows that already have it.
+- ⚡ **Activity is one timeline** — a single top-to-bottom stream instead of
+  a stack of separate cards. Events and todos interleave by when they
+  happened, or when they are due if they have not happened yet. Todo bullets
+  are checkboxes that tick off in place. Filter by type, by category, or by
+  a date range.
+- ✨ **A plus on the company page's Activity card** — opens the full entry
+  form already pointed at that company, for the times the one-line composer
+  beside it is not enough: a full description, a date that is not today, a
+  due date, a category.
+- ✨ **An engagement's revenue schedule, on the engagement** — the edit form
+  lists every month the engagement bills, each markable projected /
+  invoiced / paid without going to the Revenue report to find it. The
+  report's own list is unchanged. Only the state is editable: the months and
+  the amounts are still written from the terms above them.
+- 🐛 **Monthly means a month and Annual means a year** — the period picker
+  on Revenue and Today used to read a whole calendar year under *Monthly*
+  and five years under *Annual*, so picking Annual in 2026 showed
+  2022 – 2026 and a single month's revenue could not be asked for at all.
+  Monthly now selects one month and steps a month at a time; Annual selects
+  one year and steps a year. Both pages still open on the current year, and
+  a multi-year span is still available under Custom.
+- 🐛 **Tall forms scroll instead of running off the screen** — a sheet with
+  enough fields (the timeline entry form, the engagement form) grew past the
+  bottom of a short window and took its Create button with it. Sheets are
+  now capped to the window, and the fields scroll under a header and footer
+  that stay put.
+
 ## 0.6.11
 
 - ✨ **Timeline zoom** — Auto fits every month into the card as before; 1×,

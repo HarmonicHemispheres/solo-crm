@@ -203,18 +203,24 @@ time_entries (
 
 -- Work
 tasks (
-  id uuid pk, title text not null,
+  id uuid pk, title text not null,   -- the short description
+  body text null,           -- the full description
   status text,              -- todo | waiting | done
   is_next_step boolean default false,
+  occurred_at timestamp null,  -- when it happened
   due_on date null, waiting_since date null, done_at timestamp null,
+  kind text,                -- the category: a slug from the `timeline.kinds`
+                            -- setting, NOT a closed set. No CHECK constraint,
+                            -- here or on activity — see below.
   company_id uuid null, engagement_id uuid null, person_id uuid null,
   created_at, updated_at
 )
 
 activity (
   id uuid pk, occurred_at timestamp not null,
-  kind text,                -- call | email | meeting | note
-  title text, body text,
+  kind text,                -- the category, same vocabulary as tasks.kind
+  due_on date null,         -- when it should happen
+  title text, body text,    -- short and full description
   company_id uuid null, person_id uuid null, engagement_id uuid null,
   source text,              -- manual | gcal
                             -- 'gmail' is reserved and has no writer: the Gmail
@@ -225,6 +231,18 @@ activity (
   created_at, updated_at    -- always equal: rows are append-only (G8), never
                             -- updated. Kept anyway — uniform rule, sync-ready.
 )
+
+-- `tasks` and `activity` carry the same six facts — short description, full
+-- description, when it happened, when it is due, which of the two it is, and
+-- a category — but stay two tables. `activity` is append-only (G8, ADR-001)
+-- and `tasks` has a status lifecycle, transition-owned timestamps and the
+-- one-next-step-per-company invariant; a single table would have to give up
+-- the first and special-case the second, and would mean renumbering
+-- `search_fts`'s kind codes, which ADR-008 forbids. So event | todo is not a
+-- stored column: an event IS an activity row, a todo IS a tasks row, and the
+-- discriminator is which repository the write went to. `shared/timeline.ts`
+-- holds the shared vocabulary; `renderer/lib/timeline.ts` reads the two back
+-- as one stream. Migration 0010.
 
 -- External references
 links (

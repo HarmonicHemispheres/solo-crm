@@ -97,13 +97,34 @@ export const setRevenueLineStatusInputSchema = z
   .strict()
 export type SetRevenueLineStatusInput = z.infer<typeof setRevenueLineStatusInputSchema>
 
-/** Every line in a window, so the operator can see what they are marking. Inclusive at both ends, like every other month range here. */
+/**
+ * Every line the operator wants to see what they are marking on — asked for
+ * by window, by engagement, or by both.
+ *
+ * The window is inclusive at both ends, like every other month range here,
+ * and both ends travel together: half a window is a question with no answer,
+ * not a request for everything from January. The engagement filter is what
+ * lets the engagement form show one engagement's whole schedule without
+ * naming a window it would have to invent — a retainer's lines run as far as
+ * its term does, which the form does not know.
+ *
+ * At least one of the two must be present. An empty object would be "every
+ * line ever", which is the one read this channel should not offer: the table
+ * grows with the timelog (§8's 20k target) and nothing in the UI wants it.
+ */
 export const listRevenueLinesInputSchema = z
   .object({
-    from: periodMonthSchema,
-    to: periodMonthSchema
+    from: periodMonthSchema.optional(),
+    to: periodMonthSchema.optional(),
+    engagementId: z.string().optional()
   })
   .strict()
+  .refine((input) => (input.from === undefined) === (input.to === undefined), {
+    error: 'A window needs both ends'
+  })
+  .refine((input) => input.from !== undefined || input.engagementId !== undefined, {
+    error: 'Ask for a window, an engagement, or both'
+  })
 export type ListRevenueLinesInput = z.infer<typeof listRevenueLinesInputSchema>
 
 /**

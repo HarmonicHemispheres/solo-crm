@@ -786,6 +786,7 @@ function ActivityCard({
   inputRef: RefObject<HTMLInputElement | null>
 }) {
   const queryClient = useQueryClient()
+  const { createSheet } = useLayerManager()
   // Once for the whole feed, handed down to each row. Per-row it would be a
   // `QueryObserver` apiece for one cached value — see Activity.tsx's note
   // where the same wrapper was removed for the same reason.
@@ -854,9 +855,24 @@ function ActivityCard({
       count={feed.length + (nextStep == null ? 0 : 1)}
       caption="todos and touches, newest first"
       actions={
-        <Link className="card-more" to="/activity">
-          View all
-        </Link>
+        <>
+          {/* The composer below this is the one-line path and stays the
+              fastest way to log a touch on the company already on screen.
+              This opens the full entry form for the times that is not
+              enough — a full description, a date that is not today, a due
+              date, a category — already pointed at this company, so the
+              operator never re-picks the record they are looking at. */}
+          <IconButton
+            aria-label={`New entry for ${companyName}`}
+            title="New entry"
+            onClick={(event) => createSheet('entry', { companyId }, event.currentTarget)}
+          >
+            <PlusIcon />
+          </IconButton>
+          <Link className="card-more" to="/activity">
+            View all
+          </Link>
+        </>
       }
     >
       <Card>

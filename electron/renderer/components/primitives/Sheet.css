@@ -22,6 +22,13 @@
   width: min(600px, 94vw);
   display: flex;
   flex-direction: column;
+  /* Never taller than the scrim's content box (the viewport less its 11vh
+     top and 16px bottom padding). Without this the sheet grows to whatever
+     its fields need and simply runs off the bottom of the window: `.sheet-b`
+     already says `overflow: auto`, but a body that is never constrained has
+     nothing to scroll. The tall forms are the ones that showed it — the
+     timeline entry form's nine fields, and the engagement form. */
+  max-height: 100%;
 }
 
 .sheet:focus-visible {
@@ -52,6 +59,11 @@
   display: grid;
   gap: 14px;
   overflow: auto;
+  /* A flex item's `min-height` is `auto`, which floors it at its content's
+     height and stops it shrinking — so without this the body wins against
+     `.sheet`'s max-height and the header and footer are what get pushed out
+     of view instead. The header stays put and the body scrolls under it. */
+  min-height: 0;
 }
 
 .sheet-b .two {

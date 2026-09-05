@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { periodMonthSchema } from '../../../shared/types'
 import {
-  ANNUAL_YEARS,
   PERIOD_MODES,
   annualPeriod,
   customPeriod,
@@ -23,17 +22,18 @@ import {
 const MARCH = periodMonthSchema.parse('2026-03-01')
 
 describe('the three modes', () => {
-  it('makes Monthly a whole calendar year, whatever month it is anchored on', () => {
-    // Not a rolling twelve: a steppable window has to have a name, and
-    // "2026" is one where "Apr 2025 – Mar 2026" is not.
-    expect(monthlyPeriod(MARCH)).toEqual({ mode: 'monthly', from: '2026-01-01', to: '2026-12-01', bucket: 'month' })
-    expect(monthlyPeriod(periodMonthSchema.parse('2026-12-01')).from).toBe('2026-01-01')
+  it('makes Monthly the one month it is anchored on', () => {
+    // The operator's report: "monthly doesn't seem to show revenue for a
+    // single month". A control labelled Monthly selects a month.
+    expect(monthlyPeriod(MARCH)).toEqual({ mode: 'monthly', from: '2026-03-01', to: '2026-03-01', bucket: 'month' })
   })
 
-  it('makes Annual five whole years ending with the anchor’s, bucketed by year', () => {
-    const period = annualPeriod(MARCH)
-    expect(period).toEqual({ mode: 'annual', from: '2022-01-01', to: '2026-12-01', bucket: 'year' })
-    expect(Number(period.to.slice(0, 4)) - Number(period.from.slice(0, 4)) + 1).toBe(ANNUAL_YEARS)
+  it('makes Annual the one calendar year the anchor falls in, drawn as its twelve months', () => {
+    // The operator's other report: picking Annual in 2026 used to land on
+    // 2022 – 2026. One year, and the bucket stays `month` so the year is
+    // still read as twelve bars rather than one.
+    expect(annualPeriod(MARCH)).toEqual({ mode: 'annual', from: '2026-01-01', to: '2026-12-01', bucket: 'month' })
+    expect(annualPeriod(periodMonthSchema.parse('2026-12-01')).from).toBe('2026-01-01')
   })
 
   it('reads a Custom range typed backwards as the range, not as nothing', () => {
@@ -42,28 +42,41 @@ describe('the three modes', () => {
     expect(backwards).toEqual(forwards)
   })
 
-  it('only ever buckets by year in Annual — every other mode draws months', () => {
+  it('draws months in every mode — no mode quietly asks for year buckets', () => {
     // The bucket is sent to main, where the folding happens (ADR-003). A
-    // mode that quietly asked for year buckets would show one bar where the
-    // operator asked for twelve.
-    expect(monthlyPeriod(MARCH).bucket).toBe('month')
-    expect(customPeriod(MARCH, MARCH).bucket).toBe('month')
-    expect(annualPeriod(MARCH).bucket).toBe('year')
+    // mode that asked for year buckets would show one bar where the operator
+    // asked for twelve. The channel still supports `year`; nothing picks it.
+    for (const period of [monthlyPeriod(MARCH), annualPeriod(MARCH), customPeriod(MARCH, MARCH)]) {
+      expect(period.bucket, `${period.mode} does not draw months`).toBe('month')
+    }
+  })
+
+  it('still reaches a five-year span, through Custom', () => {
+    // What Annual used to be is not gone, it is just no longer what Annual
+    // means.
+    const fiveYears = customPeriod(periodMonthSchema.parse('2022-01-01'), periodMonthSchema.parse('2026-12-01'))
+    expect(periodLabel(fiveYears)).toBe('Jan 2022 – Dec 2026')
   })
 })
 
 describe('stepping', () => {
-  it('moves Monthly one year at a time', () => {
+  it('moves Monthly one month at a time', () => {
     const back = stepPeriod(monthlyPeriod(MARCH), -1)
-    expect(back.from).toBe('2025-01-01')
-    expect(back.to).toBe('2025-12-01')
+    expect(back).toEqual({ mode: 'monthly', from: '2026-02-01', to: '2026-02-01', bucket: 'month' })
     expect(stepPeriod(back, 1)).toEqual(monthlyPeriod(MARCH))
   })
 
-  it('moves Annual by its whole span, so two presses never overlap one window', () => {
+  it('steps Monthly across a year boundary', () => {
+    // January back one is December of the year before, not month zero.
+    const january = monthlyPeriod(periodMonthSchema.parse('2026-01-01'))
+    expect(stepPeriod(january, -1).from).toBe('2025-12-01')
+  })
+
+  it('moves Annual one year at a time', () => {
     const back = stepPeriod(annualPeriod(MARCH), -1)
-    expect(back.to).toBe('2021-12-01')
-    expect(back.from).toBe('2017-01-01')
+    expect(back.from).toBe('2025-01-01')
+    expect(back.to).toBe('2025-12-01')
+    expect(stepPeriod(back, 1)).toEqual(annualPeriod(MARCH))
   })
 
   it('moves Custom by its own length, inclusive of both ends', () => {
@@ -86,12 +99,27 @@ describe('stepping', () => {
 
 describe('switching mode', () => {
   it('keeps where you are, not where you started', () => {
-    // Stepping back to 2023 and then choosing Annual must show the five
-    // years ending 2023 — not the five ending now, which would silently
-    // undo four presses.
-    const twentyThree = stepPeriod(stepPeriod(stepPeriod(monthlyPeriod(MARCH), -1), -1), -1)
+    // Stepping back to 2023 and then choosing Monthly must stay in 2023 —
+    // landing on today's month would silently undo three presses.
+    const twentyThree = stepPeriod(stepPeriod(stepPeriod(annualPeriod(MARCH), -1), -1), -1)
     expect(twentyThree.from).toBe('2023-01-01')
-    expect(withMode(twentyThree, 'annual').to).toBe('2023-12-01')
+    expect(withMode(twentyThree, 'monthly')).toEqual(monthlyPeriod(periodMonthSchema.parse('2023-12-01')))
+  })
+
+  it('narrows to the month the operator is living in, when the window holds it', () => {
+    // Opening on 2026 in March and pressing Monthly means March, not
+    // December — "the window's end" alone would give the wrong month for
+    // eleven months of the year.
+    expect(withMode(annualPeriod(MARCH), 'monthly', MARCH)).toEqual(monthlyPeriod(MARCH))
+  })
+
+  it('ignores an anchor outside the window, so leaving 2019 does not jump back to now', () => {
+    const nineteen = annualPeriod(periodMonthSchema.parse('2019-06-01'))
+    expect(withMode(nineteen, 'monthly', MARCH)).toEqual(monthlyPeriod(periodMonthSchema.parse('2019-12-01')))
+  })
+
+  it('widens a month back to its own year', () => {
+    expect(withMode(monthlyPeriod(MARCH), 'annual', MARCH)).toEqual(annualPeriod(MARCH))
   })
 
   it('is defined for every declared mode', () => {
@@ -103,8 +131,8 @@ describe('switching mode', () => {
 
 describe('labels', () => {
   it('names each window in the vocabulary of the mode that made it', () => {
-    expect(periodLabel(monthlyPeriod(MARCH))).toBe('2026')
-    expect(periodLabel(annualPeriod(MARCH))).toBe('2022 – 2026')
+    expect(periodLabel(monthlyPeriod(MARCH))).toBe('Mar 2026')
+    expect(periodLabel(annualPeriod(MARCH))).toBe('2026')
     expect(periodLabel(customPeriod(MARCH, periodMonthSchema.parse('2026-08-01')))).toBe('Mar 2026 – Aug 2026')
   })
 
@@ -122,7 +150,7 @@ describe('labels', () => {
 
 describe('the query scope', () => {
   it('carries exactly the three fields that change the answer', () => {
-    expect(periodScope(annualPeriod(MARCH))).toEqual({ from: '2022-01-01', to: '2026-12-01', bucket: 'year' })
+    expect(periodScope(annualPeriod(MARCH))).toEqual({ from: '2026-01-01', to: '2026-12-01', bucket: 'month' })
   })
 
   it('separates two windows that differ only in bucket', () => {
@@ -132,11 +160,22 @@ describe('the query scope', () => {
     const byYear = periodScope({ mode: 'annual', from: '2026-01-01', to: '2026-12-01', bucket: 'year' })
     expect(byMonth).not.toEqual(byYear)
   })
+
+  it('separates one month from the year around it', () => {
+    // The bug this replaces: Monthly and Annual anchored on the same instant
+    // used to differ, and a Monthly window that spanned the whole year meant
+    // the single-month question could not be asked at all.
+    expect(periodScope(monthlyPeriod(MARCH))).not.toEqual(periodScope(annualPeriod(MARCH)))
+  })
 })
 
 describe('the default', () => {
-  it('opens on the calendar year the given instant falls in', () => {
-    expect(defaultPeriod(new Date('2026-09-03T12:00:00.000Z'))).toMatchObject({ mode: 'monthly', bucket: 'month' })
-    expect(defaultPeriod(new Date('2026-09-03T12:00:00.000Z')).from.slice(0, 4)).toBe(String(new Date('2026-09-03T12:00:00.000Z').getFullYear()))
+  it('opens on the calendar year the given instant falls in, one bar per month', () => {
+    // Deliberately the year and not the month: the landing view of Revenue
+    // and Today is unchanged by the mode rework.
+    const now = new Date('2026-09-03T12:00:00.000Z')
+    expect(defaultPeriod(now)).toMatchObject({ mode: 'annual', bucket: 'month' })
+    expect(defaultPeriod(now).from.slice(0, 4)).toBe(String(now.getFullYear()))
+    expect(defaultPeriod(now).to.slice(0, 4)).toBe(String(now.getFullYear()))
   })
 })

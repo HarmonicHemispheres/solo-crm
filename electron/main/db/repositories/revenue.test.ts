@@ -421,6 +421,54 @@ describe('listRevenueLines and setRevenueLineStatus', () => {
     })
   })
 
+  it('lists one engagement’s whole schedule when asked by engagement, with no window to invent', () => {
+    // What the engagement form asks for: a retainer's lines run as far as
+    // its term does, and the form does not know how far that is.
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const engagementId = anyLine(db).engagementId
+      expect(engagementId).not.toBeNull()
+
+      const lines = listRevenueLines(db, { engagementId })
+
+      expect(lines.length).toBeGreaterThan(0)
+      for (const line of lines) expect(line.engagementId).toBe(engagementId)
+      // A schedule reads forwards, unlike the report's newest-first window.
+      const months = lines.map((line) => line.periodMonth)
+      expect(months).toEqual([...months].sort())
+    })
+  })
+
+  it('narrows to the intersection when given both an engagement and a window', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      const engagementId = anyLine(db).engagementId
+      const lines = listRevenueLines(db, { engagementId, from: '2026-09-01', to: '2026-09-01' })
+
+      for (const line of lines) {
+        expect(line.engagementId).toBe(engagementId)
+        expect(line.periodMonth).toBe('2026-09-01')
+      }
+    })
+  })
+
+  it('refuses a request that constrains nothing, rather than reading every line ever written', () => {
+    // `revenue_lines` grows with the timelog (§8's 20k target); "everything"
+    // is the one read this channel must not offer.
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      expect(() => listRevenueLines(db, {})).toThrow()
+    })
+  })
+
+  it('refuses half a window, which is a question with no answer', () => {
+    withDatabase((db) => {
+      seedFixture(db, { referenceNow: NOW })
+      expect(() => listRevenueLines(db, { from: '2026-09-01' })).toThrow()
+      expect(() => listRevenueLines(db, { to: '2026-09-01' })).toThrow()
+    })
+  })
+
   it('lists nothing for a window with no lines, rather than refusing', () => {
     withDatabase((db) => {
       seedFixture(db, { referenceNow: NOW })

@@ -836,3 +836,88 @@ describe('EngagementSheet — edit mode (T-260901-10)', () => {
     expect(screen.getByRole('dialog', { name: 'Edit engagement' })).toBeTruthy()
   })
 })
+
+/**
+ * The revenue schedule on the edit form — the second place a line's state can
+ * be set, beside the Revenue report's own list. The boundary is what matters:
+ * the form asks for this engagement's lines by engagement (not by a window it
+ * would have to invent), and marking one writes a status and nothing else.
+ */
+describe('EngagementSheet — the revenue schedule', () => {
+  const LINES = [
+    {
+      id: 'line-sep',
+      engagementId: RETAINER.id,
+      engagementName: RETAINER.name,
+      billingCompanyName: 'Rinvii',
+      periodMonth: '2026-09-01',
+      kind: 'retainer' as const,
+      status: 'projected' as const,
+      amountCents: 180_000
+    },
+    {
+      id: 'line-oct',
+      engagementId: RETAINER.id,
+      engagementName: RETAINER.name,
+      billingCompanyName: 'Rinvii',
+      periodMonth: '2026-10-01',
+      kind: 'retainer' as const,
+      status: 'invoiced' as const,
+      amountCents: 180_000
+    }
+  ]
+
+  it('asks for this engagement’s lines by engagement, not by a window', async () => {
+    const lines = vi.fn(async () => ({ ok: true as const, data: LINES }))
+    await renderEditSheet(RETAINER, { 'revenue:lines': lines })
+
+    await waitFor(() => expect(lines).toHaveBeenCalled())
+    // A retainer's schedule runs as far as its term does; a window here
+    // would be a guess that silently hides the months outside it.
+    expect(lines.mock.calls[0]?.[0]).toEqual({ engagementId: RETAINER.id })
+  })
+
+  it('lists each month with its amount and its current state', async () => {
+    await renderEditSheet(RETAINER, { 'revenue:lines': vi.fn(async () => ({ ok: true as const, data: LINES })) })
+
+    expect(await screen.findByText('Sep 2026')).toBeTruthy()
+    expect(screen.getByText('Oct 2026')).toBeTruthy()
+    expect(screen.getAllByText('$1,800').length).toBe(2)
+    expect(screen.getByRole('group', { name: 'Status of Sep 2026' })).toBeTruthy()
+  })
+
+  it('marks a month invoiced by writing one column, and sends no figure with it', async () => {
+    const setLineStatus = vi.fn(async () => ({
+      ok: true as const,
+      data: { ok: true as const, data: { ...LINES[0], status: 'invoiced' as const } }
+    }))
+    await renderEditSheet(RETAINER, {
+      'revenue:lines': vi.fn(async () => ({ ok: true as const, data: LINES })),
+      'revenue:setLineStatus': setLineStatus
+    })
+
+    const row = await screen.findByRole('group', { name: 'Status of Sep 2026' })
+    fireEvent.click(within(row).getByRole('button', { name: 'Invoiced' }))
+
+    await waitFor(() => expect(setLineStatus).toHaveBeenCalledTimes(1))
+    // ADR-003: the amount, the month and the kind are the generator's, read
+    // from the terms above. A write from here that carried one would be the
+    // second path around it.
+    expect(setLineStatus.mock.calls[0]?.[0]).toEqual({ id: 'line-sep', status: 'invoiced' })
+  })
+
+  it('shows no schedule on a create form — there is no engagement to have generated one', async () => {
+    const lines = vi.fn(async () => ({ ok: true as const, data: [] }))
+    renderSheet(vi.fn(), { 'revenue:lines': lines })
+
+    await screen.findByLabelText('Name')
+    expect(screen.queryByText('Revenue lines')).toBeNull()
+    expect(lines).not.toHaveBeenCalled()
+  })
+
+  it('says a signed engagement with no lines yet is empty, rather than showing a broken list', async () => {
+    await renderEditSheet(RETAINER, { 'revenue:lines': vi.fn(async () => ({ ok: true as const, data: [] })) })
+
+    expect(await screen.findByText(/No lines yet/)).toBeTruthy()
+  })
+})

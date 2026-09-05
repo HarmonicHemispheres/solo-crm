@@ -12,6 +12,7 @@ import { ModelTag } from '../components/primitives/ModelTag'
 import { RevenueChart, RevenueLegend } from '../components/revenue/RevenueChart'
 import { PeriodPicker } from '../components/revenue/PeriodPicker'
 import { defaultPeriod, formatPeriodMonth, periodLabel, periodScope, type Period } from '../components/revenue/period'
+import { LINE_KIND_LABEL, LINE_STATUS_OPTIONS } from '../components/revenue/line-labels'
 import { ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../lib/ipc'
 import { invalidate, queryKeys } from '../lib/query-keys'
 import { identityColor, initials } from '../lib/identity'
@@ -64,26 +65,6 @@ const ROLLUP_COLUMN: Record<RevenueRollup, string> = {
   client: 'Work for',
   model: 'Model'
 }
-
-const LINE_KIND_LABEL: Record<string, string> = {
-  retainer: 'Retainer',
-  milestone: 'Milestone',
-  tm_estimate: 'T&M estimate',
-  tm_actual: 'T&M actual',
-  expense: 'Expense'
-}
-
-/**
- * The three states of a line, in the order money moves through them. The
- * control is a Toggle rather than a single cycling button: three states is
- * one too many to cycle through blind, and a segmented control shows where
- * the row is as well as where it can go.
- */
-const LINE_STATUS_OPTIONS = [
-  { value: 'projected', label: 'Projected' },
-  { value: 'invoiced', label: 'Invoiced' },
-  { value: 'paid', label: 'Paid' }
-] as const satisfies ReadonlyArray<{ value: RevenueLineStatus; label: string }>
 
 function percent(share: number): string {
   return `${Math.round(share * 100)}%`

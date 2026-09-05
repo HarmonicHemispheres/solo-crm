@@ -1,0 +1,81 @@
+/* The engagement form's revenue schedule — one row per `revenue_lines` row,
+   each markable projected / invoiced / paid. Scoped to `.eng-line*` so it
+   cannot reach the Revenue view's own `.rev-line` list, which says the same
+   thing in a wider column and keeps its own rules (the unscoped-selector
+   collision R-260829-03 found the hard way). */
+
+.eng-lines {
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.eng-lines-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--papyrus);
+}
+
+.eng-lines-h .meta {
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.eng-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.eng-line:first-of-type {
+  border-top: none;
+}
+
+/* The month and its kind take what is left after the amount and the toggle,
+   which are both sized by their content. `min-width: 0` so a long kind label
+   truncates inside the row rather than widening it — the sheet is a fixed
+   600px and has nowhere to grow. */
+.eng-line-id {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.eng-line-id .nm {
+  font-size: 12px;
+  color: var(--papyrus);
+  white-space: nowrap;
+}
+
+.eng-line-id .meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eng-line-amt {
+  font-size: 12px;
+  color: var(--papyrus);
+  white-space: nowrap;
+}
+
+/* Below the two-column fold the sheet is narrow enough that the toggle and
+   the amount stop fitting beside the month; the row becomes two lines with
+   the control on its own. */
+@media (max-width: 560px) {
+  .eng-line {
+    flex-wrap: wrap;
+  }
+
+  .eng-line-amt {
+    margin-left: auto;
+  }
+}

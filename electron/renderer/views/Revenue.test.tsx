@@ -294,18 +294,38 @@ describe('Revenue — the reporting period', () => {
     expect(screen.getByText(String(year - 1))).toBeTruthy()
   })
 
-  it('asks for year buckets on Annual — the fold happens in main, not here', async () => {
-    // The ADR-003 line: twelve monthly figures added into one bar is an
-    // attribution to a period. If this ever starts passing with
-    // `bucket: 'month'`, the view has started summing.
+  it('asks main for one calendar year on Annual, rather than the five it used to', async () => {
+    // The operator's report: picking Annual in 2026 landed on 2022 – 2026.
+    // A control named Annual selects a year.
     const { summary } = renderRevenue()
     await screen.findByText('$8,300')
 
     fireEvent.click(screen.getByRole('button', { name: 'Annual' }))
 
-    await waitFor(() => expect(lastWindowSent(summary)?.bucket).toBe('year'))
+    await waitFor(() => {
+      const sent = lastWindowSent(summary)
+      expect(sent?.window?.from.slice(5)).toBe('01-01')
+      expect(sent?.window?.to.slice(5)).toBe('12-01')
+    })
     const sent = lastWindowSent(summary)
-    expect(Number(sent?.window?.to.slice(0, 4)) - Number(sent?.window?.from.slice(0, 4))).toBe(4)
+    expect(Number(sent?.window?.to.slice(0, 4)) - Number(sent?.window?.from.slice(0, 4))).toBe(0)
+  })
+
+  it('asks main for one month on Monthly, and narrows the window rather than filtering here', async () => {
+    // The operator's other report: "monthly doesn't seem to show revenue for
+    // a single month". The ADR-003 line is what makes that a window change
+    // and not a filter — if the request stops narrowing and the number on
+    // screen still changes, the view has started summing.
+    const { summary } = renderRevenue()
+    await screen.findByText('$8,300')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }))
+
+    await waitFor(() => {
+      const sent = lastWindowSent(summary)
+      expect(sent?.window?.from).toBe(sent?.window?.to)
+    })
+    expect(lastWindowSent(summary)?.bucket).toBe('month')
   })
 
   it('reads Period forecast off the payload’s window total and names the window under it', async () => {

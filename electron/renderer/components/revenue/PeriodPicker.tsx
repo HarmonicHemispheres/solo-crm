@@ -1,4 +1,5 @@
 import { Toggle } from '../primitives/Toggle'
+import { localPeriodMonth } from '../../../shared/format'
 import { periodMonthSchema, type PeriodMonth } from '../../../shared/types'
 import { PERIOD_MODE_OPTIONS, customPeriod, formatPeriodMonth, periodLabel, stepPeriod, withMode, type Period, type PeriodMode } from './period'
 import './PeriodPicker.css'
@@ -20,10 +21,27 @@ import './PeriodPicker.css'
  * field (the input allows it) leaves the period alone rather than sending a
  * half-window to main.
  */
-export function PeriodPicker({ period, onChange, label = 'Reporting period' }: { period: Period; onChange: (period: Period) => void; label?: string }) {
+export function PeriodPicker({
+  period,
+  onChange,
+  label = 'Reporting period',
+  now
+}: {
+  period: Period
+  onChange: (period: Period) => void
+  label?: string
+  /** The clock, injectable so a test can state one. Only `withMode` reads it — see its note on the anchor. */
+  now?: Date
+}) {
+  const anchor = localPeriodMonth(now ?? new Date())
   return (
     <div className="periodpick" role="group" aria-label={label}>
-      <Toggle options={PERIOD_MODE_OPTIONS} value={period.mode} onChange={(mode: PeriodMode) => onChange(withMode(period, mode))} aria-label="Period" />
+      <Toggle
+        options={PERIOD_MODE_OPTIONS}
+        value={period.mode}
+        onChange={(mode: PeriodMode) => onChange(withMode(period, mode, anchor))}
+        aria-label="Period"
+      />
       {period.mode === 'custom' ? (
         <div className="periodpick-custom">
           <MonthField

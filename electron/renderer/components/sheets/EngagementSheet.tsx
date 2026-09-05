@@ -1,12 +1,18 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Sheet } from '../primitives/Sheet'
 import { Button } from '../primitives/Button'
+import { Toggle } from '../primitives/Toggle'
 import { Field, ChipField } from './Field'
 import { useCompaniesList, useOfferingsList } from './queries'
 import { useSheetMutation } from './useSheetMutation'
-import { callCrm, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
-import { queryKeys } from '../../lib/query-keys'
+import { callCrm, ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
+import { invalidate, queryKeys } from '../../lib/query-keys'
+import { LINE_KIND_LABEL, LINE_STATUS_OPTIONS } from '../revenue/line-labels'
+import { formatPeriodMonth } from '../revenue/period'
+import { formatMoney } from '../../views/offerings-display'
+import type { RevenueLine, RevenueLineStatus } from '../../../shared/revenue'
+import './EngagementSheet.css'
 import type { SheetFormTarget } from '../shell/layer-manager-context'
 import { centsToDecimalString, decimalStringToCents } from '../../../shared/format'
 import {
@@ -722,6 +728,86 @@ function EngagementForm({ engagement, onClose }: { engagement: EngagementWithOff
         </div>
         <div className="meta">Leave the end date empty for rolling work.</div>
       </form>
+      {/* Outside the <form> deliberately: every control below writes
+          immediately to its own line, and none of it is part of the patch
+          Save sends. Inside, a status button would sit in the same submit
+          scope as the fields above it. Edit only — a create form has no
+          engagement for the generator to have written lines against yet. */}
+      {isEdit && <RevenueLinesField engagementId={engagement.id} />}
     </Sheet>
+  )
+}
+
+/**
+ * One engagement's revenue schedule, each month markable projected /
+ * invoiced / paid without leaving the record.
+ *
+ * The same control the Revenue report's Lines card carries, in the second
+ * place the operator actually asks the question. The report answers "what is
+ * outstanding across everything this month"; this answers "where is this
+ * engagement up to", and hunting the second out of the first meant scrolling
+ * a list of every line in the window to find the four that belong here.
+ *
+ * It writes through `revenue:setLineStatus` — the one renderer write in this
+ * entity, one column on a row that already exists. Nothing here creates,
+ * amends or deletes a line: the lines are the generator's, written from the
+ * engagement's own terms (ADR-003), and this form editing those terms is what
+ * regenerates them. That is also why the list is read-only about everything
+ * except status, and why it re-reads after a save rather than holding a copy.
+ */
+function RevenueLinesField({ engagementId }: { engagementId: string }) {
+  const queryClient = useQueryClient()
+  const linesQuery = useQuery({
+    queryKey: queryKeys.revenue.engagementLines(engagementId),
+    queryFn: ipcQueryFn('revenue:lines', { engagementId })
+  })
+
+  const setStatus = useMutation({
+    mutationFn: (input: { id: string; status: RevenueLineStatus }) => ipcMutationFn('revenue:setLineStatus')(input).then(unwrapMutationResult),
+    // The whole entity: this list, the report's own list, the chart's
+    // projected/actual split and the rollup's backlog column are four
+    // readings of the column just written.
+    onSuccess: () => invalidate.revenue(queryClient)
+  })
+
+  const lines: readonly RevenueLine[] = linesQuery.data ?? []
+
+  return (
+    <div className="eng-lines">
+      <div className="eng-lines-h">
+        <span>Revenue lines</span>
+        <span className="meta">{linesQuery.isPending ? 'loading…' : `${lines.length} · mark what has been invoiced`}</span>
+      </div>
+      {linesQuery.error ? (
+        <div className="field-error" role="alert">
+          {linesQuery.error.message}
+        </div>
+      ) : !linesQuery.isPending && lines.length === 0 ? (
+        // Not an error and not a failure to configure: a signed engagement
+        // whose terms generate nothing yet, or one still a lead.
+        <div className="meta">No lines yet — they are written from the terms above when the engagement is signed.</div>
+      ) : (
+        lines.map((line) => (
+          <div className="eng-line" key={line.id}>
+            <div className="eng-line-id">
+              <span className="nm">{formatPeriodMonth(line.periodMonth)}</span>
+              <span className="meta">{line.kind === null ? 'Unclassified' : (LINE_KIND_LABEL[line.kind] ?? line.kind)}</span>
+            </div>
+            <div className="eng-line-amt num">{formatMoney(line.amountCents)}</div>
+            <Toggle
+              options={LINE_STATUS_OPTIONS}
+              value={line.status}
+              onChange={(status) => setStatus.mutate({ id: line.id, status })}
+              aria-label={`Status of ${formatPeriodMonth(line.periodMonth)}`}
+            />
+          </div>
+        ))
+      )}
+      {setStatus.isError && (
+        <div className="field-error" role="alert">
+          {setStatus.error.message}
+        </div>
+      )}
+    </div>
   )
 }

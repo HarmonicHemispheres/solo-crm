@@ -13,16 +13,27 @@ import type { RevenueBucket } from '../../../shared/revenue'
  *
  * **Three modes, and what each one actually is.**
  *
- * - **Monthly** — one bar per month across a calendar year. The window is a
- *   whole year, not a rolling twelve, because a steppable window has to have
- *   an obvious name: "2026" is one, "Oct 2025 – Sep 2026" is not, and an
- *   operator pressing ‹ needs to know where they have arrived.
- * - **Annual** — one bar per year, five years ending at the anchor's. The
- *   bucketing happens in main (ADR-003: folding months into a year is an
- *   attribution to a period), which is why `bucket` is carried on the period
- *   and sent with the request rather than applied to the response here.
- * - **Custom** — any two months. Stepping moves by the window's own length,
- *   so ‹ on a six-month window shows the six months before it.
+ * A mode names the size of the window, and the window is exactly that size —
+ * Monthly is a month, Annual is a year. It did not always read that way:
+ * Monthly used to mean "one bar per month across a whole calendar year" and
+ * Annual "one bar per year across five", so picking Annual in 2026 landed the
+ * operator on `2022 – 2026` and picking Monthly never showed a single month's
+ * money at all. Both were deliberate — a steppable window wants an obvious
+ * name — but the names on the control are `Monthly` and `Annual`, and a
+ * control that reads as a granularity has to select the period it names.
+ *
+ * - **Monthly** — one month. The totals are that month's, and ‹ › step a
+ *   month at a time.
+ * - **Annual** — one calendar year, drawn as its twelve months (`bucket` is
+ *   `month`, not `year`). ‹ › step a year at a time. This is the window the
+ *   revenue surfaces open on, so the default landing view is unchanged.
+ * - **Custom** — any two months, including a multi-year span: five years is
+ *   still reachable, it is just no longer what "Annual" means.
+ *
+ * `bucket` is carried on the period and sent with the request rather than
+ * applied to the response, because folding months into a coarser period is an
+ * attribution and so belongs in main (ADR-003). No mode asks for `year`
+ * bucketing today; the channel still supports it.
  *
  * The step is always "the same shape of window, adjacent to this one",
  * which is what makes ‹ and › mean one thing across all three.
@@ -36,9 +47,6 @@ export const PERIOD_MODE_OPTIONS = [
   { value: 'annual', label: 'Annual' },
   { value: 'custom', label: 'Custom' }
 ] as const satisfies ReadonlyArray<{ value: PeriodMode; label: string }>
-
-/** How many years an `annual` window spans. Five is enough to see a trend and few enough to read a label. */
-export const ANNUAL_YEARS = 5
 
 export interface Period {
   readonly mode: PeriodMode
@@ -60,16 +68,15 @@ function yearOf(month: PeriodMonth): number {
   return Number(month.slice(0, 4))
 }
 
-/** The calendar year `month` falls in, one bar per month. */
+/** Just `month` — the window a "Monthly" control ought to select. */
 export function monthlyPeriod(month: PeriodMonth): Period {
-  const year = yearOf(month)
-  return { mode: 'monthly', from: january(year), to: december(year), bucket: 'month' }
+  return { mode: 'monthly', from: month, to: month, bucket: 'month' }
 }
 
-/** The five calendar years ending with `month`'s, one bar per year. */
+/** The calendar year `month` falls in, drawn as its twelve months. */
 export function annualPeriod(month: PeriodMonth): Period {
   const year = yearOf(month)
-  return { mode: 'annual', from: january(year - (ANNUAL_YEARS - 1)), to: december(year), bucket: 'year' }
+  return { mode: 'annual', from: january(year), to: december(year), bucket: 'month' }
 }
 
 /** Two months, in whichever order they arrive — a range typed backwards is read as the range, not as nothing. */
@@ -77,9 +84,15 @@ export function customPeriod(from: PeriodMonth, to: PeriodMonth): Period {
   return from <= to ? { mode: 'custom', from, to, bucket: 'month' } : { mode: 'custom', from: to, to: from, bucket: 'month' }
 }
 
-/** The period a surface opens on: this calendar year, one bar per month. */
+/**
+ * The period a surface opens on: this calendar year, one bar per month —
+ * which is `annual` now that a mode selects the window it names. Deliberately
+ * still the year and not the month: landing on a single month would put one
+ * bar on the chart and read as an empty report in a quiet month, and the
+ * default view of Revenue and Today is not what the operator asked to change.
+ */
 export function defaultPeriod(now: Date): Period {
-  return monthlyPeriod(localPeriodMonth(now))
+  return annualPeriod(localPeriodMonth(now))
 }
 
 /**
@@ -90,9 +103,9 @@ export function defaultPeriod(now: Date): Period {
 export function stepPeriod(period: Period, direction: 1 | -1): Period {
   switch (period.mode) {
     case 'monthly':
-      return monthlyPeriod(january(yearOf(period.from) + direction))
+      return monthlyPeriod(addMonths(period.from, direction))
     case 'annual':
-      return annualPeriod(december(yearOf(period.to) + ANNUAL_YEARS * direction))
+      return annualPeriod(january(yearOf(period.to) + direction))
     case 'custom': {
       const span = monthsBetween(period.from, period.to) + 1
       return customPeriod(addMonths(period.from, span * direction), addMonths(period.to, span * direction))
@@ -100,13 +113,25 @@ export function stepPeriod(period: Period, direction: 1 | -1): Period {
   }
 }
 
-/** Switching mode keeps where you are, not where you started: the new window is built around the current one's end. */
-export function withMode(period: Period, mode: PeriodMode): Period {
+/**
+ * Switching mode keeps where you are, not where you started: the new window
+ * is built around the current one's end.
+ *
+ * `anchor` — the month the operator is actually living in — is the one
+ * refinement. Narrowing a window to a single month picks the anchor when the
+ * window contains it, so switching to Monthly during 2026 lands on this month
+ * rather than on December, which is where "the current one's end" alone would
+ * put it. Narrowing a window that does not contain the anchor still lands on
+ * its end: leaving 2019, Monthly means December 2019, not a jump back to now.
+ * Omitted, the rule is exactly "the current one's end" as before.
+ */
+export function withMode(period: Period, mode: PeriodMode, anchor?: PeriodMonth): Period {
+  const within = anchor !== undefined && anchor >= period.from && anchor <= period.to
   switch (mode) {
     case 'monthly':
-      return monthlyPeriod(period.to)
+      return monthlyPeriod(within ? anchor : period.to)
     case 'annual':
-      return annualPeriod(period.to)
+      return annualPeriod(within ? anchor : period.to)
     case 'custom':
       return customPeriod(period.from, period.to)
   }
@@ -123,9 +148,9 @@ export function formatPeriodMonth(month: PeriodMonth): string {
 export function periodLabel(period: Period): string {
   switch (period.mode) {
     case 'monthly':
-      return String(yearOf(period.from))
+      return formatPeriodMonth(period.from)
     case 'annual':
-      return `${yearOf(period.from)} – ${yearOf(period.to)}`
+      return String(yearOf(period.from))
     case 'custom':
       return period.from === period.to ? formatPeriodMonth(period.from) : `${formatPeriodMonth(period.from)} – ${formatPeriodMonth(period.to)}`
   }

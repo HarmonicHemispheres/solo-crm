@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { LayerManagerContext, type LayerKind, type LayerManagerContextValue, type SheetKind, type SheetTarget } from './layer-manager-context'
+import { LayerManagerContext, type LayerKind, type LayerManagerContextValue, type SheetKind, type SheetPrefill, type SheetTarget } from './layer-manager-context'
 import { CommandPalette } from './CommandPalette'
 import { CompanySheet } from '../sheets/CompanySheet'
 import { PersonSheet } from '../sheets/PersonSheet'
@@ -142,6 +142,11 @@ export function LayerManager({ children }: { children: ReactNode }) {
     [openSheetTarget]
   )
 
+  const createSheet = useCallback(
+    (kind: SheetKind, prefill: SheetPrefill, trigger?: HTMLElement | null) => openSheetTarget({ kind, mode: 'create', prefill }, trigger),
+    [openSheetTarget]
+  )
+
   const editSheet = useCallback(
     (kind: SheetKind, id: string, trigger?: HTMLElement | null) => openSheetTarget({ kind, mode: 'edit', id }, trigger),
     [openSheetTarget]
@@ -190,8 +195,8 @@ export function LayerManager({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<LayerManagerContextValue>(
-    () => ({ isOpen, isTopmost, openLayer, closeLayer, retargetLayer, openSheet, editSheet }),
-    [isOpen, isTopmost, openLayer, closeLayer, retargetLayer, openSheet, editSheet]
+    () => ({ isOpen, isTopmost, openLayer, closeLayer, retargetLayer, openSheet, createSheet, editSheet }),
+    [isOpen, isTopmost, openLayer, closeLayer, retargetLayer, openSheet, createSheet, editSheet]
   )
 
   // DOM order is paint order here (see the component comment): a closed
@@ -250,7 +255,14 @@ export function LayerManager({ children }: { children: ReactNode }) {
       node: (() => {
         if (!sheetTarget || !isOpen('sheet')) return null
         const sheetOnClose = () => closeLayer('sheet')
-        const targetKey = `${sheetTarget.kind}:${sheetTarget.mode === 'edit' ? sheetTarget.id : 'new'}`
+        // The prefill is part of the identity for the same reason the record
+        // id is: two `+` buttons on two different companies open the same
+        // kind in the same mode, and a key that could not tell them apart
+        // would leave the second showing the first company's selection.
+        const targetKey =
+          sheetTarget.mode === 'edit'
+            ? `${sheetTarget.kind}:${sheetTarget.id}`
+            : `${sheetTarget.kind}:new:${sheetTarget.prefill?.companyId ?? ''}/${sheetTarget.prefill?.personId ?? ''}/${sheetTarget.prefill?.engagementId ?? ''}`
         const form = (() => {
           switch (sheetTarget.kind) {
             case 'company':
@@ -265,7 +277,13 @@ export function LayerManager({ children }: { children: ReactNode }) {
             // half instead — see `SheetKind`'s note on why that is a second
             // member of the union and not a prop on the first.
             case 'entry':
-              return <TimelineEntrySheet onClose={sheetOnClose} initialType="event" />
+              return (
+                <TimelineEntrySheet
+                  onClose={sheetOnClose}
+                  initialType="event"
+                  prefill={sheetTarget.mode === 'create' ? sheetTarget.prefill : undefined}
+                />
+              )
             case 'offering':
               return <OfferingSheet onClose={sheetOnClose} target={sheetTarget} />
           }
