@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Timeline } from './Timeline'
+import { MONTH_WIDTH_PX } from './timeline-zoom'
 import { createQueryClient } from '../lib/query-client'
 import { stubCrm } from '../lib/test-support/stub-crm'
 import { engagementAnchorId } from '../nav'
@@ -34,10 +35,9 @@ function makeCompany(overrides: Partial<Company> & { id: string; name: string })
     website: null,
     billsDirectly: null,
     billedViaCompanyId: null,
-    introducedByCompanyId: null,
+    introducedByPersonId: null,
     cadenceDays: null,
     lastTouchAt: null,
-    budgetNote: null,
     notes: null,
     since: null,
     createdAt: TS,
@@ -331,5 +331,55 @@ describe('Timeline', () => {
     await waitFor(() => expect(bar('Ongoing retainer')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Next 12 months' }))
     expect(document.querySelector('.gnow')).toBeTruthy()
+  })
+
+  describe('zoom', () => {
+    it('starts on Auto, where the plot has no stated width and nothing scrolls', async () => {
+      renderTimeline([rolling])
+      await waitFor(() => expect(bar('Ongoing retainer')).toBeTruthy())
+
+      expect(screen.getByRole('button', { name: 'Auto' }).getAttribute('aria-pressed')).toBe('true')
+      const gantt = document.querySelector('.gantt') as HTMLElement
+      expect(gantt.dataset.zoom).toBe('auto')
+      expect(gantt.style.getPropertyValue('--gantt-plot')).toBe('')
+      // Inside its own scroller regardless, so the page body is never what
+      // scrolls sideways (ui-design.md).
+      expect(gantt.parentElement?.classList.contains('gantt-scroll')).toBe(true)
+    })
+
+    it('gives a month a stated width at a fixed zoom — the column count times the level — and leaves the bars’ own geometry alone', async () => {
+      renderTimeline([bounded])
+      await waitFor(() => expect(bar('Platform build')).toBeTruthy())
+      const before = bar('Platform build').style.left
+
+      fireEvent.click(screen.getByRole('button', { name: '2×' }))
+
+      const gantt = document.querySelector('.gantt') as HTMLElement
+      expect(gantt.dataset.zoom).toBe('x2')
+      // Twelve columns ('This year') at 96px each.
+      expect(gantt.style.getPropertyValue('--gantt-plot')).toBe(`${MONTH_WIDTH_PX.x2 * 12}px`)
+      // A bar is positioned in percent of the plot, so zooming changes what a
+      // percent is worth and nothing about the percent itself.
+      expect(bar('Platform build').style.left).toBe(before)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Auto' }))
+      expect(gantt.style.getPropertyValue('--gantt-plot')).toBe('')
+    })
+
+    it('tracks the range: the same zoom over more months is a wider plot', async () => {
+      renderTimeline([makeEngagement({ id: 'eng-long', name: 'Long haul', billingCompanyId: 'co-acme', status: 'active', startedOn: '2025-01-01', endsOn: '2026-12-31' })])
+      await waitFor(() => expect(bar('Long haul')).toBeTruthy())
+      fireEvent.click(screen.getByRole('button', { name: '1×' }))
+      const gantt = document.querySelector('.gantt') as HTMLElement
+      expect(gantt.style.getPropertyValue('--gantt-plot')).toBe(`${MONTH_WIDTH_PX.x1 * 12}px`)
+
+      // 'Everything': from the engagement's Jan 2025 start out to the rolling
+      // horizon (twelve months from the pinned Sep 2026 clock) — more than
+      // the year, and the plot is exactly that many columns wide.
+      fireEvent.click(screen.getByRole('button', { name: 'Everything' }))
+      const columns = document.querySelectorAll('.gmonths span').length
+      expect(columns).toBeGreaterThan(24)
+      expect(gantt.style.getPropertyValue('--gantt-plot')).toBe(`${MONTH_WIDTH_PX.x1 * columns}px`)
+    })
   })
 })

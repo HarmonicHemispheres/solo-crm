@@ -278,6 +278,19 @@ export function deletePerson(db: Database.Database, id: string, cascade = false)
           `Cannot delete "${person.name}": ${count} activity record${count === 1 ? '' : 's'} reference them. ` +
           'Activity is append-only (G8) and cannot be reassigned or removed to make room.'
       },
+      // `companies.introduced_by_person_id` (migration 0009). The route this
+      // names exists: the company sheet's "Introduced by" picker has a
+      // "— none —" option.
+      {
+        table: 'companies',
+        column: 'introduced_by_person_id',
+        reason: 'introduced-by',
+        exampleColumn: 'name',
+        describe: (count, example) =>
+          `Cannot delete "${person.name}": they introduced ${count} compan${count === 1 ? 'y' : 'ies'}` +
+          (example ? ` (e.g. "${example}")` : '') +
+          '. Clear "Introduced by" on those companies before deleting this person.'
+      },
       {
         table: 'affiliations',
         column: 'person_id',

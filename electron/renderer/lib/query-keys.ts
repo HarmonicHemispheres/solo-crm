@@ -262,7 +262,8 @@ export const queryKeys = {
    * and the read answers *immediately* either way — a `data:` URL or a named
    * absence, never a pending state (see `electron/shared/favicons.ts`'s
    * header). A row therefore draws once from whichever branch it gets. What
-   * makes a later `ready` show up is a remount or a natural refetch, not a
+   * makes a later `ready` show up is the row's own short poll while the
+   * answer is still "come back" (`LinkFavicon`'s `refetchInterval`), not a
    * renderer deciding the cache should be warmer than it is.
    */
   favicons: {

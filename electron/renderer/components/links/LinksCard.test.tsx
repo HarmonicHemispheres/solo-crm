@@ -245,6 +245,58 @@ describe('favicons', () => {
     // and nothing rendered a placeholder that would later be replaced.
     expect(screen.queryByText(/loading/i)).toBeNull()
   })
+
+  it('re-asks while main is still fetching, and swaps the icon in when it lands — without a remount', async () => {
+    // The defect this covers: `staleTime: Infinity` with no refetch meant
+    // the first answer — always `never-fetched`, since main fetches *behind*
+    // the answer — was the only answer a row ever saw, and every link wore
+    // its fallback until the app was restarted.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { crm } = buildCrm({ links: [notionLink] })
+      let answers = 0
+      const favicon = vi.fn(async () => {
+        answers += 1
+        if (answers < 3) {
+          return { ok: true as const, data: { state: 'none' as const, reason: answers === 1 ? ('never-fetched' as const) : ('fetching' as const), retryAfter: null } }
+        }
+        return { ok: true as const, data: { state: 'ready' as const, contentType: 'image/png' as const, dataUrl: PNG, fetchedAt: TS } }
+      })
+      renderLinks({ ...crm, 'favicons:get': favicon as unknown as CrmApi['favicons:get'] })
+
+      await screen.findByText(notionLink.title)
+      await waitFor(() => expect(favicon).toHaveBeenCalledTimes(1))
+      expect(faviconBoxFor(notionLink.title).dataset.favicon).toBe('fallback')
+
+      await vi.advanceTimersByTimeAsync(1_600)
+      await waitFor(() => expect(favicon).toHaveBeenCalledTimes(2))
+      await vi.advanceTimersByTimeAsync(1_600)
+      await waitFor(() => expect(faviconBoxFor(notionLink.title).dataset.favicon).toBe('cached'))
+
+      // Settled: no further reads however long the page stays open.
+      const settledAt = favicon.mock.calls.length
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(favicon).toHaveBeenCalledTimes(settledAt)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops asking once main has recorded a failure — a dead host costs one read, not one per tick', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      // `buildCrm`'s favicon answers `unavailable` for anything not cached.
+      const { crm, favicon } = buildCrm({ links: [driveLink] })
+      renderLinks(crm)
+      await screen.findByText(driveLink.title)
+      await waitFor(() => expect(favicon).toHaveBeenCalledTimes(1))
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(favicon).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('renaming a link inline', () => {

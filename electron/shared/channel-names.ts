@@ -143,5 +143,8 @@ export const CHANNEL_NAMES = [
   'settings:get',
   'settings:getAll',
   'settings:set',
-  'settings:reset'
+  'settings:reset',
+
+  // -- backup ------------------------------------------------------------
+  'backup:run'
 ] as const

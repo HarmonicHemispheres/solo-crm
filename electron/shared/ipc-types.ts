@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { activityFiltersSchema, activitySchema, logActivityInputSchema } from './activity'
+import { manualBackupResultSchema } from './backup'
 import {
   brandingChoiceSchema,
   brandingSlotRequestSchema,
@@ -793,7 +794,19 @@ export const CHANNEL_CONTRACTS = {
   'settings:get': { request: settingKeyRequestSchema, response: settingEntrySchema },
   'settings:getAll': { request: z.undefined(), response: settingsSnapshotSchema },
   'settings:set': { request: settingEntrySchema, response: mutationResultSchema(settingEntrySchema) },
-  'settings:reset': { request: settingKeyRequestSchema, response: mutationResultSchema(settingEntrySchema) }
+  'settings:reset': { request: settingKeyRequestSchema, response: mutationResultSchema(settingEntrySchema) },
+
+  // -- backup — a manual copy of the live database -----------------------
+  //
+  // The renderer asks for a backup and gets back where it went. It names no
+  // destination itself: main opens a save dialog, main writes the copy
+  // through SQLite's online backup API, and the chosen path comes back in
+  // the success branch — deliberately, as `db:stats.path` does, because a
+  // backup nobody can find is not one. A cancelled dialog is
+  // `{ ok: true, data: { outcome: 'cancelled' } }`, as `branding:choose`
+  // answers. See `electron/shared/backup.ts` and `electron/main/backup/`.
+
+  'backup:run': { request: z.undefined(), response: mutationResultSchema(manualBackupResultSchema) }
 } as const
 
 export type ChannelName = keyof typeof CHANNEL_CONTRACTS

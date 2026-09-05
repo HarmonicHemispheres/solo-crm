@@ -248,6 +248,10 @@ export function stubCrm(overrides: Partial<CrmApi> = {}): CrmApi {
       data: { ok: true as const, data: { key: 'workspace.name' as const, value: '' } }
     })),
 
+    // A manual backup whose dialog the operator dismissed — the no-override
+    // shape that writes nothing and names no path.
+    'backup:run': vi.fn(async () => ({ ok: true as const, data: { ok: true as const, data: { outcome: 'cancelled' as const } } })),
+
     ...overrides
   }
 }
@@ -308,10 +312,9 @@ const STUB_COMPANY = {
   website: null,
   billsDirectly: null,
   billedViaCompanyId: null,
-  introducedByCompanyId: null,
+  introducedByPersonId: null,
   cadenceDays: null,
   lastTouchAt: null,
-  budgetNote: null,
   notes: null,
   since: null,
   createdAt: STUB_TIMESTAMP,
@@ -461,6 +464,7 @@ const STUB_SETTINGS_SNAPSHOT = {
   'integrations.gmail.enabled': false,
   'backup.enabled': true,
   'backup.folder': '',
+  'backup.lastRunAt': null,
   'appearance.motion': true,
   'appearance.density': 'comfortable' as const,
   'view.companies.mode': 'card' as const,

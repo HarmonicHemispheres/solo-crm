@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -39,7 +39,10 @@ const electronFake = vi.hoisted(() => ({
   /** What `dialog.showOpenDialog` resolves to. */
   openDialogResult: { canceled: true, filePaths: [] as string[] },
   /** Every options object the dialog was opened with. */
-  openDialogCalls: [] as Array<Record<string, unknown>>
+  openDialogCalls: [] as Array<Record<string, unknown>>,
+  /** What `dialog.showSaveDialog` resolves to — `backup:run`'s destination. */
+  saveDialogResult: { canceled: true } as { canceled: boolean; filePath?: string },
+  saveDialogCalls: [] as Array<Record<string, unknown>>
 }))
 
 vi.mock('electron', () => ({
@@ -56,6 +59,10 @@ vi.mock('electron', () => ({
     showOpenDialog: async (_window: unknown, options: Record<string, unknown>) => {
       electronFake.openDialogCalls.push(options)
       return electronFake.openDialogResult
+    },
+    showSaveDialog: async (_window: unknown, options: Record<string, unknown>) => {
+      electronFake.saveDialogCalls.push(options)
+      return electronFake.saveDialogResult
     }
   },
   // T-260901-12: `companyImages:choose` stores a derivative beside the
@@ -1194,5 +1201,81 @@ describe('companyImages channels — end to end against a real database', () => 
     expect(refusals).toHaveLength(4)
 
     expect(pathLikeStrings(responses)).toEqual([])
+  })
+})
+
+describe("'backup:run' — a manual copy of the live database", () => {
+  let tmpDir: string
+  let backupDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-backup-'))
+    backupDir = mkdtempSync(join(tmpdir(), 'solo-crm-ipc-backup-dest-'))
+    openDatabase({ userDataDir: tmpDir })
+    electronFake.focusedWindow = {}
+    electronFake.saveDialogCalls = []
+  })
+
+  afterEach(() => {
+    closeDatabase()
+    rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(backupDir, { recursive: true, force: true })
+  })
+
+  it('writes a self-contained copy where the dialog says, records when, and db:stats reports it', async () => {
+    // `backup.folder` set, so the handler never reaches `app.getPath`, which
+    // this file's electron fake refuses on purpose.
+    expectOk(await callChannel('settings:set', { key: 'backup.folder', value: backupDir }))
+    expectOk(await callChannel('companies:create', { name: 'In The Backup' }))
+    const destination = join(backupDir, 'copy.db')
+    electronFake.saveDialogResult = { canceled: false, filePath: destination }
+
+    const result = expectOk(await callChannel('backup:run'))
+    expect(result.outcome).toBe('written')
+    if (result.outcome !== 'written') return
+    expect(result.path).toBe(destination)
+    expect(existsSync(destination)).toBe(true)
+    expect(result.bytes).toBeGreaterThan(0)
+    // A real SQLite file, not a copy of the WAL sidecar or an empty touch.
+    expect(readFileSync(destination).subarray(0, 15).toString('utf-8')).toBe('SQLite format 3')
+
+    // The dialog opened over the focused window, in the configured folder.
+    expect(electronFake.saveDialogCalls).toHaveLength(1)
+    expect(String(electronFake.saveDialogCalls[0].defaultPath)).toContain(backupDir)
+
+    const stats = await callChannel('db:stats')
+    expect(stats.lastBackupAt).toBe(result.completedAt)
+    const entry = await callChannel('settings:get', { key: 'backup.lastRunAt' })
+    expect(entry.value).toBe(result.completedAt)
+  })
+
+  it('a cancelled dialog is ok: true with outcome cancelled, and records nothing', async () => {
+    expectOk(await callChannel('settings:set', { key: 'backup.folder', value: backupDir }))
+    electronFake.saveDialogResult = { canceled: true }
+
+    const result = expectOk(await callChannel('backup:run'))
+    expect(result).toEqual({ outcome: 'cancelled' })
+    expect((await callChannel('db:stats')).lastBackupAt).toBeNull()
+  })
+
+  it('refuses the live database as its own destination, inside the envelope, with a path-free message', async () => {
+    expectOk(await callChannel('settings:set', { key: 'backup.folder', value: backupDir }))
+    electronFake.saveDialogResult = { canceled: false, filePath: join(tmpDir, 'solocrm.db') }
+
+    const result = await callChannel('backup:run')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.code).toBe('validation')
+    expect(result.error.message).toContain('live database itself')
+    expect(result.error.message).not.toContain(tmpDir)
+  })
+
+  it('refuses with no focused window rather than opening a parentless dialog', async () => {
+    expectOk(await callChannel('settings:set', { key: 'backup.folder', value: backupDir }))
+    electronFake.focusedWindow = null
+
+    const result = await callChannel('backup:run')
+    expect(result.ok).toBe(false)
+    expect(electronFake.saveDialogCalls).toEqual([])
   })
 })

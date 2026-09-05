@@ -8,6 +8,7 @@ import { MAX_CHAIN_DEPTH } from '../chain-walk'
 import { nowTimestamp } from '../../../shared/format'
 import { closeDatabase, getDatabase, openDatabase } from '../connection'
 import { createCompany, deleteCompany, getCompany, listCompanies, updateCompany } from './companies'
+import { createPerson, deletePerson, getPerson } from './people'
 import { NotFoundError, RefusalError, ValidationError } from './errors'
 
 /**
@@ -99,10 +100,11 @@ function insertTimeEntry(db: Database.Database, companyId: string): void {
 }
 
 describe('createCompany / getCompany: round-trip', () => {
-  it('round-trips all fourteen columns field-for-field — ten writable, plus id/createdAt/updatedAt/lastTouchAt', () => {
+  it('round-trips all thirteen columns field-for-field — nine writable, plus id/createdAt/updatedAt/lastTouchAt', () => {
     withDatabase((db) => {
       const billingParty = createCompany(db, { name: 'Billing Party Co' })
-      const referrer = createCompany(db, { name: 'Referrer Co' })
+      // A person, since migration 0009 — an introduction is made by someone.
+      const referrer = createPerson(db, { name: 'Referrer Person' })
 
       const input = {
         name: 'Full Co',
@@ -110,9 +112,8 @@ describe('createCompany / getCompany: round-trip', () => {
         website: 'fullco.example',
         billsDirectly: false,
         billedViaCompanyId: billingParty.id,
-        introducedByCompanyId: referrer.id,
+        introducedByPersonId: referrer.id,
         cadenceDays: 21,
-        budgetNote: '$10,000 approved',
         notes: 'Some notes about Full Co.',
         since: '2026-01-15'
       }
@@ -127,9 +128,8 @@ describe('createCompany / getCompany: round-trip', () => {
       expect(created.website).toBe(input.website)
       expect(created.billsDirectly).toBe(input.billsDirectly)
       expect(created.billedViaCompanyId).toBe(input.billedViaCompanyId)
-      expect(created.introducedByCompanyId).toBe(input.introducedByCompanyId)
+      expect(created.introducedByPersonId).toBe(input.introducedByPersonId)
       expect(created.cadenceDays).toBe(input.cadenceDays)
-      expect(created.budgetNote).toBe(input.budgetNote)
       expect(created.notes).toBe(input.notes)
       expect(created.since).toBe(input.since)
       expect(created.createdAt).toEqual(created.updatedAt)
@@ -329,84 +329,6 @@ describe('the billed-via / introduced-by transitive cycle guard (T-260828-42)', 
     })
   })
 
-  it('guards introduced_by_company_id via the same code path, asserted separately from billed_via_company_id', () => {
-    withDatabase((db) => {
-      const a = createCompany(db, { name: 'Referrer A' })
-      const b = createCompany(db, { name: 'Referred B', introducedByCompanyId: a.id })
-
-      let thrown: unknown
-      try {
-        updateCompany(db, a.id, { introducedByCompanyId: b.id })
-      } catch (error) {
-        thrown = error
-      }
-
-      expect(thrown).toBeInstanceOf(RefusalError)
-      const refusal = thrown as RefusalError
-      expect(refusal.message).toContain('Referrer A')
-      expect(refusal.message).toContain('Referred B')
-      expect(refusal.blocker?.reason).toBe('introduced-by-cycle')
-
-      const after = getCompany(db, a.id)
-      expect(after?.introducedByCompanyId).toBeNull()
-    })
-  })
-
-  it('refuses introduced_by_company_id set to the row\'s own id — no database CHECK covers this column at all', () => {
-    withDatabase((db) => {
-      const company = createCompany(db, { name: 'Self Referred Co' })
-
-      let thrown: unknown
-      try {
-        updateCompany(db, company.id, { introducedByCompanyId: company.id })
-      } catch (error) {
-        thrown = error
-      }
-
-      expect(thrown).toBeInstanceOf(RefusalError)
-      // Its own discriminator, distinct from the transitive-cycle one above
-      // (T-260828-56) — "you pointed this row at itself" and "this would
-      // close a loop through other rows" are different facts.
-      expect((thrown as RefusalError).blocker?.reason).toBe('introduced-by-self-reference')
-
-      const after = getCompany(db, company.id)
-      expect(after?.introducedByCompanyId).toBeNull()
-    })
-  })
-
-  it("refuses createCompany's introduced_by target whose existing chain already loops — the create-path guard, not the update-path one", () => {
-    withDatabase((db) => {
-      // Covers `createCompany`'s `introducedByCompanyId` guard call
-      // specifically: delete that one line and this is the test that fails.
-      // A fresh row's own id cannot be reached by any existing chain, so the
-      // only thing the create-path guard can catch is a chain that was
-      // already bad — wired raw here, bypassing the repository entirely.
-      const timestamp = nowTimestamp()
-      const ids = [randomUUID(), randomUUID()]
-      const insert = db.prepare(
-        `INSERT INTO companies (id, name, bills_directly, cadence_days, created_at, updated_at) VALUES (?, ?, 1, 14, ?, ?)`
-      )
-      for (let i = 0; i < ids.length; i += 1) {
-        insert.run(ids[i], `Referral Loop ${i}`, timestamp, timestamp)
-      }
-      const setIntroducedBy = db.prepare('UPDATE companies SET introduced_by_company_id = ? WHERE id = ?')
-      setIntroducedBy.run(ids[1], ids[0])
-      setIntroducedBy.run(ids[0], ids[1])
-
-      let thrown: unknown
-      try {
-        createCompany(db, { name: 'New Referred Co', introducedByCompanyId: ids[0] })
-      } catch (error) {
-        thrown = error
-      }
-
-      expect(thrown).toBeInstanceOf(RefusalError)
-      expect((thrown as RefusalError).blocker?.reason).toBe('introduced-by-chain-cycle')
-      // The refused create wrote nothing.
-      expect(listCompanies(db).map((company) => company.name)).not.toContain('New Referred Co')
-    })
-  })
-
   it("refuses createCompany's billed_via target whose existing chain already loops — the create-path guard for that column", () => {
     withDatabase((db) => {
       // The billed-via twin of the case above, for the same reason: delete
@@ -531,10 +453,14 @@ describe('deleteCompany: referential refusals — all eight foreign keys migrati
     })
   })
 
-  it('refuses to delete a company it introduced, naming the blocker; the row survives', () => {
+  it('still refuses to delete a company a pre-0009 row names as its introducer — the retired column is enforced until cascaded', () => {
     withDatabase((db) => {
+      // Nothing on the wire can write `introduced_by_company_id` any more,
+      // so the only way a row holds one is history: written raw here, the
+      // way a database migrated from before 0009 holds it.
       const referrer = createCompany(db, { name: 'Referral Source' })
-      createCompany(db, { name: 'Introduced Co', introducedByCompanyId: referrer.id })
+      const introduced = createCompany(db, { name: 'Introduced Co' })
+      db.prepare('UPDATE companies SET introduced_by_company_id = ? WHERE id = ?').run(referrer.id, introduced.id)
 
       let thrown: unknown
       try {
@@ -546,8 +472,51 @@ describe('deleteCompany: referential refusals — all eight foreign keys migrati
       expect(thrown).toBeInstanceOf(RefusalError)
       expect((thrown as RefusalError).message).toContain('Introduced Co')
       expect((thrown as RefusalError).blocker).toEqual({ reason: 'introduced-by', count: 1 })
-
       expect(getCompany(db, referrer.id)).not.toBeNull()
+
+      // The cascade is the way out the refusal names: the introduced
+      // company survives with the pointer cleared.
+      deleteCompany(db, referrer.id, true)
+      expect(getCompany(db, referrer.id)).toBeNull()
+      expect(getCompany(db, introduced.id)).not.toBeNull()
+    })
+  })
+
+  it('refuses to delete a person a company names as its introducer, and the cascade clears the pointer instead (0009)', () => {
+    withDatabase((db) => {
+      const referrer = createPerson(db, { name: 'Referring Person' })
+      const introduced = createCompany(db, { name: 'Introduced By Person Co', introducedByPersonId: referrer.id })
+
+      let thrown: unknown
+      try {
+        deletePerson(db, referrer.id)
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).message).toContain('Introduced By Person Co')
+      expect((thrown as RefusalError).blocker).toEqual({ reason: 'introduced-by', count: 1 })
+      expect(getPerson(db, referrer.id)).not.toBeNull()
+
+      deletePerson(db, referrer.id, true)
+      expect(getPerson(db, referrer.id)).toBeNull()
+      expect(getCompany(db, introduced.id)?.introducedByPersonId).toBeNull()
+    })
+  })
+
+  it('refuses an introducedByPersonId that names no person, as a foreign-key refusal rather than a bare SQLite error', () => {
+    withDatabase((db) => {
+      let thrown: unknown
+      try {
+        createCompany(db, { name: 'Ghost Referred Co', introducedByPersonId: randomUUID() })
+      } catch (error) {
+        thrown = error
+      }
+
+      expect(thrown).toBeInstanceOf(RefusalError)
+      expect((thrown as RefusalError).blocker?.reason).toBe('foreign-key')
+      expect(listCompanies(db).map((company) => company.name)).not.toContain('Ghost Referred Co')
     })
   })
 

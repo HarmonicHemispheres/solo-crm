@@ -31,6 +31,7 @@ const SETTINGS_SNAPSHOT: SettingsSnapshot = {
   'integrations.gmail.enabled': false,
   'backup.enabled': true,
   'backup.folder': '',
+  'backup.lastRunAt': null,
   'appearance.motion': true,
   'appearance.density': 'comfortable',
   'view.companies.mode': 'card',

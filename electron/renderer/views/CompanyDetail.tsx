@@ -29,7 +29,8 @@ import { Toggle } from '../components/primitives/Toggle'
 import { Row } from '../components/primitives/Row'
 import { IconButton } from '../components/primitives/IconButton'
 import { PlusIcon } from '../components/icons'
-import { LinksCard } from '../components/links/LinksCard'
+import { LinkFavicon, LinksCard } from '../components/links/LinksCard'
+import { localToday } from './todo-urgency'
 import { useLayerManager, type LayerManagerContextValue } from '../components/shell/layer-manager-context'
 import './detail-header.css'
 import './CompanyDetail.css'
@@ -416,21 +417,50 @@ function withinAffiliationWindow(occurredAt: string, affiliation: PersonAffiliat
  *
  * Those four are now the header's own fact line, which is where someone
  * arriving on the page looks. What is left here is the reference material:
- * kind, site, budget, who introduced them. **An unset field is not a row.**
+ * kind, site, who introduced them. **An unset field is not a row.**
  * It joins the one "+ Add …" line at the foot, which opens the same edit
  * sheet every other write on this page opens — so nothing is hidden, and
  * nothing empty takes a row's worth of height to say so.
+ *
+ * "Introduced by" is a person (migration 0009) and links to their page in
+ * People. The budget note is gone with its field — the operator asked for
+ * it to go from the form, and a fact the form cannot edit has no business
+ * on a card the form is the only writer for.
  */
 const OPTIONAL_FIELD_LABEL = {
   website: 'website',
-  budgetNote: 'budget',
-  introducedByCompanyId: 'introduced by'
+  introducedByPersonId: 'introduced by'
 } as const
 type OptionalFieldKey = keyof typeof OPTIONAL_FIELD_LABEL
 
-function DetailsCard({ company, companiesById }: { company: Company; companiesById: Map<string, Company> }) {
+/**
+ * The website as a link, wearing its host's favicon. `LinkFavicon` is the
+ * links card's own slot — the same read of main's cache, the same fixed
+ * box so the row never moves when the icon lands, the same `web` fallback
+ * — because a website *is* a link and has the same reason to be
+ * recognisable at a glance. `target="_blank"` routes through the
+ * window-open guard to the operator's browser (LinksCard.tsx's third
+ * commitment). A bare host with no scheme is opened over https, which is
+ * what the links card does with a typed URL too.
+ */
+function WebsiteRow({ website }: { website: string }) {
+  const href = /^[a-z][a-z0-9+.-]*:/i.test(website) ? website : `https://${website}`
+  return (
+    <div className="field">
+      <span className="k">Website</span>
+      <span className="v website">
+        <LinkFavicon url={href} kind="web" />
+        <a className="mono" href={href} target="_blank" rel="noopener noreferrer">
+          {website}
+        </a>
+      </span>
+    </div>
+  )
+}
+
+function DetailsCard({ company, peopleById }: { company: Company; peopleById: Map<string, Person> }) {
   const { editSheet } = useLayerManager()
-  const introducedBy = company.introducedByCompanyId != null ? companiesById.get(company.introducedByCompanyId) : undefined
+  const introducedBy = company.introducedByPersonId != null ? peopleById.get(company.introducedByPersonId) : undefined
   const missing = (Object.keys(OPTIONAL_FIELD_LABEL) as OptionalFieldKey[]).filter((key) => company[key] == null)
 
   return (
@@ -440,23 +470,12 @@ function DetailsCard({ company, companiesById }: { company: Company; companiesBy
           <span className="k">Kind</span>
           <span className="v">{company.kind != null ? KIND_LABEL[company.kind] : 'Not set'}</span>
         </div>
-        {company.website != null && (
-          <div className="field">
-            <span className="k">Website</span>
-            <span className="v mono">{company.website}</span>
-          </div>
-        )}
-        {company.budgetNote != null && (
-          <div className="field">
-            <span className="k">Budget</span>
-            <span className="v">{company.budgetNote}</span>
-          </div>
-        )}
-        {company.introducedByCompanyId != null && (
+        {company.website != null && <WebsiteRow website={company.website} />}
+        {company.introducedByPersonId != null && (
           <div className="field">
             <span className="k">Introduced by</span>
             <span className="v">
-              <Link to={`/company/${company.introducedByCompanyId}`}>{introducedBy?.name ?? company.introducedByCompanyId}</Link>
+              <Link to={`/person/${company.introducedByPersonId}`}>{introducedBy?.name ?? company.introducedByPersonId}</Link>
             </span>
           </div>
         )}
@@ -992,30 +1011,121 @@ function ContactRow({ entry, historical, onClick }: { entry: ContactEntry; histo
   )
 }
 
-function ContactsCard({
-  current,
-  historical
+/**
+ * The way a contact is added here: pick someone who already exists in
+ * People, give them a title, and open an affiliation. It used to be a "+"
+ * that opened the new-person sheet, which made this card a second place
+ * people were *created* — the operator's words: contacts should reference
+ * people in the People tab, "not be a separate people/contact form".
+ *
+ * One write, `people:addAffiliation`, with `started` stamped today the way
+ * `PersonSheet` stamps its first affiliation. The picker omits everyone
+ * who is a current contact already; a former contact is offered, since
+ * coming back is a new stint (`electron/shared/people.ts`'s header on why
+ * the pair is not unique). With nobody in People at all there is nothing
+ * to pick, and the field says so and points at the one place to fix it.
+ */
+function AddContactField({
+  companyId,
+  companyName,
+  people,
+  excludeIds
 }: {
+  companyId: string
+  companyName: string
+  people: readonly Person[]
+  excludeIds: ReadonlySet<string>
+}) {
+  const queryClient = useQueryClient()
+  const [personId, setPersonId] = useState('')
+  const [title, setTitle] = useState('')
+  const add = useMutation({
+    mutationFn: () =>
+      ipcMutationFn('people:addAffiliation')({ personId, companyId, title: title.trim() || null, started: localToday() }).then(
+        unwrapMutationResult
+      ),
+    onSuccess: () => {
+      setPersonId('')
+      setTitle('')
+      // `people:get` per person is what this page derives its contacts from
+      // (`queryKeys.people.detail`), and it sits under `people.all()`.
+      return invalidate.people(queryClient)
+    }
+  })
+
+  if (people.length === 0) {
+    return (
+      <p className="meta contacts-add-empty">
+        Nobody in People yet. <Link to="/people">Add a person</Link> and they can be linked here.
+      </p>
+    )
+  }
+
+  const candidates = people.filter((person) => !excludeIds.has(person.id))
+  return (
+    <form
+      className="contacts-add"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (personId === '' || add.isPending) return
+        add.mutate()
+      }}
+    >
+      <select
+        className="inp"
+        aria-label={`Add a contact to ${companyName}`}
+        value={personId}
+        onChange={(event) => setPersonId(event.target.value)}
+      >
+        <option value="">— pick a person —</option>
+        {candidates.map((person) => (
+          <option key={person.id} value={person.id}>
+            {person.name}
+          </option>
+        ))}
+      </select>
+      <input
+        className="inp"
+        aria-label="Title at this company"
+        placeholder="Title (optional)"
+        value={title}
+        onChange={(event) => setTitle(event.target.value)}
+      />
+      <Button type="submit" variant="ghost" disabled={personId === '' || add.isPending}>
+        Add
+      </Button>
+      {add.error != null && (
+        <p className="contacts-add-error" role="alert">
+          {add.error.message}
+        </p>
+      )}
+    </form>
+  )
+}
+
+function ContactsCard({
+  companyId,
+  companyName,
+  current,
+  historical,
+  people
+}: {
+  companyId: string
+  companyName: string
   current: readonly ContactEntry[]
   historical: readonly ContactEntry[]
+  /** Everyone in People — the picker's candidates. */
+  people: readonly Person[]
 }) {
   const navigate = useNavigate()
-  const { openSheet } = useLayerManager()
   const goToPerson = (personId: string) => () => navigate(`/person/${personId}`)
+  const currentIds = new Set(current.map((entry) => entry.person.id))
 
   return (
-    <Section
-      title="Contacts"
-      count={current.length}
-      actions={
-        <IconButton aria-label="New contact" title="New contact" onClick={(event) => openSheet('person', event.currentTarget)}>
-          <PlusIcon />
-        </IconButton>
-      }
-    >
+    <Section title="Contacts" count={current.length}>
       <Card>
         {current.length === 0 && historical.length === 0 ? (
-          <EmptyState action={<Link to="/people">Add a contact</Link>}>No contacts yet.</EmptyState>
+          <EmptyState>No contacts yet.</EmptyState>
         ) : current.length === 0 ? (
           <EmptyState>No current contacts.</EmptyState>
         ) : (
@@ -1031,6 +1141,7 @@ function ContactsCard({
             ))}
           </details>
         )}
+        <AddContactField companyId={companyId} companyName={companyName} people={people} excludeIds={currentIds} />
       </Card>
     </Section>
   )
@@ -1305,7 +1416,6 @@ function CompanyHeader({
                 grid's own badge counts. Nothing is drawn when there are
                 none — an absent tag, not an "inactive" one. */}
             {hasActiveEngagement && <Tag variant="green">Active</Tag>}
-            {company.budgetNote != null && <Tag variant="gold">{company.budgetNote}</Tag>}
           </div>
           <HeaderFacts
             company={company}
@@ -1446,6 +1556,10 @@ export function CompanyDetail() {
       queryFn: ipcQueryFn('people:get', { id: person.id })
     }))
   })
+
+  // Names for the Details card's "Introduced by" (a `people.id` since
+  // migration 0009), from the same list the contacts derive from.
+  const peopleById = new Map((peopleListQuery.data ?? []).map((person) => [person.id, person] as const))
 
   const currentContacts: ContactEntry[] = []
   const historicalContacts: ContactEntry[] = []
@@ -1664,8 +1778,14 @@ export function CompanyDetail() {
           />
         </div>
         <div className="col">
-          <DetailsCard company={company} companiesById={companiesById} />
-          <ContactsCard current={currentContacts} historical={historicalContacts} />
+          <DetailsCard company={company} peopleById={peopleById} />
+          <ContactsCard
+            companyId={company.id}
+            companyName={company.name}
+            current={currentContacts}
+            historical={historicalContacts}
+            people={peopleListQuery.data ?? []}
+          />
           {/* §6.10's links, in the mockup's own position — after Contacts in
               the right-hand column. */}
           <LinksCard entityType="company" entityId={company.id} />

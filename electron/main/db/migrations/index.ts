@@ -6,6 +6,7 @@ import migration0005Sql from './0005_branding.sql?raw'
 import migration0006Sql from './0006_offerings_rename.sql?raw'
 import migration0007Sql from './0007_company_images.sql?raw'
 import migration0008Sql from './0008_retainer_basis.sql?raw'
+import migration0009Sql from './0009_introduced_by_person.sql?raw'
 
 /**
  * The ordered, explicit manifest of every migration `migrate.ts` knows how
@@ -79,5 +80,9 @@ export const MIGRATIONS: readonly MigrationDefinition[] = [
   // asserts they match this file rather than treating them as drift. See the
   // migration's own header for why the basis is a stored column and not
   // inferred from which of the amount/hours columns happen to be filled.
-  { version: 8, name: '0008_retainer_basis', sql: migration0008Sql }
+  { version: 8, name: '0008_retainer_basis', sql: migration0008Sql },
+  // `companies.introduced_by_person_id` and its index: an introduction is
+  // made by a person, and the old company-valued column is retired in place
+  // rather than dropped. See the migration's own header.
+  { version: 9, name: '0009_introduced_by_person', sql: migration0009Sql }
 ]

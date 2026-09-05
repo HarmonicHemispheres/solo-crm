@@ -34,6 +34,8 @@ import {
   type SettingsSnapshot
 } from '../../shared/settings'
 import type { SettingEntry } from '../../shared/ipc-types'
+import type { ManualBackupResult } from '../../shared/backup'
+import { parseTimestamp } from '../../shared/format'
 import './WorkspaceSettings.css'
 
 /**
@@ -517,7 +519,8 @@ function CadenceSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; 
                 it here and keeps the honest caption below in the flow. When
                 P2-02 lands, the caption is deleted and this popover stays. */}
             <InfoPopover aria-label="About Default cadence">
-              New companies inherit these. Any company can override its own.
+              New companies inherit these. Any company can override its own. N/A means companies of that kind are not
+              chased unless they set a cadence of their own.
             </InfoPopover>
           </>
         }
@@ -542,6 +545,18 @@ function CadenceSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; 
                   {step}
                 </button>
               ))}
+              {/* `null` in the registry — no default cadence for this kind,
+                  and the one every kind starts on. A company of this kind
+                  with no cadence of its own is not tracked (lib/decay.ts). */}
+              <button
+                type="button"
+                className={value == null ? 'stepb on' : 'stepb'}
+                aria-pressed={value == null}
+                title="No default — companies of this kind are not tracked unless they set their own cadence"
+                onClick={() => setSetting(key, null)}
+              >
+                N/A
+              </button>
             </div>
           </div>
         )
@@ -609,10 +624,67 @@ function IntegrationsSection({ snapshot, setSetting }: { snapshot: SettingsSnaps
 // operator has to guess at.
 // ---------------------------------------------------------------------------
 
+/** `2026-09-04, 14:32` — the operator's own locale and zone, since this names a moment they were present for. */
+const LAST_BACKUP_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+/** A database is megabytes, not the half-kilobyte a branding image is, so this has a third unit `formatByteLength` above does not need. */
+function formatBackupSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * The one-line account of the last `backup:run` this page issued. Only the
+ * `written` branch and a failure say anything: a cancelled dialog is the
+ * operator changing their mind, and telling them so is noise.
+ */
+function backupOutcomeLine(result: ManualBackupResult | null, error: Error | null): ReactNode {
+  if (error != null) {
+    return (
+      <p className="backup-outcome backup-outcome-error" role="alert">
+        {error.message}
+      </p>
+    )
+  }
+  if (result == null || result.outcome !== 'written') return null
+  return (
+    <p className="backup-outcome" role="status">
+      Saved <span className="mono">{result.path}</span> · {formatBackupSize(result.bytes)}
+    </p>
+  )
+}
+
 function BackupSection({ snapshot, setSetting }: { snapshot: SettingsSnapshot; setSetting: SetSetting }) {
+  const queryClient = useQueryClient()
+  const [outcome, setOutcome] = useState<ManualBackupResult | null>(null)
+  // Main opens the save dialog and makes the copy; this side only asks and
+  // reports. `backup.lastRunAt` is written by main on success, so the
+  // snapshot is invalidated rather than patched, and `db:stats` with it —
+  // the Data view's "last backup" reads the same key.
+  const backup = useMutation({
+    mutationFn: () => callCrm('backup:run').then(unwrapMutationResult),
+    onSuccess: (result) => {
+      setOutcome(result)
+      if (result.outcome === 'written') {
+        void invalidate.settings(queryClient)
+        void invalidate.db(queryClient)
+      }
+    }
+  })
+  const lastRunAt = snapshot['backup.lastRunAt']
+
   return (
     <Card>
       <Card.Header title="Backup" />
+      <div className="field">
+        <span className="k">Manual</span>
+        <span className="v">{lastRunAt != null ? `Last backup ${LAST_BACKUP_FORMAT.format(parseTimestamp(lastRunAt))}` : 'No manual backup yet'}</span>
+        <Button variant="primary" disabled={backup.isPending} onClick={() => backup.mutate()}>
+          {backup.isPending ? 'Backing up…' : 'Back up now'}
+        </Button>
+      </div>
+      {backupOutcomeLine(outcome, backup.error)}
       <SettingSwitch
         label="Nightly JSON export"
         note="Keeps the last 30 snapshots"

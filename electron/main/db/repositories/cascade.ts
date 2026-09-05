@@ -117,7 +117,17 @@ const PERSON_PLAN: CascadePlan = {
   steps: [
     { table: 'affiliations', where: 'person_id = ?', params: 1, action: 'delete', label: 'company affiliations' },
     { table: 'activity', where: 'person_id = ?', params: 1, action: 'delete', label: 'activity records' },
-    { table: 'tasks', where: 'person_id = ?', params: 1, action: 'delete', label: 'todos' }
+    { table: 'tasks', where: 'person_id = ?', params: 1, action: 'delete', label: 'todos' },
+    // A company this person introduced survives; only the pointer goes —
+    // the same shape as the company plan's billed-via step (migration 0009).
+    {
+      table: 'companies',
+      where: 'introduced_by_person_id = ?',
+      params: 1,
+      action: 'clear',
+      columns: ['introduced_by_person_id'],
+      label: 'companies they introduced'
+    }
   ]
 }
 

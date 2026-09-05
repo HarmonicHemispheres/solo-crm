@@ -78,7 +78,19 @@ export const companies = sqliteTable(
     // return type is spelled out explicitly (AnySQLiteColumn) to sidestep
     // TypeScript's circular-inference error on a same-table self-reference.
     billedViaCompanyId: text('billed_via_company_id').references((): AnySQLiteColumn => companies.id),
+    // RETIRED by migration 0009 — nothing reads or writes this column any
+    // more; `introduced_by_person_id` below replaced it. It stays declared
+    // because it still exists in every installed database (SQLite cannot
+    // `DROP` a column that carries a foreign key without rebuilding the
+    // table), and a column dropped here with no migration behind it is
+    // exactly the drift `schema.test.ts` refuses. Existing values are left
+    // in place, untouched: they cannot be turned into a person.
     introducedByCompanyId: text('introduced_by_company_id').references((): AnySQLiteColumn => companies.id),
+    // Who made the introduction — a person, since 0009. `people` is declared
+    // below this table; the callback is evaluated lazily, so the forward
+    // reference is fine at runtime and the explicit return type keeps
+    // TypeScript from trying to infer through the cycle.
+    introducedByPersonId: text('introduced_by_person_id').references((): AnySQLiteColumn => people.id),
     cadenceDays: integer('cadence_days').default(14),
     // Denormalised on purpose — ADR-001. Never derived from
     // MAX(activity.occurred_at); maintained by the activity repository
@@ -109,7 +121,11 @@ export const companies = sqliteTable(
     // the foreign key — each one costs write throughput on the tables the
     // Gmail and timelog importers will hammer hardest.
     index('idx_companies_billed_via_company_id').on(t.billedViaCompanyId),
-    index('idx_companies_introduced_by_company_id').on(t.introducedByCompanyId)
+    index('idx_companies_introduced_by_company_id').on(t.introducedByCompanyId),
+    // 0009. Read by `deletePerson`'s pre-check and by the person cascade's
+    // `clear` step — the same rule as the two above: an index because a
+    // query names the column.
+    index('idx_companies_introduced_by_person_id').on(t.introducedByPersonId)
   ]
 )
 

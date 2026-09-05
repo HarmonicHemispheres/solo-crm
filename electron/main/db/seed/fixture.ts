@@ -66,7 +66,6 @@ export interface CompanySeed {
   readonly billsDirectly: boolean
   readonly billedViaCompanyKey: string | null
   readonly cadenceDays: number
-  readonly budgetNote: string | null
   readonly notes: string | null
   /** YYYY-MM-DD, mockup-relative. */
   readonly since: string
@@ -210,7 +209,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: true,
     billedViaCompanyKey: null,
     cadenceDays: 7,
-    budgetNote: null,
     notes: 'Recurring monthly retainer — advising plus hands-on development.',
     since: '2026-03-01',
     links: [
@@ -228,7 +226,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: true,
     billedViaCompanyKey: null,
     cadenceDays: 7,
-    budgetNote: null,
     notes: 'SiteFacts build on a monthly retainer. Sand & Sage owns the IP; 5% equity held personally.',
     since: '2025-11-01',
     links: [
@@ -246,7 +243,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: true,
     billedViaCompanyKey: null,
     cadenceDays: 10,
-    budgetNote: null,
     notes: 'Bills for work delivered to their own customers, plus their internal platform work.',
     since: '2026-02-01',
     links: [
@@ -263,7 +259,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: false,
     billedViaCompanyKey: 'ezdeploy',
     cadenceDays: 14,
-    budgetNote: '$18,000 approved',
     notes: 'Samay timesheet agent. Delivery relationship only — EZDeploy holds the contract.',
     since: '2026-02-01',
     links: [
@@ -280,7 +275,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: false,
     billedViaCompanyKey: 'ezdeploy',
     cadenceDays: 30,
-    budgetNote: '$4,200 spent',
     notes: 'Agents audit, delivered. Dormant unless EZDeploy re-opens it.',
     since: '2026-04-01',
     links: [{ url: 'https://drive.google.com/file/prog-audit.pdf', title: 'Programetrix audit.pdf', kind: 'pdf' }]
@@ -293,7 +287,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: true,
     billedViaCompanyKey: null,
     cadenceDays: 21,
-    budgetNote: null,
     notes: 'VedX portal and support agent, both delivered. No live scope.',
     since: '2025-09-01',
     links: [
@@ -309,7 +302,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: true,
     billedViaCompanyKey: null,
     cadenceDays: 7,
-    budgetNote: '$28,500 proposed',
     notes: 'Fixed-scope SOW out for signature.',
     since: '2026-08-01',
     links: [
@@ -325,7 +317,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: false,
     billedViaCompanyKey: null,
     cadenceDays: 21,
-    budgetNote: 'Next-year budget',
     notes: 'Federal AI grant pending; budget starts next year across 12 months.',
     since: '2026-05-01',
     links: [{ url: 'https://notion.so/route-grant', title: 'The Route — grant narrative', kind: 'notion' }]
@@ -338,7 +329,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: false,
     billedViaCompanyKey: null,
     cadenceDays: 30,
-    budgetNote: null,
     notes: 'Referral channel. Sponsorship tier under review.',
     since: '2026-01-01',
     links: [{ url: 'https://notion.so/northbank-ev', title: 'Northbank — sponsorship EV', kind: 'notion' }]
@@ -351,7 +341,6 @@ export const companies: readonly CompanySeed[] = [
     billsDirectly: true,
     billedViaCompanyKey: null,
     cadenceDays: 14,
-    budgetNote: null,
     notes: 'Wants the side business to run itself.',
     since: '2026-06-01',
     links: [{ url: 'https://notion.so/thompson-discovery', title: 'Ben Thompson — discovery', kind: 'notion' }]

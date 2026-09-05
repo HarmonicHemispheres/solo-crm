@@ -70,6 +70,7 @@ import {
 } from '../db/repositories/milestones'
 import { listRevenueLines, revenueSummary, setRevenueLineStatus } from '../db/repositories/revenue'
 import { getFavicon } from '../favicons'
+import { runManualBackup } from '../backup'
 import { chooseBrandingImage, getBrandingSlotState, getBrandingSnapshot } from '../branding'
 import { clearBrandingSlot } from '../db/repositories/branding'
 import {
@@ -820,6 +821,23 @@ export const registry = {
         resetSetting(getDatabase(), key)
         return readSettingEntry(getDatabase(), key)
       })
+  }),
+
+  // ---------------------------------------------------------------------
+  // backup — a manual copy of the live database.
+  //
+  // The second place a renderer request opens a native dialog, after the
+  // image pickers, and it keeps their discipline: the renderer names no
+  // path going in, every refusal is a hand-written path-free sentence, and
+  // the copy is made through SQLite's online backup API so a row still in
+  // the WAL sidecar is in the backup too. Read
+  // `electron/main/backup/manual.ts`'s header. Async because the operator
+  // may sit on the save dialog indefinitely.
+  // ---------------------------------------------------------------------
+
+  'backup:run': defineChannel({
+    ...CHANNEL_CONTRACTS['backup:run'],
+    handler: () => runMutationAsync(() => runManualBackup(getDatabase()))
   })
   // Mapped over the contract's own schema types, not the default-widened
   // ChannelDefinition: a bare Record<ChannelName, ChannelDefinition> couples

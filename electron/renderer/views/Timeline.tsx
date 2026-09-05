@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { ViewHeader } from '../components/primitives/ViewHeader'
@@ -13,6 +13,7 @@ import { addMonths, eachMonth, localPeriodMonth, monthsBetween, parseDateOnly, p
 import { isSigned, type BillingModel, type EngagementWithOffering, type Milestone } from '../../shared/engagements'
 import type { Company } from '../../shared/companies'
 import type { PeriodMonth } from '../../shared/types'
+import { MONTH_WIDTH_PX, ZOOMS, type ZoomKey } from './timeline-zoom'
 import './Timeline.css'
 
 /**
@@ -227,6 +228,8 @@ interface BillingGroup {
 export function Timeline() {
   const [range, setRange] = useState<RangeKey>('year')
   const [scope, setScope] = useState<ScopeKey>('all')
+  const [zoom, setZoom] = useState<ZoomKey>('auto')
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Read once per mount, not per render — the same reasoning Companies.tsx
   // and Today.tsx state for their own clocks.
@@ -278,6 +281,23 @@ export function Timeline() {
 
   const nowLeft = currentMonth >= span.from && currentMonth <= span.to ? positionOf(currentMonth, span, columns) + 100 / columns / 2 : null
 
+  // The plot's width at a fixed zoom, handed to the stylesheet as one
+  // variable so every row and the month header agree on it. `undefined` at
+  // `auto`, which is the stylesheet's cue to let the plot flex as before.
+  const plotWidth = zoom === 'auto' ? undefined : MONTH_WIDTH_PX[zoom] * columns
+
+  // On a zoom change, bring the current month into view rather than leaving
+  // the operator at January of the earliest year. Left-aligned at a third of
+  // the way across, so what comes next is visible as well as what just was.
+  // An effect rather than a click handler because the plot's width is not
+  // known until the zoomed layout has been committed.
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (scroller == null || plotWidth == null || nowLeft == null) return
+    const nowPx = (nowLeft / 100) * plotWidth
+    scroller.scrollLeft = Math.max(0, nowPx - scroller.clientWidth / 3)
+  }, [plotWidth, nowLeft])
+
   const header = (
     <ViewHeader
       icon={<TimelineGlyph />}
@@ -288,6 +308,7 @@ export function Timeline() {
         <div className="tl-controls">
           <Toggle options={SCOPES} value={scope} onChange={setScope} aria-label="Which engagements to draw" />
           <Toggle options={RANGES} value={range} onChange={setRange} aria-label="Time range" />
+          <Toggle options={ZOOMS} value={zoom} onChange={setZoom} aria-label="Zoom" />
         </div>
       }
     />
@@ -334,7 +355,15 @@ export function Timeline() {
             Nothing runs in this range. Widen it, or switch back to all engagements.
           </EmptyState>
         ) : (
-          <div className="gantt">
+          // The scroller is the card's, never the page's. At `auto` it has
+          // nothing to scroll; at a fixed zoom `.gantt` grows to the plot's
+          // stated width and this is what contains it.
+          <div className="gantt-scroll" ref={scrollRef}>
+          <div
+            className="gantt"
+            data-zoom={zoom}
+            style={plotWidth != null ? ({ '--gantt-plot': `${plotWidth}px` } as CSSProperties) : undefined}
+          >
             <div className="ghead">
               <div className="sp" />
               <div className="gmonths">
@@ -368,6 +397,7 @@ export function Timeline() {
                 <div className="gnow" style={{ left: `${nowLeft}%` }} />
               </div>
             )}
+          </div>
           </div>
         )}
       </Card>

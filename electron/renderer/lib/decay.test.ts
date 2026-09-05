@@ -49,14 +49,15 @@ describe('decayForCompany', () => {
   it('falls back to the kind default when the company has no cadence of its own', () => {
     // `cadenceDays` is nullable on the row even though the create sheet always
     // writes one today (companies.ts), so this path is reachable from the seed
-    // and from a hand-edited database.
+    // and from a hand-edited database. Every kind's *registry* default is
+    // N/A now, so the fallback is exercised against a snapshot where the
+    // operator has set one.
     const decay = decayForCompany(
       company({ kind: 'advisory', cadenceDays: null, lastTouchAt: daysBefore(NOW, 21) }),
-      DEFAULT_SETTINGS,
+      { ...DEFAULT_SETTINGS, 'cadence.defaultDays.advisory': 21 },
       NOW
     )
 
-    // 21 is `cadence.defaultDays.advisory`'s declared default.
     expect(decay.cadenceDays).toBe(21)
     expect(decay.pct).toBe(1)
     expect(decay.band).toBe('late')
@@ -81,7 +82,24 @@ describe('decayForCompany', () => {
 
     expect(decayForCompany(untouchedFor21Days, settings, NOW).cadenceDays).toBe(60)
     expect(decayForCompany(untouchedFor21Days, settings, NOW).band).toBe('ok')
-    expect(decayForCompany(untouchedFor21Days, DEFAULT_SETTINGS, NOW).band).toBe('late')
+    // And against the registry's own default — N/A — the same company is
+    // simply not tracked: no cadence resolved, nothing to be late against.
+    expect(decayForCompany(untouchedFor21Days, DEFAULT_SETTINGS, NOW).cadenceDays).toBe(0)
+    expect(decayForCompany(untouchedFor21Days, DEFAULT_SETTINGS, NOW).band).toBe('ok')
+  })
+
+  it('reads a kind whose default is N/A as not tracked — the ok band at zero, never overdue', () => {
+    // The whole point of the N/A setting: an operator who set channels to
+    // N/A said "do not chase these", and a page that painted every one of
+    // them red would be ignoring that. A company of that kind with a cadence
+    // of its own is still measured against it (the first test above).
+    const settings: SettingsSnapshot = { ...DEFAULT_SETTINGS, 'cadence.defaultDays.channel': null }
+    const decay = decayForCompany(company({ kind: 'channel', cadenceDays: null, lastTouchAt: daysBefore(NOW, 400) }), settings, NOW)
+
+    expect(decay.cadenceDays).toBe(0)
+    expect(decay.pct).toBe(0)
+    expect(decay.band).toBe('ok')
+    expect(decay.description).toContain('not tracked')
   })
 
   it('measures an untouched company from when it was added, not from the beginning of time', () => {
@@ -149,20 +167,24 @@ describe('decayForCompany', () => {
     expect(exactlyOne.label).toBe('1d')
   })
 
-  it('reads a zero cadence as late rather than dividing by it', () => {
+  it('reads a zero cadence as not tracked rather than dividing by it', () => {
     // `cadence_days` is a plain nullable integer on the column; only the input
     // schema constrains it to positive, so a 0 can exist in a hand-edited file.
+    // It reads the same as no cadence at all: nothing to measure against, and
+    // never a `NaN` or an `Infinity` handed on to a meter.
     const decay = decayForCompany(company({ cadenceDays: 0, lastTouchAt: daysBefore(NOW, 3) }), DEFAULT_SETTINGS, NOW)
 
-    expect(decay.pct).toBe(Number.POSITIVE_INFINITY)
+    expect(decay.pct).toBe(0)
     expect(Number.isNaN(decay.pct)).toBe(false)
-    expect(decay.band).toBe('late')
+    expect(decay.band).toBe('ok')
     expect(decay.days).toBe(3)
   })
 
-  it('reads a company with neither a cadence nor a kind to inherit one as late', () => {
+  it('reads a company with neither a cadence nor a kind to inherit one as not tracked', () => {
     // `kind` is nullable too, so there is a company shape with no cadence
-    // available at all. It is unknown, not healthy.
+    // available at all. It used to read as late ("unknown, not healthy");
+    // with N/A a stated choice in settings, no cadence means no tracking,
+    // and the label still says how long it has been.
     const decay = decayForCompany(
       company({ kind: null, cadenceDays: null, lastTouchAt: daysBefore(NOW, 3) }),
       DEFAULT_SETTINGS,
@@ -170,7 +192,7 @@ describe('decayForCompany', () => {
     )
 
     expect(decay.cadenceDays).toBe(0)
-    expect(decay.band).toBe('late')
+    expect(decay.band).toBe('ok')
     expect(decay.label).toBe('3d')
   })
 

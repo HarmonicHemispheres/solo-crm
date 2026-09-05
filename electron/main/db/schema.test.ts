@@ -311,7 +311,10 @@ describe('schema.ts and the checked-in migrations cannot drift', () => {
           '0004_fk_indexes_polymorphic_cascade.sql',
           '0005_branding.sql',
           '0007_company_images.sql',
-          '0008_retainer_basis.sql'
+          '0008_retainer_basis.sql',
+          // `companies.introduced_by_person_id` and its index — one ADD, one
+          // CREATE INDEX, both pinned below like everything before them.
+          '0009_introduced_by_person.sql'
         ].map((file) => readFileSync(join(migrationsDir, file), 'utf-8'))
 
         const checkedInIndexes = checkedIn.flatMap(createIndexStatements)

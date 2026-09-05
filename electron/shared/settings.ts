@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { CompanyKind } from './companies'
+import { timestampSchema } from './types'
 
 /**
  * `settings`' wire contract (ADR-002, ADR-004; T-260828-25) — the declared
@@ -105,12 +106,19 @@ export const SETTINGS_REGISTRY = {
   // overrides its own." One key per `COMPANY_KINDS` member (companies.ts) —
   // hand-listed here so each keeps its own literal type and default, with
   // `settings.test.ts` asserting the set never drifts from `COMPANY_KINDS`.
-  // Defaults match `planning/solo-crm-mockup.html`'s default-cadence card.
-  'cadence.defaultDays.client': spec(z.int().positive(), 7),
-  'cadence.defaultDays.end_client': spec(z.int().positive(), 14),
-  'cadence.defaultDays.prospect': spec(z.int().positive(), 14),
-  'cadence.defaultDays.advisory': spec(z.int().positive(), 21),
-  'cadence.defaultDays.channel': spec(z.int().positive(), 30),
+  //
+  // Nullable, and `null` is the default for every kind: "N/A" — no default
+  // cadence, so a company of that kind with no cadence of its own is simply
+  // not tracked (`renderer/lib/decay.ts` reads a null here as "no cadence",
+  // which is the `ok` band, not overdue). The mockup's 7/14/14/21/30 were
+  // the defaults until the operator asked for N/A to be the one to default
+  // to: a number nobody chose was putting companies in the red on a fresh
+  // install. The settings page offers those same four steps plus N/A.
+  'cadence.defaultDays.client': spec(z.int().positive().nullable(), null),
+  'cadence.defaultDays.end_client': spec(z.int().positive().nullable(), null),
+  'cadence.defaultDays.prospect': spec(z.int().positive().nullable(), null),
+  'cadence.defaultDays.advisory': spec(z.int().positive().nullable(), null),
+  'cadence.defaultDays.channel': spec(z.int().positive().nullable(), null),
 
   // "Integration toggles with per-source status. All pull-only." Stripe and
   // Calendar default on, Gmail off — the mockup's own defaults.
@@ -124,6 +132,12 @@ export const SETTINGS_REGISTRY = {
   // guessing one risks landing in a sync folder (AGENTS.md).
   'backup.enabled': spec(z.boolean(), true),
   'backup.folder': spec(z.string(), ''),
+  // When the operator last took a manual backup (`backup:run`) — a
+  // timestamp, or `null` when they never have. Written by main after the
+  // copy lands, read by the Backup section and by `db:stats.lastBackupAt`.
+  // A setting rather than a column because it is one fact about the
+  // workspace, not a record (ADR-002), and not a secret (ADR-004).
+  'backup.lastRunAt': spec(timestampSchema.nullable(), null),
 
   // "Appearance: interface motion, compact density."
   'appearance.motion': spec(z.boolean(), true),

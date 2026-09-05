@@ -1,6 +1,6 @@
 import { useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FAVICON_FALLBACK_ICONS } from '../../../shared/favicons'
+import { FAVICON_FALLBACK_ICONS, type FaviconResult } from '../../../shared/favicons'
 import type { Link, LinkEntityType, LinkKind } from '../../../shared/links'
 import { IpcCallError, ipcMutationFn, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
 import { invalidate, queryKeys } from '../../lib/query-keys'
@@ -94,22 +94,63 @@ function ChainIcon() {
 }
 
 /**
+ * How often a row re-asks while main is still fetching. Main answers
+ * `never-fetched`/`fetching` immediately and goes to the network behind
+ * the answer (`electron/main/favicons/service.ts`), so the icon only exists
+ * on a *later* read. One and a half seconds is a fraction of the fetch
+ * timeout, so the icon appears about when it lands, and cheap enough — one
+ * IPC read per still-pending row — that a page of a dozen links costs a few
+ * reads a second for the few seconds it takes.
+ */
+const FAVICON_POLL_MS = 1_500
+
+/** A ceiling on the polling, so a fetch that somehow never records an outcome cannot keep a row asking forever. Main's own timeout is 5s per hop and at most a handful of hops, so twenty polls — thirty seconds — is past any honest fetch. */
+const FAVICON_POLL_LIMIT = 20
+
+/**
+ * True once main has said all it will say for now: an icon, a recorded
+ * failure (with its own retry instant), or a URL it will never fetch. The
+ * other two reasons — `never-fetched`, `fetching` — mean "come back".
+ */
+function faviconSettled(result: FaviconResult | undefined): boolean {
+  if (result == null) return false
+  if (result.state === 'ready') return true
+  return result.reason === 'unavailable' || result.reason === 'unsupported-url'
+}
+
+/**
  * The favicon slot. One `favicons:get` read per row, keyed by the link's own
- * URL and never refetched on its own (`staleTime: Infinity`): the answer is a
- * fact about main's cache at read time, and re-asking on every window focus
- * would be twelve extra IPC round trips for a page that has already drawn.
+ * URL. `staleTime: Infinity` because the answer is a fact about main's cache
+ * at read time, and re-asking on every window focus would be twelve extra
+ * IPC round trips for a page that has already drawn.
+ *
+ * **But a pending answer is re-asked.** Main's read starts a fetch and
+ * answers `never-fetched` or `fetching` at once; the icon exists only on a
+ * later read. With no refetch at all — which is how this row was first
+ * written — that later read never came: the cached `none` sat in the query
+ * cache for the life of the window, and every link drew its fallback until
+ * the app was restarted. `refetchInterval` polls only while the answer is
+ * one of the two "come back" reasons, and stops the moment it is not.
  *
  * The fallback is `FAVICON_FALLBACK_ICONS[kind]` — an SVG string compiled
  * into the bundle, so it is present with no network, no cache and no
  * filesystem read. It is injected as markup because that is the form the
  * shared module publishes it in; the strings are our own constants, keyed by
  * a closed union, and never carry anything a link's host supplied.
+ *
+ * Exported for the company page's website row, which is a link too and
+ * has the same reason to wear its host's icon.
  */
-function LinkFavicon({ url, kind }: { url: string; kind: LinkKind }) {
+export function LinkFavicon({ url, kind }: { url: string; kind: LinkKind }) {
   const faviconQuery = useQuery({
     queryKey: queryKeys.favicons.forUrl(url),
     queryFn: ipcQueryFn('favicons:get', { url }),
-    staleTime: Number.POSITIVE_INFINITY
+    staleTime: Number.POSITIVE_INFINITY,
+    // The parameter is typed by hand: left to inference, the callback takes
+    // part in inferring the query's data type and collapses it to `{}`. The
+    // structural type is the slice of TanStack's `Query` this reads.
+    refetchInterval: (query: { state: { data?: FaviconResult; dataUpdateCount: number } }) =>
+      faviconSettled(query.state.data) || query.state.dataUpdateCount >= FAVICON_POLL_LIMIT ? false : FAVICON_POLL_MS
   })
   const result = faviconQuery.data
   const cached = result != null && result.state === 'ready' ? result : null

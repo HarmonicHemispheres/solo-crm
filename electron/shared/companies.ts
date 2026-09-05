@@ -36,7 +36,15 @@ export const companySchema = z.object({
   website: z.string().nullable(),
   billsDirectly: z.boolean().nullable(),
   billedViaCompanyId: z.string().nullable(),
-  introducedByCompanyId: z.string().nullable(),
+  /**
+   * The person who made the introduction — a `people.id`, since migration
+   * 0009. It was a company reference (`introduced_by_company_id`) until then;
+   * that column still exists in the database but is off the wire entirely,
+   * because an introduction is made by someone, not by an organisation, and
+   * the operator asked for it to point at the People tab. `budget_note` went
+   * the same way at the same time: still a column, no longer a field.
+   */
+  introducedByPersonId: z.string().nullable(),
   cadenceDays: z.number().int().nullable(),
   /**
    * ADR-001: owned by the activity repository (T-260828-24), written in the
@@ -45,7 +53,6 @@ export const companySchema = z.object({
    * this task's Scope 7 fix — but still part of what a read returns.
    */
   lastTouchAt: timestampSchema.nullable(),
-  budgetNote: z.string().nullable(),
   notes: z.string().nullable(),
   since: dateOnlySchema.nullable(),
   createdAt: timestampSchema,
@@ -71,9 +78,8 @@ const companyWritableFieldsSchema = z
     website: z.string().nullable(),
     billsDirectly: z.boolean().nullable(),
     billedViaCompanyId: z.string().min(1).nullable(),
-    introducedByCompanyId: z.string().min(1).nullable(),
+    introducedByPersonId: z.string().min(1).nullable(),
     cadenceDays: z.number().int().positive().nullable(),
-    budgetNote: z.string().nullable(),
     notes: z.string().nullable(),
     since: dateOnlySchema.nullable()
   })
@@ -84,9 +90,8 @@ export const createCompanyInputSchema = companyWritableFieldsSchema.partial({
   website: true,
   billsDirectly: true,
   billedViaCompanyId: true,
-  introducedByCompanyId: true,
+  introducedByPersonId: true,
   cadenceDays: true,
-  budgetNote: true,
   notes: true,
   since: true
 })

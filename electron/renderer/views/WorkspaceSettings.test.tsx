@@ -35,6 +35,7 @@ const DEFAULT_SNAPSHOT: SettingsSnapshot = {
   'integrations.gmail.enabled': false,
   'backup.enabled': true,
   'backup.folder': '',
+  'backup.lastRunAt': null,
   'appearance.motion': true,
   'appearance.density': 'comfortable',
   'view.companies.mode': 'card',
@@ -75,7 +76,7 @@ function SettingsHost() {
  * real repository's read-your-writes behaviour, the same reasoning
  * Companies.test.tsx's `renderCompanies` gives for its own stateful
  * `settings:get`/`settings:set` stub. */
-function renderSettings(overrides: Partial<SettingsSnapshot> = {}) {
+function renderSettings(overrides: Partial<SettingsSnapshot> = {}, crm: Parameters<typeof stubCrm>[0] = {}) {
   const snapshot: SettingsSnapshot = { ...DEFAULT_SNAPSHOT, ...overrides }
   window.crm = stubCrm({
     'settings:getAll': vi.fn(async () => ({ ok: true as const, data: { ...snapshot } })),
@@ -83,7 +84,9 @@ function renderSettings(overrides: Partial<SettingsSnapshot> = {}) {
       // @ts-expect-error - writing a dynamically-keyed value back onto the typed snapshot.
       snapshot[entry.key] = entry.value
       return { ok: true as const, data: { ok: true as const, data: entry } }
-    })
+    }),
+    // Any other channel a test wants to script — `backup:run`, so far.
+    ...crm
   })
   const queryClient = createQueryClient()
   return render(
@@ -332,6 +335,81 @@ describe('WorkspaceSettings', () => {
     await waitFor(() => expect(window.crm['settings:set']).toHaveBeenCalledWith({ key, value }))
   })
 
+  it('offers N/A on every cadence row and writes null for it — no default, so companies of that kind are not tracked', async () => {
+    renderSettings()
+    await openSection('Default cadence')
+    const row = screen.getByText('Advisory').closest('.setrow') as HTMLElement
+    // The fixture stores 21 for advisory, so N/A is a real change here.
+    fireEvent.click(within(row).getByRole('button', { name: 'N/A' }))
+    await waitFor(() => expect(window.crm['settings:set']).toHaveBeenCalledWith({ key: 'cadence.defaultDays.advisory', value: null }))
+  })
+
+  it('shows N/A pressed for a kind whose stored default is null', async () => {
+    renderSettings({ 'cadence.defaultDays.channel': null })
+    await openSection('Default cadence')
+    const row = screen.getByText('Channel').closest('.setrow') as HTMLElement
+    expect(within(row).getByRole('button', { name: 'N/A' }).getAttribute('aria-pressed')).toBe('true')
+    for (const step of ['7', '14', '30', '90']) {
+      expect(within(row).getByRole('button', { name: step }).getAttribute('aria-pressed')).toBe('false')
+    }
+  })
+
+  it('takes a manual backup from a button, and reports where the copy went', async () => {
+    const run = vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        ok: true as const,
+        data: { outcome: 'written' as const, path: 'D:\\Backups\\solocrm-backup-2026-09-04-1432.db', bytes: 2_621_440, completedAt: '2026-09-04T21:32:00.000Z' }
+      }
+    }))
+    renderSettings({}, { 'backup:run': run })
+    const region = await openSection('Backup')
+    expect(screen.getByText('No manual backup yet')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back up now' }))
+
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(1))
+    // Main chose the destination through its own dialog; the renderer sent
+    // nothing but the request.
+    expect(run.mock.calls[0][0]).toBeUndefined()
+    // Within the section: the shell's toast is a `status` of its own.
+    const status = await within(region).findByRole('status')
+    expect(status.textContent).toContain('D:\\Backups\\solocrm-backup-2026-09-04-1432.db')
+    expect(status.textContent).toContain('2.5 MB')
+  })
+
+  it('says nothing about a backup the operator cancelled', async () => {
+    // `stubCrm`'s default `backup:run` is the dismissed dialog.
+    renderSettings()
+    const region = await openSection('Backup')
+    fireEvent.click(screen.getByRole('button', { name: 'Back up now' }))
+    await waitFor(() => expect(window.crm['backup:run']).toHaveBeenCalledTimes(1))
+    expect(within(region).queryByRole('status')).toBeNull()
+    expect(within(region).queryByRole('alert')).toBeNull()
+  })
+
+  it('surfaces a refused backup as an alert carrying main’s own sentence', async () => {
+    const refused = vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        ok: false as const,
+        error: { code: 'validation' as const, message: 'That is the live database itself. Choose a different file for the backup.' }
+      }
+    }))
+    renderSettings({}, { 'backup:run': refused })
+    await openSection('Backup')
+    fireEvent.click(screen.getByRole('button', { name: 'Back up now' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('live database itself')
+  })
+
+  it('reads the last manual backup off the snapshot', async () => {
+    renderSettings({ 'backup.lastRunAt': '2026-09-04T21:32:00.000Z' })
+    await openSection('Backup')
+    expect(screen.getByText(/^Last backup /)).toBeTruthy()
+    expect(screen.queryByText('No manual backup yet')).toBeNull()
+  })
+
   it('shows the stored backup folder, whose picker is the one control deliberately not wired', async () => {
     renderSettings({ 'backup.folder': '~/Documents/SoloCRM/backups' })
     await openSection('Backup')
@@ -359,6 +437,9 @@ describe('WorkspaceSettings', () => {
       'integrations.gmail.enabled',
       'backup.enabled',
       'backup.folder',
+      // Written by main when a manual backup lands; read here as the "Last
+      // backup" line beside the button that makes one.
+      'backup.lastRunAt',
       'appearance.motion',
       'appearance.density',
       // The `view.*` keys are per-view presentation state (§6.13), set from

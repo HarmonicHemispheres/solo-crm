@@ -20,10 +20,9 @@ const STUB_COMPANY_ROW = {
   website: null,
   billsDirectly: null,
   billedViaCompanyId: null,
-  introducedByCompanyId: null,
+  introducedByPersonId: null,
   cadenceDays: null,
   lastTouchAt: null,
-  budgetNote: null,
   notes: null,
   since: null,
   createdAt: '2026-08-28T00:00:00.000Z',
@@ -38,12 +37,23 @@ const PARTNER_CO = {
   website: null,
   billsDirectly: true,
   billedViaCompanyId: null,
-  introducedByCompanyId: null,
+  introducedByPersonId: null,
   cadenceDays: null,
   lastTouchAt: null,
-  budgetNote: null,
   notes: null,
   since: null,
+  createdAt: '2026-08-28T00:00:00.000Z',
+  updatedAt: '2026-08-28T00:00:00.000Z'
+}
+
+/** The one person `people:list` offers as an introducer (migration 0009: "Introduced by" is a person). */
+const REFERRER = {
+  id: 'per-dana',
+  name: 'Dana Kwan',
+  email: null,
+  phone: null,
+  notes: null,
+  lastContactAt: null,
   createdAt: '2026-08-28T00:00:00.000Z',
   updatedAt: '2026-08-28T00:00:00.000Z'
 }
@@ -76,9 +86,8 @@ describe('CompanySheet', () => {
       website: null,
       billsDirectly: true,
       billedViaCompanyId: null,
-      introducedByCompanyId: null,
+      introducedByPersonId: null,
       cadenceDays: 14,
-      budgetNote: null,
       since: null,
       // T-260901-14: the sheet is the authoritative writer for a company's
       // columns now, so it carries `notes` too — the Details card that used
@@ -109,7 +118,6 @@ describe('CompanySheet', () => {
     fireEvent.change(billingPartner, { target: { value: 'partner-1' } })
 
     fireEvent.change(screen.getByLabelText('Website'), { target: { value: 'acme.com' } })
-    fireEvent.change(screen.getByLabelText('Budget note'), { target: { value: '$25,000 approved' } })
     fireEvent.click(screen.getByRole('button', { name: '30 days' }))
     fireEvent.change(screen.getByLabelText('Since'), { target: { value: '2026-01-15' } })
     fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'Met at the conference' } })
@@ -123,12 +131,42 @@ describe('CompanySheet', () => {
       website: 'acme.com',
       billsDirectly: false,
       billedViaCompanyId: 'partner-1',
-      introducedByCompanyId: null,
+      introducedByPersonId: null,
       cadenceDays: 30,
-      budgetNote: '$25,000 approved',
       since: '2026-01-15',
       notes: 'Met at the conference'
     })
+  })
+
+  it('picks the introducer from People, and writes a person id (migration 0009)', async () => {
+    const create = vi.fn(async (input: unknown) => {
+      void input
+      return { ok: true as const, data: { ok: true as const, data: STUB_COMPANY_ROW } }
+    })
+    renderSheet(vi.fn(), {
+      'companies:create': create,
+      'companies:list': vi.fn(async () => ({ ok: true as const, data: [PARTNER_CO] })),
+      'people:list': vi.fn(async () => ({ ok: true as const, data: [REFERRER] }))
+    })
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Acme Co' } })
+    const introducedBy = screen.getByLabelText('Introduced by') as HTMLSelectElement
+    await waitFor(() => expect(within(introducedBy).getByText('Dana Kwan')).toBeTruthy())
+    // A person picker, not a company one: the partner company is not offered.
+    expect(within(introducedBy).queryByText('Partner Co')).toBeNull()
+    fireEvent.change(introducedBy, { target: { value: 'per-dana' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    expect((create.mock.calls[0][0] as Record<string, unknown>).introducedByPersonId).toBe('per-dana')
+    // And the retired field is not sent under any name.
+    expect(create.mock.calls[0][0]).not.toHaveProperty('introducedByCompanyId')
+    expect(create.mock.calls[0][0]).not.toHaveProperty('budgetNote')
+  })
+
+  it('has no budget note field — the operator asked for it to go', () => {
+    renderSheet()
+    expect(screen.queryByLabelText('Budget note')).toBeNull()
   })
 
   it('offers only FORMS.company’s four cadence chips on a create — "Not set" is an edit-only option', () => {
@@ -223,7 +261,6 @@ const STORED_COMPANY: Company = {
   billsDirectly: false,
   billedViaCompanyId: 'partner-1',
   cadenceDays: 10,
-  budgetNote: '$18,000 approved',
   since: '2026-02-01'
 }
 
@@ -254,7 +291,6 @@ describe('CompanySheet — edit mode (T-260901-14)', () => {
     expect(((await screen.findByLabelText('Name')) as HTMLInputElement).value).toBe('EZDeploy')
     expect(screen.getByRole('dialog', { name: 'Edit company' })).toBeTruthy()
     expect((screen.getByLabelText('Website') as HTMLInputElement).value).toBe('ezdeploy.io')
-    expect((screen.getByLabelText('Budget note') as HTMLInputElement).value).toBe('$18,000 approved')
     expect((screen.getByLabelText('Since') as HTMLInputElement).value).toBe('2026-02-01')
     expect(screen.getByRole('button', { name: 'Client' }).getAttribute('aria-pressed')).toBe('true')
     // A cadence none of FORMS.company's four chips offers is added as its own

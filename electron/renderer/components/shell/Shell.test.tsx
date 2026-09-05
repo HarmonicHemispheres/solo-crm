@@ -94,6 +94,7 @@ describe('ShellLayout', () => {
           'integrations.gmail.enabled': false,
           'backup.enabled': true,
           'backup.folder': '',
+          'backup.lastRunAt': null,
           'appearance.motion': false,
           'appearance.density': 'comfortable' as const,
           'view.companies.mode': 'card' as const,

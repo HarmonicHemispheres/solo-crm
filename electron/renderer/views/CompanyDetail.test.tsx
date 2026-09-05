@@ -42,10 +42,9 @@ function makeCompany(overrides: Partial<Company> & { id: string; name: string })
     website: null,
     billsDirectly: null,
     billedViaCompanyId: null,
-    introducedByCompanyId: null,
+    introducedByPersonId: null,
     cadenceDays: null,
     lastTouchAt: null,
-    budgetNote: null,
     notes: null,
     since: null,
     createdAt: TS,
@@ -85,14 +84,13 @@ function makeEngagement(overrides: Partial<EngagementWithOffering> & { id: strin
 // them, and bills itself for its own platform advisory. Rinvii bills and
 // is delivered to by itself alone. Lonely Co has no engagements at all. --
 
-const ezdeploy = makeCompany({ id: 'co-ezdeploy', name: 'EZDeploy', kind: 'client', website: 'ezdeploy.io', cadenceDays: 10, since: '2026-02-01' })
+const ezdeploy = makeCompany({ id: 'co-ezdeploy', name: 'EZDeploy', kind: 'client', website: 'ezdeploy.io', cadenceDays: 10, since: '2026-02-01', introducedByPersonId: 'per-dana' })
 const wk = makeCompany({
   id: 'co-wk',
   name: 'W+K',
   kind: 'end_client',
   billedViaCompanyId: 'co-ezdeploy',
   cadenceDays: 14,
-  budgetNote: '$18,000 approved',
   since: '2026-02-01'
 })
 const programetrix = makeCompany({
@@ -568,15 +566,51 @@ describe('CompanyDetail', () => {
     expect((within(sheet).getByLabelText('Name') as HTMLInputElement).value).toBe('EZDeploy')
     expect((within(sheet).getByLabelText('Website') as HTMLInputElement).value).toBe('ezdeploy.io')
 
-    fireEvent.change(within(sheet).getByLabelText('Budget note'), { target: { value: '$20,000 approved' } })
+    fireEvent.change(within(sheet).getByLabelText('Website'), { target: { value: 'ezdeploy.dev' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
 
-    await waitFor(() =>
-      expect(crm['companies:update']).toHaveBeenCalledWith({ id: 'co-ezdeploy', patch: { budgetNote: '$20,000 approved' } })
-    )
-    // Twice over, with no reload: the header's own gold tag and the Details
-    // card's Budget row, both re-read from `companies:get`.
-    await waitFor(() => expect(screen.getAllByText('$20,000 approved')).toHaveLength(2))
+    await waitFor(() => expect(crm['companies:update']).toHaveBeenCalledWith({ id: 'co-ezdeploy', patch: { website: 'ezdeploy.dev' } }))
+    // With no reload: the Details card's Website row, re-read from `companies:get`.
+    await waitFor(() => expect(screen.getByRole('link', { name: 'ezdeploy.dev' })).toBeTruthy())
+  })
+
+  it('has no budget note anywhere — not on the form, not in the header, not on the Details card', async () => {
+    // The operator asked for the field to go. The column is still in the
+    // database (migration 0009's header) but is off the wire, so nothing on
+    // this page can show or edit it.
+    renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+    expect(screen.queryByText(/\$18,000 approved/)).toBeNull()
+    expect(screen.queryByText('Budget')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit EZDeploy' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Edit company' })
+    expect(within(sheet).queryByLabelText('Budget note')).toBeNull()
+  })
+
+  it('names the person who made the introduction, linked to their page in People', async () => {
+    const crm = buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS, { people: ALL_PEOPLE, affiliations: AFFILIATIONS })
+    renderCompanyDetail('co-ezdeploy', crm)
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    const details = screen.getByText('Details').closest('.section') as HTMLElement
+    expect(within(details).getByText('Introduced by')).toBeTruthy()
+    const link = within(details).getByRole('link', { name: 'Dana Kwan' })
+    expect(link.getAttribute('href')).toBe('/person/per-dana')
+  })
+
+  it('shows the website as an outward link wearing a favicon slot, opened in a new window rather than navigating the renderer', async () => {
+    renderCompanyDetail('co-ezdeploy', buildCrm(ALL_COMPANIES, ALL_ENGAGEMENTS))
+    await screen.findByRole('heading', { name: 'EZDeploy' })
+
+    const details = screen.getByText('Details').closest('.section') as HTMLElement
+    const link = within(details).getByRole('link', { name: 'ezdeploy.io' })
+    expect(link.getAttribute('href')).toBe('https://ezdeploy.io')
+    expect(link.getAttribute('target')).toBe('_blank')
+    // The links card's own favicon box, beside it — the same fixed-size slot,
+    // so the row does not move when the icon arrives.
+    expect(link.parentElement?.querySelector('.favi')).toBeTruthy()
+    await waitFor(() => expect(window.crm['favicons:get']).toHaveBeenCalledWith({ url: 'https://ezdeploy.io' }))
   })
 })
 
@@ -954,9 +988,13 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       expect(within(contactsCard).getByText('CTO')).toBeTruthy()
       expect(within(contactsCard).getByText('Primary')).toBeTruthy()
 
-      // Casey appears exactly once in this card, and it's under the
-      // historical disclosure — not a second time in the current list.
-      const caseyMentions = within(contactsCard).getAllByText('Casey Ito')
+      // Casey appears exactly once as a *row* in this card, and it's under
+      // the historical disclosure — not a second time in the current list.
+      // (She is also an `<option>` in the add-a-contact picker at the foot,
+      // which is deliberate: a former contact can come back.)
+      const caseyMentions = within(contactsCard)
+        .getAllByText('Casey Ito')
+        .filter((el) => el.tagName !== 'OPTION')
       expect(caseyMentions).toHaveLength(1)
       const disclosure = caseyMentions[0].closest('.contacts-historical')
       expect(disclosure).not.toBeNull()
@@ -988,6 +1026,39 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
       // 1, the current-only count, not 2.
       expect(contactsCard.querySelector('.sh .n')?.textContent).toBe('1')
     })
+
+    it('adds a contact by picking someone who already exists in People — one affiliation write, no person form', async () => {
+      // The operator's words: contacts reference people in the People tab,
+      // not a separate people/contact form. So the card has no "+" opening
+      // `PersonSheet` any more; it has a picker over `people:list`.
+      const crm = buildFullCrm()
+      renderCompanyDetail('co-ezdeploy', crm)
+      await screen.findByRole('heading', { name: 'EZDeploy' })
+
+      const contactsCard = screen.getByText('Contacts').closest('.section') as HTMLElement
+      expect(within(contactsCard).queryByRole('button', { name: 'New contact' })).toBeNull()
+
+      const picker = within(contactsCard).getByRole('combobox', { name: 'Add a contact to EZDeploy' }) as HTMLSelectElement
+      // Dana is a current contact already, so she is not offered; Casey
+      // left and may come back, so she is.
+      expect(within(picker).queryByText('Dana Kwan')).toBeNull()
+      expect(within(picker).getByText('Casey Ito')).toBeTruthy()
+
+      // Nothing to submit until someone is picked.
+      expect(within(contactsCard).getByRole('button', { name: 'Add' })).toHaveProperty('disabled', true)
+
+      fireEvent.change(picker, { target: { value: 'per-casey' } })
+      fireEvent.change(within(contactsCard).getByLabelText('Title at this company'), { target: { value: 'Head of Product' } })
+      fireEvent.click(within(contactsCard).getByRole('button', { name: 'Add' }))
+
+      await waitFor(() => expect(crm['people:addAffiliation']).toHaveBeenCalledTimes(1))
+      const payload = (crm['people:addAffiliation'] as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+      expect(payload).toMatchObject({ personId: 'per-casey', companyId: 'co-ezdeploy', title: 'Head of Product' })
+      // Stamped today, a date-only value — the same rule PersonSheet follows.
+      expect(payload.started).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      // The write refreshes the contacts this page derives from `people:get`.
+      await waitFor(() => expect((crm['people:get'] as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(2))
+    })
   })
 
   it('a company with nothing yet shows three empty states, each offering the action that fills it', async () => {
@@ -1003,7 +1074,10 @@ describe('CompanyDetail — todos, activity, contacts (T-260828-30)', () => {
 
     const contactsCard = screen.getByText('Contacts').closest('.section') as HTMLElement
     expect(within(contactsCard).getByText('No contacts yet.')).toBeTruthy()
-    expect(within(contactsCard).getByRole('link', { name: 'Add a contact' })).toBeTruthy()
+    // With nobody in People there is nothing to pick, so the foot says where
+    // to go instead of offering an empty picker.
+    expect(within(contactsCard).getByRole('link', { name: 'Add a person' })).toBeTruthy()
+    expect(within(contactsCard).queryByRole('combobox')).toBeNull()
   })
 
   // -------------------------------------------------------------------

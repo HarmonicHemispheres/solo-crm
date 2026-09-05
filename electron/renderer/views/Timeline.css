@@ -18,9 +18,51 @@
   flex-wrap: wrap;
 }
 
+/* The card's own horizontal scroller — the one place wide content is allowed
+   to scroll (ui-design.md). At `auto` zoom `.gantt` is no wider than this
+   and there is nothing to scroll; at a fixed zoom `.gantt` grows to the
+   plot's stated width (`--gantt-plot`, set inline by Timeline.tsx) and the
+   overflow is contained here rather than reaching the page body. */
+.gantt-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .gantt {
   position: relative;
   padding: 0 15px 15px;
+}
+
+/* Zoomed: the plot column takes its stated width instead of flexing, and
+   the whole block is sized to its content so `.gnow-wrap`'s right inset
+   and the row backgrounds span the scrolled width, not the visible one. */
+.gantt:not([data-zoom='auto']) {
+  width: max-content;
+  min-width: 100%;
+}
+
+.gantt:not([data-zoom='auto']) .gmonths,
+.gantt:not([data-zoom='auto']) .gplot {
+  flex: 0 0 var(--gantt-plot);
+  width: var(--gantt-plot);
+}
+
+/* The label column stays put while the plot scrolls under it — a bar three
+   screens to the right still has its name beside it. Opaque, or the bars
+   would show through as they pass; above the plot, or its month lines would
+   draw over the text. */
+.gantt:not([data-zoom='auto']) .glabel,
+.gantt:not([data-zoom='auto']) .ghead .sp,
+.gantt:not([data-zoom='auto']) .ghroup {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.gantt:not([data-zoom='auto']) .ghroup {
+  width: max-content;
+  padding-right: 12px;
 }
 
 .ghead {

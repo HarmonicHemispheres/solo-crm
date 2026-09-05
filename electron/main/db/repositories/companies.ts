@@ -75,9 +75,12 @@ const FIELD_SPECS: readonly FieldSpec[] = [
   { key: 'website', column: 'website' },
   { key: 'billsDirectly', column: 'bills_directly', toSql: boolToSql },
   { key: 'billedViaCompanyId', column: 'billed_via_company_id' },
-  { key: 'introducedByCompanyId', column: 'introduced_by_company_id' },
+  // `introduced_by_company_id` and `budget_note` are deliberately absent:
+  // both columns still exist (migration 0009's header says why they were
+  // not dropped) but neither is on the wire any more, so nothing here can
+  // write them. `introduced_by_person_id` is what replaced the first.
+  { key: 'introducedByPersonId', column: 'introduced_by_person_id' },
   { key: 'cadenceDays', column: 'cadence_days' },
-  { key: 'budgetNote', column: 'budget_note' },
   { key: 'notes', column: 'notes' },
   { key: 'since', column: 'since' }
 ]
@@ -133,7 +136,7 @@ const CONSTRAINT_HANDLERS: Record<string, ConstraintHandler> = {
   },
   SQLITE_CONSTRAINT_FOREIGNKEY: () =>
     new RefusalError(
-      'This write references a company that does not exist — check billedViaCompanyId and introducedByCompanyId.',
+      'This write references a record that does not exist — check billedViaCompanyId (a company) and introducedByPersonId (a person).',
       { reason: 'foreign-key' }
     ),
   SQLITE_CONSTRAINT_NOTNULL: NOT_NULL_HANDLER,
@@ -152,10 +155,9 @@ interface CompanyRow {
   readonly website: string | null
   readonly bills_directly: number | null
   readonly billed_via_company_id: string | null
-  readonly introduced_by_company_id: string | null
+  readonly introduced_by_person_id: string | null
   readonly cadence_days: number | null
   readonly last_touch_at: string | null
-  readonly budget_note: string | null
   readonly notes: string | null
   readonly since: string | null
   readonly created_at: string
@@ -170,10 +172,9 @@ function mapRow(row: CompanyRow): Company {
     website: row.website,
     billsDirectly: row.bills_directly === null ? null : row.bills_directly === 1,
     billedViaCompanyId: row.billed_via_company_id,
-    introducedByCompanyId: row.introduced_by_company_id,
+    introducedByPersonId: row.introduced_by_person_id,
     cadenceDays: row.cadence_days,
     lastTouchAt: row.last_touch_at,
-    budgetNote: row.budget_note,
     notes: row.notes,
     since: row.since,
     createdAt: row.created_at,
@@ -186,29 +187,35 @@ function getCompanyRow(db: Database.Database, id: string): CompanyRow | undefine
 }
 
 // ---------------------------------------------------------------------------
-// Billed-via / introduced-by cycle guard (T-260828-42)
+// Billed-via cycle guard (T-260828-42)
 //
 // The database `CHECK` (`SELF_REFERENCE_CHECK_NAME` above) blocks only a
-// direct self-reference on `billed_via_company_id`, and nothing at all on
-// `introduced_by_company_id` — SQLite cannot express reachability in a
-// `CHECK`. A two-step cycle passes both: create B billed via A, then update A
-// to be billed via B, and the pointer chain is A -> B -> A. This walks the
-// EXISTING chain from the proposed target, using the same `walkChain`
-// traversal `seed/index.ts`'s `orderCompaniesForInsert` uses (../chain-walk),
-// and refuses before the write if that chain would reach the row being
-// written.
+// direct self-reference on `billed_via_company_id` — SQLite cannot express
+// reachability in a `CHECK`. A two-step cycle passes it: create B billed via
+// A, then update A to be billed via B, and the pointer chain is A -> B -> A.
+// This walks the EXISTING chain from the proposed target, using the same
+// `walkChain` traversal `seed/index.ts`'s `orderCompaniesForInsert` uses
+// (../chain-walk), and refuses before the write if that chain would reach the
+// row being written.
+//
+// Until migration 0009 the guard ran over `introduced_by_company_id` too,
+// with its own spec. That column is retired and its replacement points at a
+// person, which cannot form a chain of companies, so the guard is back to
+// the one column it was written for. The spec stays a table of one rather
+// than being inlined: the shape is the documentation of what a second
+// self-referencing column would need.
 //
 // Deliberately not exported and not a `getBilledCompanies()`-style reader:
 // per this file's header comment and T-260828-20's Risks, nothing here walks
 // the pointer as if companies had parents outside of this one refusal check.
 // ---------------------------------------------------------------------------
 
-type ChainColumn = 'billed_via_company_id' | 'introduced_by_company_id'
+type ChainColumn = 'billed_via_company_id'
 
 interface ChainGuardSpec {
   readonly column: ChainColumn
-  readonly fieldLabel: 'billedViaCompanyId' | 'introducedByCompanyId'
-  /** Matches the existing `SELF_REFERENCE_CHECK_NAME` refusal's `reason` for `billed_via_company_id` (T-260828-20) — preserved so a caller that already switches on it does not see the reason change out from under it. `introduced_by_company_id` has no such precedent (no database `CHECK` ever guarded it), so it gets its own. */
+  readonly fieldLabel: 'billedViaCompanyId'
+  /** Matches the existing `SELF_REFERENCE_CHECK_NAME` refusal's `reason` for `billed_via_company_id` (T-260828-20) — preserved so a caller that already switches on it does not see the reason change out from under it. */
   readonly selfReferenceReason: string
   readonly transitiveCycleReason: string
   /** The chain ALREADY sitting in the database loops back on itself, independent of this write. A different fact from `depthExceededReason` — the walk closed a loop at a known node, it did not merely run out of steps (T-260828-56). */
@@ -224,18 +231,6 @@ const BILLED_VIA_CHAIN_GUARD: ChainGuardSpec = {
   transitiveCycleReason: 'billed-via-cycle',
   preexistingCycleReason: 'billed-via-chain-cycle',
   depthExceededReason: 'billed-via-chain-depth-exceeded'
-}
-
-const INTRODUCED_BY_CHAIN_GUARD: ChainGuardSpec = {
-  column: 'introduced_by_company_id',
-  fieldLabel: 'introducedByCompanyId',
-  // Distinct from the transitive reason: "you pointed this row at itself" and
-  // "this pointer would close a loop through other rows" are different facts
-  // and a caller may want to say different things about them (T-260828-56).
-  selfReferenceReason: 'introduced-by-self-reference',
-  transitiveCycleReason: 'introduced-by-cycle',
-  preexistingCycleReason: 'introduced-by-chain-cycle',
-  depthExceededReason: 'introduced-by-chain-depth-exceeded'
 }
 
 /**
@@ -343,9 +338,6 @@ export function createCompany(db: Database.Database, input: unknown): Company {
   if (parsed.billedViaCompanyId) {
     assertNoChainCycle(db, BILLED_VIA_CHAIN_GUARD, id, parsed.name, parsed.billedViaCompanyId)
   }
-  if (parsed.introducedByCompanyId) {
-    assertNoChainCycle(db, INTRODUCED_BY_CHAIN_GUARD, id, parsed.name, parsed.introducedByCompanyId)
-  }
 
   const columns = ['id', ...FIELD_SPECS.map((spec) => spec.column), 'created_at', 'updated_at']
   const placeholders = columns.map(() => '?').join(', ')
@@ -377,9 +369,6 @@ export function updateCompany(db: Database.Database, id: string, patch: unknown)
 
   if ('billedViaCompanyId' in parsed && parsed.billedViaCompanyId) {
     assertNoChainCycle(db, BILLED_VIA_CHAIN_GUARD, id, existing.name, parsed.billedViaCompanyId)
-  }
-  if ('introducedByCompanyId' in parsed && parsed.introducedByCompanyId) {
-    assertNoChainCycle(db, INTRODUCED_BY_CHAIN_GUARD, id, existing.name, parsed.introducedByCompanyId)
   }
 
   const setClauses: string[] = []
@@ -475,6 +464,11 @@ export function deleteCompany(db: Database.Database, id: string, cascade = false
           (example ? ` (e.g. "${example}")` : '') +
           '. Reassign their billing before deleting this company.'
       },
+      // `introduced_by_company_id` is retired (migration 0009) and nothing
+      // can write it any more, but a row written before then can still hold
+      // one and the foreign key is still enforced — so the check stays, or a
+      // delete would fail with a bare constraint error instead of a sentence.
+      // The way out it names is the cascade, since no form clears it now.
       {
         table: 'companies',
         column: 'introduced_by_company_id',
@@ -483,7 +477,7 @@ export function deleteCompany(db: Database.Database, id: string, cascade = false
         describe: (count, example) =>
           `Cannot delete "${company.name}": it introduced ${count} other compan${count === 1 ? 'y' : 'ies'}` +
           (example ? ` (e.g. "${example}")` : '') +
-          '. Clear that reference before deleting this company.'
+          ' under the retired company-introduced-by field. Delete with cascade to clear that reference.'
       },
       {
         table: 'activity',

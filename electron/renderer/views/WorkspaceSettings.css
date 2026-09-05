@@ -286,3 +286,20 @@
   padding: 10px 15px;
   border-top: 1px solid var(--border);
 }
+
+/* The one-line account of the last manual backup — where it went and how
+   big it is — under the row whose button made it. A path is long, so it
+   wraps rather than truncates: the whole point of the line is that the
+   operator can read where the file is. */
+.backup-outcome {
+  margin: 0;
+  padding: 0 15px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--mute);
+  overflow-wrap: anywhere;
+}
+
+.backup-outcome-error {
+  color: var(--red);
+}

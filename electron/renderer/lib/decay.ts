@@ -84,16 +84,24 @@ function bandFor(pct: number): DecayBand {
  * companies inherit" — the *reading* half of which is this line).
  *
  * `0` is returned when nothing can be resolved — a company with neither its
- * own cadence nor a kind to inherit one from. `decayForCompany` maps a
- * non-positive cadence to `Infinity` rather than dividing by it, so "no
- * cadence known" reads late for the same reason "never touched" does,
- * instead of arriving at `DecayMeter` as a `NaN` for the component to
- * rescue.
+ * own cadence nor a kind to inherit one from, or a kind whose default is
+ * "N/A" (`null` in the settings registry, which is every kind's default
+ * since the operator asked for that). `decayForCompany` reads a
+ * non-positive cadence as **not tracked**: the `ok` band at `pct` 0, never
+ * a division by it and never `Infinity`.
+ *
+ * That is a change from how this used to read. A missing cadence was
+ * mapped to `Infinity` — overdue — on the reasoning that "no cadence known"
+ * should read like "never touched". With N/A a first-class choice in
+ * settings, that reasoning inverts: an operator who set a kind to N/A said
+ * "do not chase these", and a page that then paints every one of them red
+ * is ignoring the setting. A company with no cadence is not on the Going
+ * quiet list, its ring is empty, and its tooltip says so in words.
  */
 function effectiveCadenceDays(company: DecayInput, settings: SettingsSnapshot): number {
   if (company.cadenceDays != null) return company.cadenceDays
   if (company.kind == null) return 0
-  return settings[CADENCE_SETTING_KEY[company.kind]]
+  return settings[CADENCE_SETTING_KEY[company.kind]] ?? 0
 }
 
 /**
@@ -140,8 +148,11 @@ export function decayForCompany(company: DecayInput, settings: SettingsSnapshot,
   const cadenceDays = effectiveCadenceDays(company, settings)
   const touched = company.lastTouchAt != null
   const days = wholeDaysSince(company.lastTouchAt ?? company.createdAt, now)
-  const pct = cadenceDays > 0 ? days / cadenceDays : Number.POSITIVE_INFINITY
-  const band = bandFor(pct)
+  // No cadence: not tracked, so nothing to be late against — see
+  // `effectiveCadenceDays`. `bandFor` still maps an unparseable timestamp
+  // (`NaN` days) to `late`, which is the one non-finite case that remains.
+  const pct = cadenceDays > 0 ? days / cadenceDays : 0
+  const band = cadenceDays > 0 ? bandFor(pct) : Number.isNaN(days) ? 'late' : 'ok'
 
   return {
     days,
@@ -161,6 +172,6 @@ export function decayForCompany(company: DecayInput, settings: SettingsSnapshot,
 function describe(days: number, cadenceDays: number, touched: boolean, band: DecayBand): string {
   const elapsed = days <= 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`
   const opening = touched ? `Last touch ${elapsed}` : days <= 0 ? 'Added today, nothing logged yet' : `Added ${elapsed}, nothing logged yet`
-  if (cadenceDays <= 0) return `${opening}. No cadence set, so this reads as overdue.`
+  if (cadenceDays <= 0) return `${opening}. No cadence set — not tracked.`
   return `${opening}. Cadence every ${cadenceDays} days — ${band === 'late' ? 'overdue' : band === 'warn' ? 'due soon' : 'on track'}.`
 }

@@ -5,6 +5,34 @@ scopes, reviews and the record of how it got built live in [.dev/](.dev/).
 
 ✨ feature · ⚡ improvement · 🐛 fix · 🔒 security · ♻️ refactor · 📝 docs · 🗑 removed
 
+## 0.6.11
+
+- ✨ **Timeline zoom** — Auto fits every month into the card as before; 1×,
+  2× and 4× give a month a fixed width and let the plot scroll sideways
+  inside the card, with the engagement names staying put on the left.
+  Changing zoom brings the current month into view.
+- ✨ **Back up now** — a button on the Backup settings card asks where to
+  save and writes a self-contained copy of the database there, including
+  rows not yet folded into the main file. The card and the Data view both
+  show when the last backup was taken.
+- ⚡ **Default cadence can be N/A** — each company kind's default cadence
+  has an N/A choice, and every kind starts there. A company with no cadence
+  of its own under an N/A kind is not tracked: it is not on Going quiet and
+  its ring is empty, rather than reading as overdue.
+- ⚡ **Contacts come from People** — the company page's Contacts card adds a
+  contact by picking someone who already exists in People and giving them a
+  title, instead of opening a new-person form. Someone with nobody in
+  People yet is pointed there.
+- ⚡ **Introduced by is a person** — the company form's "Introduced by"
+  picks from People rather than from other companies, and the Details card
+  links to their page. The budget note field is gone from the form and the
+  page.
+- 🐛 **Favicons appear without a restart** — a link's icon used to show its
+  generic fallback until the app was reopened, because the first answer
+  ("still fetching") was never re-asked. Rows now re-ask while the fetch is
+  in flight and stop as soon as it settles. The company's website wears its
+  favicon too.
+
 ## 0.6.10
 
 - ✨ **Period forecast** — the hero tile on Today and Revenue now says what

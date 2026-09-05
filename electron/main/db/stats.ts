@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
 import type Database from 'better-sqlite3'
 import { getSchemaVersion } from './migrate'
+import { getSetting } from './repositories/settings'
 import { isPortableLaunch, observePortableLaunch, type PortableLaunchProbe } from './portable'
 
 /**
@@ -195,9 +196,12 @@ export function readDatabaseStats(db: Database.Database, options: DatabaseStatsO
     journalMode: String(pragmaValue(db, 'journal_mode') ?? ''),
     schemaVersion: version,
     lastMigrationAt,
-    // X-04 and X-05 own these; nothing writes them yet, and inventing a
-    // value here would be the page's one dishonest number.
-    lastBackupAt: null,
+    // The last *manual* backup (`backup:run` writes `backup.lastRunAt`).
+    // X-04's nightly export will write the same key when it exists, so the
+    // page has one answer to "when was this last backed up" either way.
+    lastBackupAt: getSetting(db, 'backup.lastRunAt'),
+    // X-05 owns this; nothing writes it yet, and inventing a value here
+    // would be the page's one dishonest number.
     lastIntegrityCheckAt: null,
     lastIntegrityCheckOk: null,
     tables,

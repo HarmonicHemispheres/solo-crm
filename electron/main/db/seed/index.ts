@@ -398,8 +398,8 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
     // ---- companies ----
     const insertCompany = db.prepare(
       `INSERT INTO companies
-         (id, name, kind, website, bills_directly, billed_via_company_id, cadence_days, last_touch_at, budget_note, notes, since, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (id, name, kind, website, bills_directly, billed_via_company_id, cadence_days, last_touch_at, notes, since, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     for (const company of orderCompaniesForInsert(companiesFixture)) {
       insertCompany.run(
@@ -411,7 +411,6 @@ export function seedFixture(db: Database.Database, options: SeedFixtureOptions =
         company.billedViaCompanyKey ? companyIds.get(company.billedViaCompanyKey) : null,
         company.cadenceDays,
         lastTouchByCompany.get(company.key)?.occurredAt ?? null,
-        company.budgetNote,
         company.notes,
         shiftDateOnly(company.since, offsetDays),
         seededAt,

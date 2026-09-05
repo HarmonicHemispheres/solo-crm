@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Sheet } from '../primitives/Sheet'
 import { Button } from '../primitives/Button'
 import { Field, ChipField } from './Field'
-import { useCompaniesList } from './queries'
+import { useCompaniesList, usePeopleList } from './queries'
 import { useSheetMutation } from './useSheetMutation'
 import { callCrm, ipcQueryFn, unwrapMutationResult } from '../../lib/ipc'
 import { queryKeys } from '../../lib/query-keys'
@@ -52,9 +52,8 @@ const CADENCE_NOT_SET = 0
 const FIELD_LABELS = {
   name: 'Name',
   website: 'Website',
-  budgetNote: 'Budget note',
   billedViaCompanyId: 'Billing partner',
-  introducedByCompanyId: 'Introduced by',
+  introducedByPersonId: 'Introduced by',
   since: 'Since',
   notes: 'Notes'
 } as const
@@ -87,9 +86,9 @@ interface CompanyFormSeed {
   readonly website: string
   readonly billsDirectly: boolean
   readonly billedVia: string
+  /** A `people.id` — an introduction is made by a person (migration 0009). */
   readonly introducedBy: string
   readonly cadenceDays: number
-  readonly budgetNote: string
   readonly since: string
   readonly notes: string
 }
@@ -104,9 +103,8 @@ function seedFrom(company: Company | null): CompanyFormSeed {
     // through it, whatever the column says.
     billsDirectly: company?.billsDirectly ?? company?.billedViaCompanyId == null,
     billedVia: company?.billedViaCompanyId ?? '',
-    introducedBy: company?.introducedByCompanyId ?? '',
+    introducedBy: company?.introducedByPersonId ?? '',
     cadenceDays: company ? (company.cadenceDays ?? CADENCE_NOT_SET) : 14,
-    budgetNote: company?.budgetNote ?? '',
     since: company?.since ?? '',
     notes: company?.notes ?? ''
   }
@@ -137,8 +135,12 @@ function seedFrom(company: Company | null): CompanyFormSeed {
  *
  * Two fields the mockup doesn't have at all — "Introduced by" and "Since" —
  * are in T-260828-27's scope for the company sheet specifically
- * (`introducedByCompanyId`, `since`) even though `FORMS.company` never asks
- * for either; scope wins over mockup fidelity here.
+ * (`introducedByPersonId`, `since`) even though `FORMS.company` never asks
+ * for either; scope wins over mockup fidelity here. "Introduced by" is a
+ * *person* picker over `people:list` (migration 0009) — it was a company
+ * picker, and an introduction is made by someone. One field the mockup does
+ * have, "Budget note", is gone: the operator asked for it to go, and its
+ * column is off the wire (`electron/shared/companies.ts`).
  */
 export function CompanySheet({ onClose, target }: CompanySheetProps) {
   if (target.mode === 'edit') {
@@ -197,6 +199,7 @@ function CompanyForm({ company, onClose }: { company: Company | null; onClose: (
   // on a page where the company being edited is one of the options, and a row
   // billed through itself or introduced by itself is not a relationship.
   const companies = useCompaniesList().filter((option) => option.id !== company?.id)
+  const people = usePeopleList()
   const isEdit = company !== null
 
   // `company` never changes for a mounted form — `LayerManager` keys the sheet
@@ -211,7 +214,6 @@ function CompanyForm({ company, onClose }: { company: Company | null; onClose: (
   const [billedVia, setBilledVia] = useState(seed.billedVia)
   const [introducedBy, setIntroducedBy] = useState(seed.introducedBy)
   const [cadenceDays, setCadenceDays] = useState(seed.cadenceDays)
-  const [budgetNote, setBudgetNote] = useState(seed.budgetNote)
   const [since, setSince] = useState(seed.since)
   const [notes, setNotes] = useState(seed.notes)
 
@@ -274,9 +276,8 @@ function CompanyForm({ company, onClose }: { company: Company | null; onClose: (
       if (website.trim() !== seed.website) patch.website = website.trim() || null
       if (billsDirectly !== seed.billsDirectly) patch.billsDirectly = billsDirectly
       if (partner !== (seed.billsDirectly ? null : seed.billedVia || null)) patch.billedViaCompanyId = partner
-      if (introducedBy !== seed.introducedBy) patch.introducedByCompanyId = introducedBy || null
+      if (introducedBy !== seed.introducedBy) patch.introducedByPersonId = introducedBy || null
       if (cadenceDays !== seed.cadenceDays) patch.cadenceDays = cadence
-      if (budgetNote.trim() !== seed.budgetNote) patch.budgetNote = budgetNote.trim() || null
       if (since !== seed.since) patch.since = since || null
       if (notes !== seed.notes) patch.notes = notes || null
       mutation.mutate({ mode: 'edit', id: company.id, patch })
@@ -291,9 +292,8 @@ function CompanyForm({ company, onClose }: { company: Company | null; onClose: (
         website: website.trim() || null,
         billsDirectly,
         billedViaCompanyId: partner,
-        introducedByCompanyId: introducedBy || null,
+        introducedByPersonId: introducedBy || null,
         cadenceDays: cadence,
-        budgetNote: budgetNote.trim() || null,
         since: since || null,
         notes: notes || null
       }
@@ -356,19 +356,16 @@ function CompanyForm({ company, onClose }: { company: Company | null; onClose: (
           <Field label="Website" error={errorFor('website')}>
             <input className="inp" value={website} onChange={(event) => setWebsite(event.target.value)} placeholder="acme.com" />
           </Field>
-          <Field label="Budget note" error={errorFor('budgetNote')}>
-            <input
-              className="inp"
-              value={budgetNote}
-              onChange={(event) => setBudgetNote(event.target.value)}
-              placeholder="$25,000 approved"
-            />
+          <Field label="Since" error={errorFor('since')}>
+            <input className="inp" type="date" value={since} onChange={(event) => setSince(event.target.value)} />
           </Field>
         </div>
-        <Field label="Introduced by" error={errorFor('introducedByCompanyId')}>
+        {/* A person, from the People tab — a reference picker, so a real
+            `<select>` (Field.tsx's rule), over `people:list`. */}
+        <Field label="Introduced by" error={errorFor('introducedByPersonId')}>
           <select className="inp" value={introducedBy} onChange={(event) => setIntroducedBy(event.target.value)}>
             <option value="">— none —</option>
-            {companies.map((option) => (
+            {people.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
               </option>
@@ -376,9 +373,6 @@ function CompanyForm({ company, onClose }: { company: Company | null; onClose: (
           </select>
         </Field>
         <ChipField label="Reach out every" value={cadenceDays} onChange={setCadenceDays} options={cadenceOptions} />
-        <Field label="Since" error={errorFor('since')}>
-          <input className="inp" type="date" value={since} onChange={(event) => setSince(event.target.value)} />
-        </Field>
         {/* Not in FORMS.company, and here because the Details card stopped
             writing (T-260901-14): this form owns every column that card shows
             or the decision costs the ability to edit one. */}
